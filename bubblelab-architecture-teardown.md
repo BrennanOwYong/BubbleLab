@@ -443,3 +443,119 @@ class NativeOAuthResolver implements CredentialResolver { /* oauth-service + enc
 - 🧪 *Scope metadata coverage is uneven.* Build the pre-flight audit as best-effort per provider; the first-run-discovery fallback (with honest messaging) is the correct default where metadata is absent.
 
 **One-line thesis:** keep Bubble's wisdom (uniform typed leaf, LLM-out-of-run-path, static analyzability, creds-as-refs), fix its non-optimalities (§12.1), and add the two things it never had — **real grounding (read-probe + write-mock with deviance detection)** and a **self-healing per-integration contract KB** — with the read/write hint and the contract policy exposed to the user as first-class dials.
+
+---
+
+## 13. NATIVE INTEGRATION ACCESS POINT (self-owned; replaces Composio)
+
+Two hard requirements you added: (a) the read/write hint must be **grounded in docs**, not guessed
+(because reads can have side effects — §12.3 watch-out 1); (b) auth must support **different methods
+per app**. Both live in this layer; nothing upstream (capabilities, flow code) changes.
+
+### 13.1 The unit you author/generate: `AppSpec`
+```ts
+interface AppSpec {
+  id: string;                       // 'slack', 'stripe', ...
+  authMethods: AuthMethod[];        // one app may offer several; user picks (§13.2)
+  operations: Operation[];
+}
+interface Operation {
+  name: string;
+  input: ZodSchema; output: ZodSchema;      // the normalized contract (§12.2 P6)
+  requiredScopes: Scope[];                   // for §11.5 pre-flight audit
+  sideEffect: SideEffectClass;               // DOC-GROUNDED, not hand-typed (§13.3)
+  adapter(params, ctx): Promise<unknown>;    // maps normalized params ↔ native call (§12.2 P3)
+}
+```
+
+### 13.2 Auth-method-per-app (the auth analogue of the input-shape adapter)
+Each app declares which strategies it supports; a strategy encapsulates *everything* auth-specific so
+capabilities stay auth-agnostic (§12.2 P7). This dispatches behind the §11.7 resolver seam.
+```ts
+type AuthKind =
+  | 'oauth2'          // auth-code (Google, Slack, Notion, Jira, HubSpot)
+  | 'oauth2_jwt'      // JWT-bearer / client-credentials (Salesforce integ user, GitHub App)
+  | 'api_key'         // static key (Stripe, OpenAI, Resend)
+  | 'pat'             // personal access token (GitHub, GitLab, Notion internal)
+  | 'basic'           // user:pass
+  | 'connection_string' // Postgres etc.
+  | 'multi_field'     // e.g. Cloudflare R2 = access key + secret + account id
+  | 'browser_session' // captured cookies (Amazon)
+  | 'xoauth2';        // SASL IMAP/SMTP
+
+interface AuthMethod {
+  kind: AuthKind;
+  collect(): CollectSpec;                              // drives the Connect UI (fields | OAuth | browser-login)
+  test(cred): Promise<{ ok: boolean; error?: string }>;
+  applyToRequest(cred, req): void;                     // inject header / query / cookie
+  refresh?(cred): Promise<Resolved>;                   // refresh-on-expiry-with-buffer (fixes §12.1 #7)
+  grantedScopes?(cred): Promise<Scope[]>;              // undefined ⇒ no metadata ⇒ first-run fallback (§12.3)
+  expiresAt?(cred): Date | undefined;
+}
+```
+- **Connect UI renders from `collect()`** per kind: `multi_field` → N labelled fields; `api_key`/`pat` →
+  one field + format placeholder; `oauth2*` → scope picker + Connect popup; `browser_session` → guided login.
+  (Generalizes Bubble's `CredentialsPage` branching; kills the `SLACK_CRED` vs `SLACK_API` split by making
+  "OAuth **or** token" two `AuthMethod`s on one `AppSpec`, user's choice.)
+- **Versioned**: providers deprecate methods (HubSpot API keys sunset). Mark methods deprecated + offer migration.
+
+### 13.3 Doc-grounded side-effect classification (the read/write hint, with provenance)
+A classification is a **claim that must carry its source**. Never classify from HTTP method alone.
+```ts
+type SideEffect = 'read' | 'read_with_side_effects' | 'write';
+interface SideEffectClass {
+  sideEffect: SideEffect;
+  destructive: boolean;              // delete/irreversible
+  idempotent: boolean;
+  confidence: number;                // 0..1
+  source: 'mcp_annotation' | 'openapi' | 'doc_nlp' | 'manual' | 'runtime_verified';
+  citation?: string;                 // doc URL / spec path / snippet — provenance is mandatory
+}
+```
+**Source hierarchy (most → least authoritative):**
+1. **MCP tool annotations** if the app is MCP-accessed: `readOnlyHint`, `destructiveHint`, `idempotentHint`
+   map directly. Cleanest doc-grounded signal.
+2. **OpenAPI spec**: method + operation metadata + summary text. (Method is a *hint*, corroborated by prose —
+   POST-search is a read; a mutating GET exists. Never method-only.)
+3. **Doc NLP**: LLM reads the endpoint's documentation prose → classify ("marks as read", "sends", "creates",
+   "deletes", "returns"). Lower confidence; must be verified.
+4. **Manual** override (human), with citation.
+
+**The "auto-run for real in test" gate** (this is where §12.3's read-hint decision is *earned*, not assumed):
+```
+autoRunInTest = sideEffect === 'read'
+             && !destructive
+             && confidence >= THRESHOLD
+             && source ∈ { mcp_annotation, openapi, runtime_verified }
+```
+Anything failing the gate (incl. `read_with_side_effects`, or a `read` known only via low-confidence doc_nlp)
+takes the **write path**: mocked contracts + deviance detection, or user-opt-in dummy data (§12.3).
+
+**Verification loop closes the gap between docs and reality:**
+- In test mode, when a `read` runs, check for a state change on a follow-up read; if found → downgrade to
+  `read_with_side_effects`, `source = runtime_verified`, require confirmation. Docs lie/lag; runtime is the corrective.
+- Verified classifications + human overrides **write back to the per-integration contract KB** (§12.3), so the
+  side-effect map self-heals alongside the input/output contracts.
+
+**Fallbacks (honest degradation, mirrors the scope-metadata rule):**
+- No OpenAPI/MCP annotations for an app → doc_nlp classify + treat as write-path until first-run verification
+  promotes it. Surface the confidence + "classified from docs, not provider metadata" to the user.
+- For **web/browser actions**, the "contract" is the required DOM environment; the side-effect analogue is
+  "does this step submit/mutate?" — classify from the action (click-submit/checkout = write) and verify via the
+  HTML-environment deviation loop (§12.3), feeding supervised takeover (§10).
+
+### 13.4 How it composes (nothing upstream changes)
+- Auth → resolves through the **§11.7 resolver seam** (`AuthMethod` is the strategy behind `resolve`/`test`/`grantedScopes`).
+- Operations → present the **§12.2 capability shape**; `adapter()` is the §12.2-P3 hidden adapter.
+- `sideEffect` + `requiredScopes` → drive the **§12.3 test/run modes** and the **§11.5 scope audit**.
+- Deviations (contract or side-effect) → the **§12.3 contract KB**.
+
+### 13.5 Watch-outs specific to this layer
+- 🧪 **Coverage is uneven.** Not every app has OpenAPI or MCP annotations; build the classifier best-effort and
+  lean on runtime verification + honest confidence display where authoritative metadata is absent.
+- 🧪 **Method ≠ truth.** POST-that-reads and GET-that-mutates both exist; require a corroborating source or a
+  verification pass before trusting a method-derived class.
+- 🧪 **Docs drift.** A doc-grounded class can go stale; the runtime verification loop + versioned KB is the fix.
+- 🧪 **Multi-method apps + deprecation.** Version `AuthMethod`s; let a connection migrate methods without
+  rewriting the capability or the flow.
+- 🧪 **Structured cred collection.** `multi_field`/`connection_string` need per-field validation, not one text box.
