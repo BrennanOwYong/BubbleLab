@@ -170,6 +170,10 @@ ExecutionResult + logs
 
 ## 9. Recreating it with Composio as the integration access point
 
+> ⛔ **SUPERSEDED — Composio is rejected.** The build spec is **§12** (Composio-free). The Composio
+> references in this section are retained only as the *rejected option*; disregard any pro attributed
+> to it. Integration access in the real design is native/self-owned per §12.
+
 You replace **principle #7** (hand-built service bubbles) with Composio, and keep the rest.
 
 ### 9.1 Layers to build
@@ -348,3 +352,94 @@ class NativeOAuthResolver implements CredentialResolver { /* oauth-service + enc
 2. Injection asks the resolver at run time; flow code only ever carries `id`. (Bubble's invariant, §11.2.)
 3. New providers/migrations implement `CredentialResolver`; nothing upstream recompiles.
 4. The scope audit and the read/write split are interface-level, so they survive the Composio→native swap.
+
+---
+
+## 12. BUILD SPEC — non-optimalities, extracted principles, improvement layer (Composio-free)
+
+> This section supersedes §9/§11's Composio framing. Integration access is **native/self-owned**.
+> Legend: ✅ verified in repo · ⚠️ inferred from code · 🧪 your addition.
+
+### 12.1 Full catalog of where Bubble Lab is NOT optimal
+
+**A. Runtime & execution**
+1. ✅ Credential/logging injection by **rewriting source strings** (`BubbleInjector` line-splice + shift tracking + re-reading params from source). Fragile. → pass secrets via a runtime **context object**, or transform via a real AST tool (ts-morph), never string-splice generated code.
+2. ✅ Execution = write temp `.ts` → `sanitizeScript` **regex-blocks `process.env`** → dynamic `import()` → delete. Brittle denylist security + FS churn. → sandbox (worker/isolate/vm) with an allowlist, not a temp file.
+3. ✅ Dynamic `import()` of **LLM-generated code** is a code-exec surface; the sanitizer is a bypassable denylist.
+4. ✅ Step execution/resume **unimplemented** (`runStep`/`resumeFromStep` are `@ts-expect-error` stubs; `currentStep`/`savedStates` dead) → no durability/partial runs in open-core.
+5. ✅ **All-or-nothing** execution; no partial/dry-run/per-op gating.
+6. ✅ Per-invocation clone machinery (hash `variableId` + frozen global dep-graph map injected into code) is intricate. → a runtime context stack is simpler.
+
+**B. Credentials & auth**
+7. ✅ `getValidToken` **refreshes on every resolution** regardless of expiry → latency + refresh-token rotation churn. → refresh-on-expiry with a buffer.
+8. ⚠️ **No distributed lock** on refresh → concurrent-refresh races across instances.
+9. ✅ **Reactive-only scope** enforcement; granted scopes stored (`oauthScopes`) but display-only; no pre-flight audit.
+10. ✅ **Reactive-only re-auth**; dead refresh-token discovered only at runtime failure.
+11. ✅ `revokeCredential` best-effort/no-op (provider revocation unimplemented).
+12. ✅ Credential validator uses **hand-maintained canned test params** per type (`createTestParameters` switch) — must be updated per credential.
+13. ✅ **Two overlapping credential systems** (`SLACK_CRED` OAuth vs `SLACK_API` token) — user confusion.
+14. ✅ **141 hand-maintained credential types** + per-provider `OAUTH_PROVIDERS` quirks — registry sprawl.
+15. ✅ Jira "use first accessible site" **TODO** — multi-site unhandled.
+
+**C. Integration authoring**
+16. ✅ **12-location registration checklist** per new integration — high friction, documented failure modes.
+17. ✅ **Monolithic single-file bubbles** (`slack.ts` ≈ 124 KB).
+18. ✅ Manual per-service adapter + discriminated union — the **headcount ceiling**.
+19. ✅ `get-bubble-details-tool` synthesizes **fake example values** (`"example string"`, `42`) → the LLM grounds on fiction, not real shapes.
+20. ✅ **No probe-to-ground**; build never executes; grounding is schema + synthetic only.
+
+**D. Contracts, testing, reliability**
+21. ✅ **No output-contract ground-truthing** → schema drift found only at runtime.
+22. ✅ **No contract knowledge base**; no learning from real responses (only conversation `agent-memory`).
+23. ✅ `resultSchema.parse` then wraps the whole result incl. `operation`; strip-fields IIFE is hacky.
+24. ✅ **No rollback / transaction / idempotency** for writes → unsafe repeated/failed writes.
+25. ✅ No mock-vs-real distinction for writes at build (they simply never run).
+
+**E. Product / UX**
+26. ✅ Raw API-key / connection-string / **multi-part creds** (R2 = 3 credentials) not non-technical-friendly.
+27. ✅ No **proactive** "this automation needs scope X you didn't grant" before a run.
+
+### 12.2 Extracted design principles — wrap any app for MAX author-ease + MAX user-control
+
+**Author-ergonomics (easiest to write):**
+- **P1 — One base contract, one call shape.** `new X(params).run()`. The author implements only `perform()` + declares schemas; the sealed lifecycle (validate-in → perform → validate-out → wrap) is inherited.
+- **P2 — Declare, don't wire.** Static metadata = `name`, input Zod, output Zod, `description`, `sideEffect: 'read'|'write'`, `requiredScopes`. The framework *derives* discovery, validation, injection, and scope-audit from declarations — the author writes none of that plumbing.
+- **P3 — Adapter hidden in `perform()`.** API/SDK/MCP/browser is invisible above the wrapper; the author maps normalized params ↔ native call in exactly one place.
+- **P4 — Registration by auto-discovery, not a checklist.** Drop a capability file → it's registered (filesystem/decorator registry). No 12-location edit.
+- **P5 — Small modules, not monoliths.** One operation (or a few) per file.
+- **P6 — Two-sided typed schemas.** Input validated at construct, output validated at return; the compiler + validator are the author's correctness oracle.
+- **P7 — Credentials as opaque refs.** The author never touches secrets/storage — just declares credential `type` + `requiredScopes`; resolution is the framework's job.
+
+**User granular-control (as much as possible):**
+- **U1 — Per-operation scope intent + per-connection scope picker** (checkboxes, plain-language descriptions, sensible defaults pre-ticked; user narrows/broadens up front).
+- **U2 — Per-node credential override** (bring your own account/key per step).
+- **U3 — Read/Write mode dial** per feature (test vs run — see §12.3).
+- **U4 — Opt-in dummy-data** for writes during test.
+- **U5 — Contract-deviation policy** the user picks: notify / block / auto-learn.
+- **U6 — Approval gates on writes; supervised mode for browser** (§10).
+- **U7 — Visibility before run**: which scopes, which side effects, which contract each step depends on.
+
+### 12.3 🧪 Improvement layer (sits ATOP the §12.2 principles)
+
+**Credential handling**
+- On connect/add, **test that the credential carries the scopes the automation needs — IF the provider exposes scope metadata.** Union the `requiredScopes` of every operation in the flow, diff against granted scopes, block/prompt re-consent before run.
+- **If no scope metadata exists** (many API keys have no introspection), skip the pre-flight — the mismatch is only discoverable on the **first real run**, and at that point tell the user plainly: *"this could not be known beforehand; the provider exposes no scope metadata."* Honest, not a silent failure.
+- Otherwise credentials are resolved + injected **at runtime only** (opaque-ref → live secret; §11.2 invariant kept).
+
+**Two modes per integration feature: `test` and `run`**
+- **Read-hinted tools → run for real in BOTH modes.** Reads ground the build with true responses (probe-to-ground).
+- **Write-hinted tools →** default to **mocked input & output contracts** (no prod mutation); **deviance detection** runs the same way as the credential/scope check — validate the *would-be* call + the mocked response against the known contract.
+  - **User opt-in:** allow write-hinted tools to **create dummy data** for real (user's explicit choice; user owns cleanup/consequences).
+- The read/write hint is declared per operation (`sideEffect`); the mode is a per-run dial (U3).
+
+**Contract knowledge base (the learning loop — Bubble has nothing here)**
+- **Any detected deviation of the input OR output contract** (real response shape ≠ known contract) **immediately updates the per-integration contract KB.** The KB is the source of truth the validator checks against, and it *self-heals* from real traffic — turning loose/guessed schemas into ground truth over time. This is the flywheel §8/§11 said Bubble structurally lacks.
+- **For web (browser) actions**, "contract" = the **required HTML/DOM environment** (expected selectors, page structure, required elements). Deviation = the page changed under the automation; same detect → KB-update loop, feeding the supervised-takeover/demonstration capture in §10.
+
+**Watch-outs (so the spec is robust, not just clean):**
+- 🧪 *Read ≠ always safe.* Some "read" ops have side effects (mark-as-read, audit logs, metered cost, rate limits). Treat the hint as a default, allow a per-op "not truly safe read" flag that requires confirmation.
+- 🧪 *Dummy data is still a real write.* Opt-in dummy-data mutates the real system — pair it with a teardown/cleanup step or a sandbox tenant, and label it loudly in the UI.
+- 🧪 *Don't let one anomaly poison the KB.* A single malformed/error response shouldn't rewrite the contract. Gate KB updates behind a confirmation threshold (N consistent observations) and **version** contracts so you can diff/roll back.
+- 🧪 *Scope metadata coverage is uneven.* Build the pre-flight audit as best-effort per provider; the first-run-discovery fallback (with honest messaging) is the correct default where metadata is absent.
+
+**One-line thesis:** keep Bubble's wisdom (uniform typed leaf, LLM-out-of-run-path, static analyzability, creds-as-refs), fix its non-optimalities (§12.1), and add the two things it never had — **real grounding (read-probe + write-mock with deviance detection)** and a **self-healing per-integration contract KB** — with the read/write hint and the contract policy exposed to the user as first-class dials.
