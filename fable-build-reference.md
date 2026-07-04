@@ -71,18 +71,24 @@ Each item: `[ ]` to check off, an **AC** (acceptance criterion = done-definition
 ### C. Doc-grounded side-effects + test/run modes
 - [ ] **IR-8 — Doc-grounded `sideEffect` classifier (provenance-carrying).** Source hierarchy: MCP
   annotations (`readOnlyHint`/`destructiveHint`/`idempotentHint`) > OpenAPI (method + prose) > doc-NLP >
-  manual. Never method-only. Each classification carries `confidence`, `source`, `citation`. **AC:**
-  every op's read/write hint is derived from a cited source, not hand-typed. (§13.3)
-- [ ] **IR-9 — Two modes per feature: `test` and `run`.**
-  - [ ] Read-hinted tools **run for real in BOTH** modes (probe-to-ground). **AC:** reads ground the
-    build with true responses.
-  - [ ] Write-hinted tools default to **mocked input/output contracts + deviance detection**;
-    **user opt-in** to let writes create dummy data (user owns cleanup). **AC:** no prod mutation without
-    explicit opt-in. (§12.3)
+  manual. Never method-only. Each classification carries `confidence`, `source`, `citation`.
+  **Definition (binding):** an op is **write-hinted** if the docs say it **creates a new record — even
+  as a side effect**; otherwise it is **read-hinted** (self-explanatory). **AC:** every op's read/write
+  hint is derived from a cited source, not hand-typed, using this definition. (§13.3)
+- [ ] **IR-9 — The Tester: run individual functions for real to catch docs-are-wrong (deviation check).**
+  Two modes per feature (`test` / `run`); execution policy is set by the hint:
+  - [ ] **Read-hinted → run for real in BOTH modes** (probe-to-ground). **AC:** reads ground the build
+    with true responses; deviation vs the known contract is detected.
+  - [ ] **Write-hinted, default → mock** the input/output contracts (no prod mutation) + run deviance
+    detection against the mocked call. **AC:** zero prod writes in this default path.
+  - [ ] **Write-hinted, "Dummy-data testing" (named, user-permitted) →** actually invoke the write op to
+    **create dummy records**, specifically to catch cases where the docs are wrong; user grants explicit
+    permission and owns cleanup. **AC:** never runs without explicit per-op user permission; produces a
+    real contract observation; results feed the KB. (§12.3)
 - [ ] **IR-10 — "Auto-run in test" gate.** `read && !destructive && confidence ≥ threshold &&
-  authoritative source`; everything else → write path. Runtime verification downgrades a "read" to
-  `read_with_side_effects` if a state change is detected. **AC:** a doc-said-read that mutates is caught
-  and reclassified. (§13.3, watch-out: reads ≠ always safe)
+  authoritative source`; everything else → mock path (or Dummy-data testing only with permission).
+  Runtime verification downgrades a "read" to `read_with_side_effects` if a state change is detected.
+  **AC:** a doc-said-read that actually creates/mutates is caught and reclassified. (§13.3)
 
 ### D. Contract knowledge base (the learning loop Bubble lacks)
 - [ ] **IR-11 — Self-healing per-integration contract KB.** Any detected deviation of the input OR
@@ -96,20 +102,17 @@ Each item: `[ ]` to check off, an **AC** (acceptance criterion = done-definition
   detected and recorded, not silently failed. (§12.3, §13.3)
 
 ### E. Differentiators (things Bubble structurally lacks)
-- [ ] **IR-14 — Company Brain flywheel.** Feed probe responses + execution traces into the brain so
-  schema/contract hardening compounds per customer-month. **AC:** the contract KB is brain-backed, not
-  per-conversation memory. (§8, §9.3)
-- [ ] **IR-15 — Browser observe-and-intervene.** Stream the live browser session; human can watch,
+- [ ] **IR-14 — Browser observe-and-intervene.** Stream the live browser session; human can watch,
   pause, interrupt, advise, take over, and demonstrate; capture the demonstration as a replayable trace
-  that tightens the capability + feeds the KB. **AC:** supervised mode with takeover + trace capture. (§10)
+  that tightens the capability + feeds the contract KB. **AC:** supervised mode with takeover + trace capture. (§10)
 
 ### F. Non-optimalities to AVOID (Bubble's mistakes — do the opposite)
-- [ ] **IR-16 — Runtime-context injection, not source-string rewriting.** Pass creds/logging via a
+- [ ] **IR-15 — Runtime-context injection, not source-string rewriting.** Pass creds/logging via a
   runtime context object (or AST transform), never splice generated code. **AC:** no line-shift string
   manipulation of generated flows. (fixes §12.1 #1)
-- [ ] **IR-17 — Sandboxed execution, not temp-file + dynamic import.** Run in a worker/isolate/vm with
+- [ ] **IR-16 — Sandboxed execution, not temp-file + dynamic import.** Run in a worker/isolate/vm with
   an allowlist, not a `process.env` regex denylist. **AC:** no temp `.ts` + `import()` exec path. (fixes §12.1 #2/#3)
-- [ ] **IR-18 — Durable step execution/resume.** Implement real step state + resume (not stubs). **AC:**
+- [ ] **IR-17 — Durable step execution/resume.** Implement real step state + resume (not stubs). **AC:**
   a flow can resume from a step; partial runs exist. (fixes §12.1 #4)
 
 ---

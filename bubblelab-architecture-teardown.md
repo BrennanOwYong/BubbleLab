@@ -9,7 +9,7 @@
 > - 🏢 **PLATFORM** = referenced by docs but lives in the proprietary platform, not open-core.
 > - 🧪 **YOURS** = a design recommendation for *your* build; NOT a Bubble Lab feature.
 >   (rollback, idempotency keys, dry-run, read-only explorer credentials, probe-to-ground,
->   brain-backed schema hardening all fall here.)
+>   the self-healing contract KB all fall here.)
 
 ---
 
@@ -161,7 +161,7 @@ ExecutionResult + logs
 
 ## 8. What Bubble Lab does NOT have (so you don't assume it)
 
-- ❌ Company Brain / persistent permission-aware knowledge graph (only conversation `agent-memory` + traces). **Your moat.**
+- ❌ Persistent self-healing knowledge of real API + DOM shapes (only conversation `agent-memory` + traces). The tool's answer is the **contract KB (§12.3)** — not a company-wide brain.
 - ❌ Rollback / DB transactions around writes.
 - ❌ Idempotency keys.
 - ❌ Dry-run / per-operation write gating / partial execution.
@@ -205,10 +205,10 @@ You replace **principle #7** (hand-built service bubbles) with Composio, and kee
 - ⚠️ Composio in the **runtime path** = a dependency you don't control; for determinism-critical
   capabilities, consider calling the API directly at run time using the schema you already froze.
 
-### 9.3 Dial + brain (your differentiators)
+### 9.3 The agent dial (differentiator)
 - Make `Agent` a capability (like `AIAgentBubble`) so deterministic/agentic interleaves per node.
-- Feed probe responses + execution traces into the **Company Brain** so schema-hardening compounds
-  per customer-month — a flywheel Bubble structurally lacks.
+- Ground contracts from real traffic into the **contract KB (§12.3)** so hardening compounds — no
+  external "brain" needed; the KB is self-contained and part of the tool.
 
 ### 9.4 Minimum viable build order
 1. `Capability` base (shape) + Zod two-sided validation.
@@ -216,7 +216,7 @@ You replace **principle #7** (hand-built service bubbles) with Composio, and kee
 3. Compiler (static parse + extract + type-check) as the agent's gate.
 4. Tester: read-only probe-to-ground + schema freeze.
 5. Runner with write-scoped creds + idempotency + audit.
-6. Add the `Agent` capability and brain-backed hardening last, once a second consumer exists.
+6. Add the `Agent` capability and contract-KB hardening last, once a second consumer exists.
 
 > Rule of thumb (Bubble's real lesson): **layer count should track the number of distinct
 > *consumers* of the artifact (deterministic code, LLM agent, static pipeline), not the number of
@@ -246,8 +246,8 @@ a human's "do it this way" is highest-value. API tools rarely need this; browser
   steps + output schema (the browser analogue of probe-to-ground).
 - **Advice channel:** human annotations attach to the trace ("prefer this selector", "this modal
   appears intermittently") and surface to the agent on the next generation pass.
-- **Brain tie-in:** store traces + annotations per site in the Company Brain so browser know-how
-  compounds per customer-month — the long-tail-SaaS knowledge Bubble structurally can't accumulate.
+- **KB tie-in:** store traces + annotations per site in the **contract KB (§12.3)** so browser know-how
+  (working selectors, intermittent modals) compounds and re-grounds the capability over time.
 
 **Prereqs / dependencies:** the supervised-mode flag + interruptible checkpoints belong in the
 **Runner**; the trace-capture + replay belongs in the **Tester**; both need the `sideEffect` tag and
@@ -426,14 +426,20 @@ class NativeOAuthResolver implements CredentialResolver { /* oauth-service + enc
 - **If no scope metadata exists** (many API keys have no introspection), skip the pre-flight — the mismatch is only discoverable on the **first real run**, and at that point tell the user plainly: *"this could not be known beforehand; the provider exposes no scope metadata."* Honest, not a silent failure.
 - Otherwise credentials are resolved + injected **at runtime only** (opaque-ref → live secret; §11.2 invariant kept).
 
-**Two modes per integration feature: `test` and `run`**
-- **Read-hinted tools → run for real in BOTH modes.** Reads ground the build with true responses (probe-to-ground).
-- **Write-hinted tools →** default to **mocked input & output contracts** (no prod mutation); **deviance detection** runs the same way as the credential/scope check — validate the *would-be* call + the mocked response against the known contract.
-  - **User opt-in:** allow write-hinted tools to **create dummy data** for real (user's explicit choice; user owns cleanup/consequences).
+**The Tester — run the individual functions for real to catch docs-are-wrong (deviation check).**
+Write-hint definition (binding): an op is **write-hinted** if its docs say it **creates a new record —
+even as a side effect**; everything else is **read-hinted**. Two modes per feature (`test`/`run`);
+execution policy set by the hint:
+- **Read-hinted → run for real in BOTH modes.** Reads ground the build with true responses (probe-to-ground).
+- **Write-hinted, default → mock** the input & output contracts (no prod mutation); **deviance detection**
+  validates the *would-be* call + the mocked response against the known contract.
+- **Write-hinted → "Dummy-data testing" (named mode, user-permitted).** With explicit per-op user
+  permission, actually invoke the write op to **create dummy records** — the point is to catch cases
+  where the docs are wrong. User owns cleanup; the real observation feeds the contract KB.
 - The read/write hint is declared per operation (`sideEffect`); the mode is a per-run dial (U3).
 
 **Contract knowledge base (the learning loop — Bubble has nothing here)**
-- **Any detected deviation of the input OR output contract** (real response shape ≠ known contract) **immediately updates the per-integration contract KB.** The KB is the source of truth the validator checks against, and it *self-heals* from real traffic — turning loose/guessed schemas into ground truth over time. This is the flywheel §8/§11 said Bubble structurally lacks.
+- **Any detected deviation of the input OR output contract** (real response shape ≠ known contract) **immediately updates the per-integration contract KB.** The KB is the source of truth the validator checks against, and it *self-heals* from real traffic — turning loose/guessed schemas into ground truth over time. The KB itself is the compounding asset; no external brain required.
 - **For web (browser) actions**, "contract" = the **required HTML/DOM environment** (expected selectors, page structure, required elements). Deviation = the page changed under the automation; same detect → KB-update loop, feeding the supervised-takeover/demonstration capture in §10.
 
 **Watch-outs (so the spec is robust, not just clean):**
@@ -512,6 +518,10 @@ interface SideEffectClass {
   citation?: string;                 // doc URL / spec path / snippet — provenance is mandatory
 }
 ```
+**Binding definition:** classify as `write` if the docs state the op **creates a new record — even as a
+side effect**; `read` otherwise (self-explanatory); `read_with_side_effects` when a nominal read also
+mutates (e.g. mark-as-read). The write test is "does it bring a new record into existence," not "is it a POST."
+
 **Source hierarchy (most → least authoritative):**
 1. **MCP tool annotations** if the app is MCP-accessed: `readOnlyHint`, `destructiveHint`, `idempotentHint`
    map directly. Cleanest doc-grounded signal.
