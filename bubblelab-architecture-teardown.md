@@ -569,3 +569,55 @@ takes the **write path**: mocked contracts + deviance detection, or user-opt-in 
 - 🧪 **Multi-method apps + deprecation.** Version `AuthMethod`s; let a connection migrate methods without
   rewriting the capability or the flow.
 - 🧪 **Structured cred collection.** `multi_field`/`connection_string` need per-field validation, not one text box.
+
+---
+
+## 14. Differentiation thesis — why this is a different product, not a reskin
+
+### 14.1 Honest disclaimer: regex→AST is hygiene, NOT the differentiator
+Do **not** pitch "we use the AST correctly" as the product edge. Replacing the §12.1-A regex checks (and
+fixing dead checks like the `@nodex` import guard) is correctness hygiene — invisible to users, and
+BubbleLab ships fine without it because the real AST parse + TS compile catch most issues anyway. If that
+were the whole story this would be a reskin. It isn't.
+
+### 14.2 What they use the AST for vs what it can do
+BubbleLab already parses a real AST (`@typescript-eslint/parser` in `BubbleParser`; `ts.createSourceFile`
+in lint) — but only for **authoring-time plumbing**: find `new XBubble()`, build the dependency graph,
+clone per call-site, target credential injection. That is the ceiling of its reach.
+The AST's full potential is as a **join key**: call-site ↔ operation ↔ declared contract ↔ observed
+runtime reality. That join is what lets the system say *"the response at this call site, for this
+operation, deviated from this declared output contract — heal it here."* BubbleLab never makes that join,
+because **build never executes** (no Tester, §12.1 #20), so the AST stops at authoring time.
+
+### 14.3 The two different problems (this is the real reason)
+- **Theirs — authoring-time correctness:** "generate an automation that works *today*." Tagline:
+  *"Prompt once, automate forever."* They nail the first run.
+- **Ours — lifetime correctness:** "keep the automation correct as the API/DOM underneath it *changes*."
+  "Forever" is where their promise breaks: the moment a provider renames a field or a page shifts, a
+  compiled BubbleLab flow **silently** breaks, and the user learns about it when a scheduled job fails.
+Different jobs. Ours needs the AST-join + Tester + contract KB + side-effect/scope audit — a mechanism
+they don't have and their architecture doesn't reach.
+
+### 14.4 "But they have users" — why that isn't the counter-argument
+- Users today validate the *problem* (ops automation is real), not that the problem is *solved*.
+- Ops automation's real job-to-be-done is **unattended trust** — a workflow that breaks silently is worse
+  than none (you believed it ran). "Keeps working when the world changes" isn't a nice-to-have; it's the core.
+- Decay compounds: integrations × time × scale. The property that wins the demo — prompt once — is the
+  property that **churns at month 6**. Their strength is a snapshot; the gain is in retention, not the demo.
+
+### 14.5 The one-paragraph "not a ripoff" reason (say this)
+> We are not rebuilding BubbleLab; we are solving the problem their architecture structurally cannot.
+> BubbleLab optimizes for **authoring-time correctness** — compile a natural-language request into a flow
+> that works on the first run. We optimize for **lifetime correctness** — automations that stay correct as
+> the APIs and web pages beneath them change, via runtime contract grounding, drift detection, and
+> self-healing per-integration contracts. The AST is shared infrastructure, but they wire it only to
+> authoring-time credential injection; we use it as the spine that reconciles declared contracts with
+> observed reality. Same category, different thesis: **they make automations that work; we make
+> automations that keep working.**
+
+### 14.6 Where the AST actually matters (precise)
+Not as validation hygiene — as the **stable identity layer** for drift-healing. Node identity
+(operation + call-site) is the key the contract KB updates against and the Tester probes by. Without a
+real AST you cannot map an observed deviation back to the operation/contract to fix it — you'd be back to
+regex-guessing which call produced which response. That is the "right place" for the AST, and it is a
+place BubbleLab's architecture never routes it to.
