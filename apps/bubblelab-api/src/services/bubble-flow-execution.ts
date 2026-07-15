@@ -157,6 +157,10 @@ export async function executeBubbleFlowWithTracking(
         appType: appType,
         testMode: options.testMode,
         approvedWriteCallSites: options.approvedWriteCallSites,
+        // Contract KB provenance (IR-11/12): which flow/execution produced
+        // the observations this run feeds into the KB.
+        bubbleFlowId,
+        executionRecordId: execResult[0].id,
       }
     );
 
@@ -193,6 +197,10 @@ export async function executeBubbleFlowWithTracking(
         ? result.summary || 'Execution completed without logging'
         : result.data,
       error: result.error,
+      // Drift signal preservation (IR-11/12): forward the stable code and
+      // structured findings — this boundary must not collapse them either.
+      errorCode: result.errorCode,
+      drift: result.drift,
     };
   } catch (error) {
     // Update execution record with error and collected logs

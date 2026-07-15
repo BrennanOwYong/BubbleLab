@@ -32,4 +32,6 @@ export const {
   bubbleFlowExecutionsRelations,
   bubbleFlowEvaluationsRelations,
   users,
+  contractKbDocuments,
+  contractObservations,
 } = schema;

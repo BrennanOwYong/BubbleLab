@@ -21,6 +21,11 @@ import { getMonthlyLimitForPlan } from './subscription-validation.js';
 import { db } from '../db/index.js';
 import { users } from '../db/schema.js';
 import { eq, sql } from 'drizzle-orm';
+import {
+  createContractObservationCollector,
+  createRecordedMockProvider,
+  ingestContractObservations,
+} from './contract-kb-service.js';
 
 export interface ExecutionOptions {
   userId: string; // Add userId for new credential system
@@ -34,6 +39,10 @@ export interface ExecutionOptions {
   testMode?: boolean;
   /** Call-site keys approved to execute writes for real in test mode. */
   approvedWriteCallSites?: string[];
+  /** Flow id, threaded to the Contract KB audit log (IR-11/12). */
+  bubbleFlowId?: number;
+  /** Execution record id, threaded to the Contract KB audit log (IR-11/12). */
+  executionRecordId?: number;
 }
 
 export interface StreamingExecutionOptions extends ExecutionOptions {
@@ -107,6 +116,13 @@ async function runBubbleFlowCommon(
 
   // Check if user has exceeded monthly credits when using system credentials
 
+  // Contract KB (IR-11/12): install the observation sink for EVERY run —
+  // production runs feeding the KB is the point (the reference build only
+  // ever learned from lab tests because nothing consumed the drift signal).
+  // Test runs additionally get the recorded-mock provider so mocked writes
+  // are served recorded reality instead of schema-derived fiction.
+  const contractCollector = createContractObservationCollector();
+
   // Create runner with user credential mapping
   const runner = new BubbleRunner(bubbleScriptInstance, bubbleFactory, {
     enableLogging: Boolean(options.streamCallback),
@@ -118,6 +134,12 @@ async function runBubbleFlowCommon(
     userCredentialMapping,
     testMode: options.testMode,
     approvedWriteCallSites: options.approvedWriteCallSites,
+    executionMeta: {
+      contractObservationSink: contractCollector.sink,
+      ...(options.testMode
+        ? { recordedMockProvider: createRecordedMockProvider() }
+        : {}),
+    },
   });
   const usageCheck = await getMonthlyLimitForPlan(options.userId);
 
@@ -224,6 +246,22 @@ async function runBubbleFlowCommon(
     bubble_lab_clerk_user_id: options.userId,
   };
   const result = await runner.runAll(enhancedPayload);
+
+  // Contract KB consumption (IR-11/12): ingest every observation this run
+  // produced — including drift observed during PRODUCTION traffic. Runs
+  // after runAll on both success and failure paths (runAll never throws);
+  // best-effort, never affects the run result.
+  try {
+    await ingestContractObservations({
+      observations: contractCollector.observations,
+      source: options.testMode ? 'test' : 'production',
+      bubbleFlowId: options.bubbleFlowId,
+      executionId: options.executionRecordId,
+    });
+  } catch (error) {
+    console.error('[contract-kb] observation ingest failed (non-blocking):', error);
+  }
+
   // Track service usage if available
   if (result.success) {
     // Increment monthly usage count for every execution

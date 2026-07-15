@@ -12,6 +12,8 @@ import {
   webhooks,
   userCredentials,
   users,
+  contractKbDocuments,
+  contractObservations,
 } from '../db/schema.js';
 
 export const TEST_USER_ID = '1';
@@ -34,6 +36,8 @@ beforeEach(async () => {
   await db.delete(bubbleFlowExecutions);
   await db.delete(bubbleFlows);
   await db.delete(userCredentials);
+  await db.delete(contractObservations);
+  await db.delete(contractKbDocuments);
 
   // Create test user for tests that need it
   await db

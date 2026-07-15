@@ -237,3 +237,47 @@ export const bubbleFlowEvaluationsRelations = relations(
 );
 
 // No relations needed for userCredentials as it's a standalone table
+
+// ---------------------------------------------------------------------------
+// Contract Knowledge Base (IR-11/12)
+// ---------------------------------------------------------------------------
+
+/**
+ * One document per integration (bubbleName): the full versioned contract
+ * state (immutable versions, pending clusters, latest grounded samples).
+ * The document shape is Zod-validated on load by @bubblelab/bubble-core's
+ * ContractKb — a corrupt row fails loudly instead of poisoning the KB.
+ */
+export const contractKbDocuments = sqliteTable('contract_kb_documents', {
+  integration: text('integration').primaryKey(),
+  document: text('document', { mode: 'json' }).notNull(),
+  updatedAt: int('updated_at', { mode: 'timestamp' })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+/**
+ * Append-only audit log of every contract observation ingested (or refused),
+ * with provenance: which run produced it (production vs test), whether it was
+ * grounded, and what the KB did with it. This is the record that proves
+ * production traffic reaches the KB — the signal the reference build lost.
+ */
+export const contractObservations = sqliteTable('contract_observations', {
+  id: int().primaryKey({ autoIncrement: true }),
+  integration: text('integration').notNull(),
+  nodeKey: text('node_key').notNull(),
+  operation: text('operation'),
+  source: text('source').notNull(), // 'production' | 'test'
+  grounded: int('grounded', { mode: 'boolean' }).notNull(),
+  accepted: int('accepted', { mode: 'boolean' }).notNull(),
+  action: text('action'), // 'confirmed' | 'pending' | 'promoted' | 'refused'
+  errorCode: text('error_code'), // OUTPUT_CONTRACT_VIOLATION when the observation carried drift
+  driftFindings: text('drift_findings', { mode: 'json' }),
+  sample: text('sample', { mode: 'json' }),
+  bubbleFlowId: int('bubble_flow_id'),
+  executionId: int('execution_id'),
+  observedAt: text('observed_at').notNull(),
+  createdAt: int('created_at', { mode: 'timestamp' })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
