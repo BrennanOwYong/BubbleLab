@@ -6,7 +6,12 @@ import type {
   BubbleResult,
   BubbleOperationResult,
 } from '@bubblelab/bubble-core';
-import type { BubbleName } from '@bubblelab/shared-schemas';
+import type {
+  BubbleName,
+  BubbleOperationMetadata,
+  OperationSideEffectMetadata,
+  SideEffect,
+} from '@bubblelab/shared-schemas';
 import { MockDataGenerator } from '@bubblelab/shared-schemas';
 import type { DependencyGraphNode } from '@bubblelab/shared-schemas';
 import {
@@ -175,6 +180,32 @@ export abstract class BaseBubble<
       currentUniqueId: childUniqueId,
       __uniqueIdCounters__: counters,
     };
+  }
+
+  /**
+   * Doc-grounded side-effect classification of the CURRENT operation (IR-8).
+   * Resolves the instance's `operation` param against the class's static
+   * `operationMetadata` map (declared per operation, with provenance).
+   * Fail-safe default: an unknown operation, a bubble without metadata, or a
+   * bubble without an `operation` param classifies as 'write' — never assume
+   * an unclassified operation is safe to run.
+   */
+  get sideEffect(): SideEffect {
+    return this.operationSideEffectMetadata?.sideEffect ?? 'write';
+  }
+
+  /**
+   * Full classification (with provenance: confidence, source, citation) for the
+   * current operation, or undefined when the operation is unclassified.
+   */
+  get operationSideEffectMetadata(): OperationSideEffectMetadata | undefined {
+    const ctor = this.constructor as typeof BaseBubble & {
+      operationMetadata?: BubbleOperationMetadata;
+    };
+    const operation = (this.params as { operation?: unknown } | undefined)
+      ?.operation;
+    if (typeof operation !== 'string') return undefined;
+    return ctor.operationMetadata?.[operation];
   }
 
   saveResult<R extends BubbleOperationResult>(result: BubbleResult<R>): void {

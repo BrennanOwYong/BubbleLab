@@ -4,12 +4,25 @@ import type {
   BubbleContext,
 } from '@bubblelab/bubble-core';
 import { BaseBubble } from './base-bubble-class.js';
-import type { DatabaseMetadata } from '@bubblelab/shared-schemas';
+import type {
+  DatabaseMetadata,
+  BubbleOperationMetadata,
+} from '@bubblelab/shared-schemas';
 
 export abstract class ServiceBubble<
   TParams extends ServiceBubbleParams = ServiceBubbleParams,
   TResult extends BubbleOperationResult = BubbleOperationResult,
 > extends BaseBubble<TParams, TResult> {
+  /**
+   * Doc-grounded side-effect metadata, declared PER OPERATION (IR-8).
+   * Keys are the `operation` discriminator literals of the params schema.
+   * Subclasses declare it from a colocated `<bubble>.metadata.ts` file so the
+   * classifications (with source + citation) travel with the bubble.
+   * Operations absent from the map fail safe to 'write' at runtime
+   * (see BaseBubble.sideEffect).
+   */
+  static readonly operationMetadata?: BubbleOperationMetadata;
+
   public readonly type = 'service' as const;
   public authType?: 'oauth' | 'apikey' | 'none' | 'connection-string';
 

@@ -4,6 +4,7 @@ import {
   CredentialType,
   type BubbleName,
   type BubbleNodeType,
+  type BubbleOperationMetadata,
   BUBBLE_CREDENTIAL_OPTIONS,
   TRIGGER_EVENT_CONFIGS,
 } from '@bubblelab/shared-schemas';
@@ -52,6 +53,8 @@ export type BubbleClassWithMetadata<TResult extends object = object> = {
   readonly type: BubbleNodeType;
   readonly credentialOptions?: CredentialType[];
   readonly bubbleDependencies?: BubbleName[];
+  /** Doc-grounded per-operation side-effect classifications (IR-8), keyed by operation literal. */
+  readonly operationMetadata?: BubbleOperationMetadata;
   toolAgent?: (
     credentials: Partial<Record<CredentialType, string>>,
     config?: Record<string, unknown>,
@@ -704,6 +707,8 @@ export class BubbleFactory {
       alias: BubbleClass.alias,
       credentialOptions: BubbleClass.credentialOptions,
       bubbleDependencies: BubbleClass.bubbleDependencies,
+      // Doc-grounded per-operation side-effect classifications (IR-8)
+      operationMetadata: BubbleClass.operationMetadata,
       // Provide richer dependency details (ai-agent may include tools)
       schema: BubbleClass.schema,
       resultSchema: BubbleClass.resultSchema,

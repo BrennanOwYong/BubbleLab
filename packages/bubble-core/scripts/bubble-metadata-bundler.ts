@@ -8,6 +8,7 @@ import { BubbleFactory } from '../dist/bubble-factory.js';
 import {
   BUBBLE_CREDENTIAL_OPTIONS,
   type BubbleName,
+  type BubbleOperationMetadata,
 } from '@bubblelab/shared-schemas';
 
 interface BubbleMetadata {
@@ -25,6 +26,8 @@ interface BubbleMetadata {
   outputJsonSchema?: JsonSchema7Type;
   usageExample: string;
   requiredCredentials: string[];
+  // Doc-grounded per-operation side-effect classifications with provenance (IR-8)
+  operationMetadata?: BubbleOperationMetadata;
 }
 
 interface BubblesManifest {
@@ -172,6 +175,7 @@ class BubbleMetadataBundler {
               outputJsonSchema,
               usageExample: detailsResult.data.usageExample,
               requiredCredentials: requiredCredentials,
+              operationMetadata: metadata?.operationMetadata,
             });
           } else {
             this.error(
