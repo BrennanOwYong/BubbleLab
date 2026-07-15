@@ -247,6 +247,9 @@ export class BubbleFactory {
     const { HelloWorldBubble } = await import(
       './bubbles/service-bubble/hello-world.js'
     );
+    const { ContractDriftProbeBubble } = await import(
+      './bubbles/service-bubble/contract-drift-probe.js'
+    );
     const { AIAgentBubble } = await import(
       './bubbles/service-bubble/ai-agent.js'
     );
@@ -482,6 +485,10 @@ export class BubbleFactory {
 
     // Create the default factory instance
     this.register('hello-world', HelloWorldBubble as BubbleClassWithMetadata);
+    this.register(
+      'contract-drift-probe',
+      ContractDriftProbeBubble as BubbleClassWithMetadata
+    );
     this.register('ai-agent', AIAgentBubble as BubbleClassWithMetadata);
     this.register('postgresql', PostgreSQLBubble as BubbleClassWithMetadata);
     this.register('slack', SlackBubble as BubbleClassWithMetadata);
