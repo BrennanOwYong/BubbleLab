@@ -44,6 +44,18 @@ export interface BubbleRunnerOptions {
   pricingTable: Record<string, { unit: string; unitCost: number }>;
   userCredentialMapping?: Map<number, Set<CredentialType>>;
   executionMeta?: ExecutionMeta;
+  /**
+   * Mark this run as a TEST. Threaded to every bubble via executionMeta (the
+   * existing runtime-context path — no source rewriting) and enforced in
+   * BaseBubble.action(): write-hinted operations return mocks and never reach
+   * performAction; read-hinted operations run for real.
+   */
+  testMode?: boolean;
+  /**
+   * Call-site keys explicitly approved to execute writes for real in test
+   * mode ("dummy-data" grant). Exact match only.
+   */
+  approvedWriteCallSites?: string[];
 }
 
 export class BubbleRunner {
@@ -486,9 +498,26 @@ export class BubbleRunner {
       // Note: We need to determine the constructor parameters from the class
       const flowInstance = this.instantiateFlowClass(FlowClass);
 
-      // Attach execution metadata so generated code can thread it into BubbleContext
-      if (this.options.executionMeta) {
-        (flowInstance as any).__executionMeta__ = this.options.executionMeta;
+      // Attach execution metadata so generated code can thread it into BubbleContext.
+      // testMode / approvedWriteCallSites ride the same channel: the injected
+      // constructor context already carries executionMeta into every bubble, so
+      // the test-mode switch needs no additional source rewriting.
+      const executionMeta: ExecutionMeta | undefined =
+        this.options.executionMeta ||
+        this.options.testMode !== undefined ||
+        this.options.approvedWriteCallSites
+          ? {
+              ...this.options.executionMeta,
+              ...(this.options.testMode !== undefined && {
+                testMode: this.options.testMode,
+              }),
+              ...(this.options.approvedWriteCallSites && {
+                approvedWriteCallSites: this.options.approvedWriteCallSites,
+              }),
+            }
+          : undefined;
+      if (executionMeta) {
+        (flowInstance as any).__executionMeta__ = executionMeta;
       }
 
       // Ensure the logger is set on the flow instance
