@@ -27,6 +27,7 @@
     "build:types": "tsc",
     "build:bundle": "tsx scripts/bubble-bundler.ts",
     "build:metadata": "tsx scripts/bubble-metadata-bundler.ts",
+    "backfill:operation-metadata": "tsx scripts/backfill-operation-metadata.ts",
     "dev": "tsc --watch",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --exclude='**/*.integration.{test,spec}.ts'",
