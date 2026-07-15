@@ -18,6 +18,7 @@ import {
   BubbleValidationError,
   BubbleExecutionError,
   BubbleError,
+  BubbleOutputContractViolationError,
 } from '@bubblelab/bubble-core';
 import type { ExecutionPlan, ExecutionStep, MiniStep } from './types';
 import { BubbleScript } from '../parse/BubbleScript';
@@ -558,8 +559,58 @@ export class BubbleRunner {
         data: result,
       };
     } catch (error: unknown) {
-      // Enhanced error handling for bubble-specific errors
-      if (error instanceof BubbleValidationError) {
+      // CONTRACT DRIFT (IR-11/12): checked FIRST — it subclasses
+      // BubbleValidationError, and the whole point is that the drift signal
+      // must NOT collapse into the generic validation branch below (the
+      // reference-build bug: the drift code was lost at exactly this
+      // boundary and nothing downstream could consume it). The stable
+      // errorCode plus structured drift payload survive into the
+      // ExecutionResult the API stores and returns.
+      if (error instanceof BubbleOutputContractViolationError) {
+        const driftError = error;
+        this.logger?.fatal(
+          `Output contract violation (drift) at ${driftError.bubbleName}: ${driftError.message}`,
+          driftError,
+          {
+            variableId: driftError.variableId,
+            bubbleName: driftError.bubbleName,
+            additionalData: {
+              errorCode: driftError.code,
+              driftFindings: driftError.driftFindings,
+              operation: driftError.operation,
+              callSiteKey: driftError.callSiteKey,
+            },
+          }
+        );
+
+        if (
+          this.logger instanceof StreamingBubbleLogger ||
+          this.logger instanceof WebhookStreamLogger
+        ) {
+          this.logger.logExecutionComplete(
+            false,
+            undefined,
+            `Output contract violation at ${driftError.bubbleName} (variableId: ${driftError.variableId}): ${driftError.message}`
+          );
+        }
+
+        return {
+          executionId: 0,
+          success: false,
+          summary: this.logger.getExecutionSummary(),
+          error: `Output contract violation at ${driftError.bubbleName} (variableId: ${driftError.variableId}): ${driftError.message}`,
+          errorCode: driftError.code,
+          drift: [
+            {
+              bubbleName: driftError.bubbleName ?? 'unknown',
+              operation: driftError.operation,
+              callSiteKey: driftError.callSiteKey,
+              findings: driftError.driftFindings,
+            },
+          ],
+          data: undefined,
+        };
+      } else if (error instanceof BubbleValidationError) {
         const validationError = error as BubbleValidationError;
         this.logger?.fatal(
           `Bubble validation failed: ${validationError.message}`,
