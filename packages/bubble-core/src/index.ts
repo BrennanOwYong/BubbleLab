@@ -4,6 +4,26 @@ export * from '@bubblelab/shared-schemas';
 export * from './types/credentials.js';
 export * from './types/available-tools.js';
 
+// Export doc-grounded side-effect classification (IR-8)
+export {
+  classifySideEffect,
+  classifyFromMcpAnnotations,
+  classifyFromOpenApi,
+  classifyFromDocText,
+  classifyFromManual,
+  extractDocSignals,
+  ClassificationError,
+} from './utils/side-effect-classifier.js';
+export type {
+  SideEffectEvidence,
+  McpAnnotationEvidence,
+  OpenApiEvidence,
+  DocProseEvidence,
+  ManualEvidence,
+  McpToolAnnotations,
+  DocSignals,
+} from './utils/side-effect-classifier.js';
+
 // Export capabilities framework
 export * from './capabilities/index.js';
 

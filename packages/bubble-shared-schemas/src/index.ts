@@ -32,3 +32,4 @@ export * from './permission-schema.js';
 export * from './organization-schema.js';
 export * from './capability-schema.js';
 export * from './execution-meta.js';
+export * from './operation-metadata-schema.js';

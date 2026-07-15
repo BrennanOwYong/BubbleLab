@@ -56,6 +56,12 @@ const GetBubbleDetailsToolResultSchema = z.object({
   usageExample: z
     .string()
     .describe('Code example showing how to use the bubble'),
+  operationSideEffects: z
+    .string()
+    .optional()
+    .describe(
+      'Per-operation side-effect classifications (read / write / read_with_side_effects) with provenance. Operations marked write or read_with_side_effects mutate real systems when executed.'
+    ),
   success: z.boolean().describe('Whether the operation was successful'),
   error: z.string().describe('Error message if operation failed'),
 });
@@ -130,6 +136,7 @@ export class GetBubbleDetailsTool extends ToolBubble<
       className,
       schema: metadata.schema,
       resultSchema: metadata.resultSchema,
+      operationMetadata: metadata.operationMetadata,
     });
 
     // Generate string representation of output schema
@@ -147,6 +154,12 @@ export class GetBubbleDetailsTool extends ToolBubble<
       ? metadata.longDescription
       : undefined;
 
+    // Surface per-operation side-effect classifications so the code-generating
+    // LLM knows which operations mutate real systems (IR-8)
+    const operationSideEffects = this.formatOperationSideEffects(
+      metadata.operationMetadata
+    );
+
     return {
       name: metadata.name,
       alias: metadata.alias,
@@ -154,9 +167,48 @@ export class GetBubbleDetailsTool extends ToolBubble<
       inputSchema: inputSchemaString,
       outputSchema: outputSchemaString,
       usageExample,
+      operationSideEffects,
       success: true,
       error: '',
     };
+  }
+
+  /**
+   * Render the per-operation side-effect map as a compact, LLM-readable block.
+   * Each line carries the classification AND its provenance (source + citation)
+   * so consumers can audit the claim instead of trusting it blindly.
+   */
+  private formatOperationSideEffects(
+    operationMetadata:
+      | Record<
+          string,
+          {
+            sideEffect: string;
+            destructive: boolean;
+            idempotent: boolean;
+            confidence: number;
+            source: string;
+            citation: string;
+          }
+        >
+      | undefined
+  ): string | undefined {
+    if (!operationMetadata || Object.keys(operationMetadata).length === 0) {
+      return undefined;
+    }
+    const lines: string[] = [
+      'Side effects per operation (write and read_with_side_effects operations MUTATE real systems):',
+    ];
+    for (const [operation, meta] of Object.entries(operationMetadata)) {
+      const flags: string[] = [];
+      if (meta.destructive) flags.push('destructive');
+      if (meta.idempotent) flags.push('idempotent');
+      const flagText = flags.length > 0 ? ` (${flags.join(', ')})` : '';
+      lines.push(
+        `- ${operation}: ${meta.sideEffect}${flagText} [source: ${meta.source}, confidence: ${meta.confidence}, citation: ${meta.citation}]`
+      );
+    }
+    return lines.join('\n');
   }
 
   private generateOutputSchemaString(resultSchema: unknown): string {
@@ -356,6 +408,7 @@ export class GetBubbleDetailsTool extends ToolBubble<
     className: string;
     schema: unknown;
     resultSchema?: unknown;
+    operationMetadata?: Record<string, { sideEffect: string }>;
   }): string {
     const lines: string[] = [];
 
@@ -392,6 +445,7 @@ export class GetBubbleDetailsTool extends ToolBubble<
     className: string;
     schema: unknown;
     resultSchema?: unknown;
+    operationMetadata?: Record<string, { sideEffect: string }>;
   }): string[] {
     const lines: string[] = [];
 
@@ -428,10 +482,17 @@ export class GetBubbleDetailsTool extends ToolBubble<
                   lines.push('');
                 }
 
-                // Add operation-specific comment
+                // Add operation-specific comment, tagged with the side-effect
+                // hint when the bubble declares per-operation metadata (IR-8)
                 const operationComment =
                   this.formatOperationComment(operationName);
-                lines.push(`// ${operationComment}`);
+                const sideEffect =
+                  metadata.operationMetadata?.[String(operationName)]
+                    ?.sideEffect;
+                const sideEffectTag = sideEffect
+                  ? ` [side-effect: ${sideEffect}]`
+                  : '';
+                lines.push(`// ${operationComment}${sideEffectTag}`);
 
                 // Create variable name with operation suffix
                 const variableName = `${this.toCamelCase(metadata.name)}_${operationName.replace(/[^a-zA-Z0-9]/g, '_')}`;
