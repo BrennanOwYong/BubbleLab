@@ -79,7 +79,7 @@ export const OperationSideEffectMetadataSchema = z.object({
     .array(z.string())
     .optional()
     .describe(
-      'OAuth/API scopes the operation requires, when the vendor documents them (consumed by the scope audit, IR-6/7)'
+      "OAuth/API scopes the operation requires, when the vendor documents them (consumed by the scope audit, IR-6/7). Each entry is one requirement; ALL entries must be satisfied. Within an entry, '|' separates ALTERNATIVES — the requirement is satisfied by any one of them (vendors like Google document per-method accepted-scope sets: e.g. 'scopeA|scopeB' means scopeA or scopeB suffices). Entries mirror the vendor's method reference exactly; the citation carries the source page."
     ),
   unverified: z
     .boolean()

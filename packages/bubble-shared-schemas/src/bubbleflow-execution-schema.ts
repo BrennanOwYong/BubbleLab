@@ -3,6 +3,7 @@ import {
   ParsedBubbleWithInfoSchema,
   ParsedWorkflowSchema,
 } from './bubble-definition-schema';
+import { FlowScopeAuditSchema } from './scope-audit-schema';
 import { CredentialType } from './types';
 
 export const ServiceUsageSchema = z
@@ -435,6 +436,10 @@ export const validateBubbleFlowCodeResponseSchema = z.object({
     }),
   success: z.boolean(),
   error: z.string(),
+  scopeAudit: FlowScopeAuditSchema.optional().openapi({
+    description:
+      'Proactive scope audit (IR-6/7): per-credential verdicts diffing the scopes the flow operations require against the scopes granted on the assigned credentials. Missing scopes fail validation naming the scope and the operations that need it; credentials without scope metadata degrade to an explicit unverifiable warning instead of a silent pass.',
+  }),
 });
 export type ValidateBubbleFlowResponse = z.infer<
   typeof validateBubbleFlowCodeResponseSchema
