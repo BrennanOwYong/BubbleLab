@@ -106,6 +106,25 @@ export const executeBubbleFlowSchema = z
   .record(z.string(), z.unknown())
   .openapi('ExecuteBubbleFlowRequest');
 
+// POST /:id/test - Execute BubbleFlow in TEST MODE. Write-hinted operations
+// return mocks and never execute; read-hinted operations run for real.
+export const testBubbleFlowSchema = z
+  .object({
+    payload: z.record(z.string(), z.unknown()).optional().openapi({
+      description: 'Trigger payload for the test run (same shape as execute)',
+    }),
+    approvedWriteCallSites: z
+      .array(z.string())
+      .optional()
+      .openapi({
+        description:
+          'Call-site keys explicitly approved to execute writes for real in ' +
+          'this test run ("dummy-data" grant). Exact match only; omit to mock ' +
+          'every write-hinted operation.',
+      }),
+  })
+  .openapi('TestBubbleFlowRequest');
+
 // PUT /bubble-flow/:id - Update BubbleFlow parameters schema
 export const updateBubbleFlowParametersSchema = z
   .object({

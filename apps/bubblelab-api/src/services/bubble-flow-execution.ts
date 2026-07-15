@@ -155,6 +155,8 @@ export async function executeBubbleFlowWithTracking(
         useWebhookLogger: options.useWebhookLogger,
         pricingTable: getPricingTable(),
         appType: appType,
+        testMode: options.testMode,
+        approvedWriteCallSites: options.approvedWriteCallSites,
       }
     );
 

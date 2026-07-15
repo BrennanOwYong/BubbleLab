@@ -27,6 +27,13 @@ export interface ExecutionOptions {
   systemCredentials?: Record<string, string>;
   appType?: AppType;
   pricingTable: Record<string, { unit: string; unitCost: number }>;
+  /**
+   * Run as a TEST: write-hinted bubble operations return mocks instead of
+   * executing (enforced server-side in BaseBubble.action()).
+   */
+  testMode?: boolean;
+  /** Call-site keys approved to execute writes for real in test mode. */
+  approvedWriteCallSites?: string[];
 }
 
 export interface StreamingExecutionOptions extends ExecutionOptions {
@@ -109,6 +116,8 @@ async function runBubbleFlowCommon(
     useWebhookLogger: options.useWebhookLogger,
     pricingTable: options.pricingTable,
     userCredentialMapping,
+    testMode: options.testMode,
+    approvedWriteCallSites: options.approvedWriteCallSites,
   });
   const usageCheck = await getMonthlyLimitForPlan(options.userId);
 
