@@ -6,6 +6,7 @@ import type {
   BubbleOperationResult,
   BubbleResult,
   ExecutionMeta,
+  RecordedMockProvider,
 } from '@bubblelab/shared-schemas';
 import type { BubbleLogger } from '../logging/BubbleLogger';
 
@@ -98,6 +99,24 @@ export interface BubbleContext {
    */
   __uniqueIdCounters__?: Record<string, number>;
   executionMeta?: ExecutionMeta;
+  /**
+   * Marks the run as a TEST. Enforced in BaseBubble.action(): write-hinted
+   * operations return a mock WITHOUT reaching performAction (no client is
+   * constructed, no credential is read). Read-hinted operations run for real.
+   * Also honored when set on executionMeta (the path generated flows use).
+   */
+  testMode?: boolean;
+  /**
+   * Call-site keys ("dummy-data" grant) explicitly approved to execute for
+   * real in test mode. Matched exactly against invocationCallSiteKey or
+   * currentUniqueId — no wildcards, missing keys never match.
+   */
+  approvedWriteCallSites?: string[];
+  /**
+   * Contract KB seam: serves RECORDED real responses as test-mode mocks in
+   * preference to schema-derived generated mocks. See RecordedMockProvider.
+   */
+  recordedMockProvider?: RecordedMockProvider;
   [key: string]: unknown;
 }
 

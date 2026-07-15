@@ -1,12 +1,9 @@
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
+import type { IBubble, BubbleContext } from './bubble.js';
 import type {
-  IBubble,
-  BubbleContext,
   BubbleResult,
   BubbleOperationResult,
-} from '@bubblelab/bubble-core';
-import type {
   BubbleName,
   BubbleOperationMetadata,
   OperationSideEffectMetadata,
@@ -20,6 +17,7 @@ import {
 } from './bubble-errors.js';
 import { sanitizeParams } from '@bubblelab/shared-schemas';
 import { formatSchemaExpectedVsActual } from '../utils/schema-comparison.js';
+import type { OperationSideEffectMap } from './operation-side-effect.js';
 
 /**
  * Abstract base class for all bubble types
@@ -191,7 +189,16 @@ export abstract class BaseBubble<
    * an unclassified operation is safe to run.
    */
   get sideEffect(): SideEffect {
-    return this.operationSideEffectMetadata?.sideEffect ?? 'write';
+    const ctor = this.constructor as {
+      operationMetadata?: OperationSideEffectMap;
+    };
+    const metadata = ctor.operationMetadata;
+    if (!metadata) return 'write';
+    const operation = this.getOperationName();
+    const hint =
+      (operation !== undefined ? metadata[operation] : undefined) ??
+      metadata['*'];
+    return hint?.sideEffect ?? 'write';
   }
 
   /**
@@ -273,6 +280,38 @@ export abstract class BaseBubble<
 
       return savedResult;
     }
+
+    // TEST-MODE SWITCH — intercept ABOVE performAction so no client is ever
+    // constructed and no credential is ever read, regardless of auth type.
+    // Write-hinted operations (the fail-safe default for unclassified ones)
+    // return a recorded or generated mock; read-hinted operations run for real.
+    // An explicit per-call-site grant (approvedWriteCallSites) lets a write
+    // execute for real in test mode.
+    if (
+      this.isTestModeRun() &&
+      this.sideEffect !== 'read' &&
+      !this.hasApprovedWriteGrant()
+    ) {
+      const operation = this.getOperationName();
+      logger?.info(
+        `[${this.name}] Test mode: operation '${operation ?? '(none)'}' is ` +
+          `${this.sideEffect}-hinted — returning a mock result without executing. ` +
+          `The operation DID NOT happen.`
+      );
+
+      const mockResult =
+        (await this.getRecordedMock()) ?? this.generateTestModeMockResult();
+
+      logger?.logBubbleExecutionComplete(
+        this.context?.variableId ?? -999,
+        this.name,
+        this.name,
+        mockResult
+      );
+
+      return mockResult;
+    }
+
     let result: TResult;
     try {
       result = await this.performAction(this.context);
@@ -393,6 +432,130 @@ export abstract class BaseBubble<
     );
 
     return finalResult;
+  }
+
+  /** The `operation` discriminator of the current params, when present. */
+  protected getOperationName(): string | undefined {
+    const operation = (this.params as { operation?: unknown } | undefined)
+      ?.operation;
+    return typeof operation === 'string' ? operation : undefined;
+  }
+
+  /** True when the run is marked as a test, via context or executionMeta. */
+  protected isTestModeRun(): boolean {
+    const ctx = this.context;
+    if (!ctx) return false;
+    return ctx.testMode === true || ctx.executionMeta?.testMode === true;
+  }
+
+  /**
+   * True only when this exact call site carries the explicit "dummy-data"
+   * grant to execute a write for real in test mode. Exact string match against
+   * invocationCallSiteKey or currentUniqueId — no wildcards, and a bubble with
+   * no call-site identity never matches.
+   */
+  protected hasApprovedWriteGrant(): boolean {
+    const ctx = this.context;
+    if (!ctx) return false;
+    const approved =
+      ctx.approvedWriteCallSites ?? ctx.executionMeta?.approvedWriteCallSites;
+    if (!Array.isArray(approved) || approved.length === 0) return false;
+    const keys = [ctx.invocationCallSiteKey, ctx.currentUniqueId].filter(
+      (key): key is string => typeof key === 'string' && key.length > 0
+    );
+    return keys.some((key) => approved.includes(key));
+  }
+
+  /**
+   * Contract KB seam: ask the context's recordedMockProvider for a RECORDED
+   * real response for this invocation. Returns undefined (falling back to the
+   * generated mock) when no provider is wired or no recording exists. Provider
+   * failures also fall back — a broken recording store must not break a test run.
+   */
+  protected async getRecordedMock(): Promise<
+    BubbleResult<TResult> | undefined
+  > {
+    const ctx = this.context;
+    const provider =
+      ctx?.recordedMockProvider ?? ctx?.executionMeta?.recordedMockProvider;
+    if (typeof provider !== 'function') return undefined;
+    try {
+      const recorded = await provider({
+        bubbleName: this.name,
+        operation: this.getOperationName(),
+        callSiteKey: ctx?.invocationCallSiteKey ?? ctx?.currentUniqueId,
+      });
+      if (!recorded) return undefined;
+      return {
+        success: true,
+        error: '',
+        data: recorded as TResult,
+        executionId: randomUUID(),
+        timestamp: new Date(),
+        mocked: true,
+      };
+    } catch (error) {
+      ctx?.logger?.warn(
+        `[${this.name}] recordedMockProvider failed, falling back to generated mock: ${
+          error instanceof Error ? error.message : 'Unknown error'
+        }`
+      );
+      return undefined;
+    }
+  }
+
+  /**
+   * Schema-derived mock for the test-mode gate. Operation-aware: when the
+   * result schema is a discriminated union on `operation`, the mock is
+   * generated from the option matching the CURRENT operation so downstream
+   * code that switches on `data.operation` still works.
+   */
+  protected generateTestModeMockResult(): BubbleResult<TResult> {
+    const operationSchema = this.resolveOperationResultSchema();
+    const base = MockDataGenerator.generateMockResult<TResult>(
+      operationSchema ?? this.resultSchema
+    );
+    // Mocked results always report success with an empty error, matching the
+    // shape performAction would produce on the happy path.
+    const data = {
+      ...(base.data as Record<string, unknown>),
+      success: true,
+      error: '',
+    } as TResult;
+    return { ...base, data, success: true, error: '', mocked: true };
+  }
+
+  /**
+   * When resultSchema is a discriminated union on `operation`, return the
+   * option whose literal matches the current operation param.
+   */
+  private resolveOperationResultSchema():
+    | z.ZodObject<z.ZodRawShape>
+    | undefined {
+    const operation = this.getOperationName();
+    if (operation === undefined) return undefined;
+    const def = (
+      this.resultSchema as unknown as {
+        _def?: {
+          typeName?: string;
+          options?: z.ZodTypeAny[];
+        };
+      }
+    )._def;
+    if (!def || def.typeName !== 'ZodDiscriminatedUnion') return undefined;
+    for (const option of def.options ?? []) {
+      const shape = (option as z.ZodObject<z.ZodRawShape>).shape;
+      const operationDef = (
+        shape?.operation as { _def?: { typeName?: string; value?: unknown } }
+      )?._def;
+      if (
+        operationDef?.typeName === 'ZodLiteral' &&
+        operationDef.value === operation
+      ) {
+        return option as z.ZodObject<z.ZodRawShape>;
+      }
+    }
+    return undefined;
   }
 
   /**

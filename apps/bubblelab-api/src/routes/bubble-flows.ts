@@ -33,6 +33,7 @@ import {
   createEmptyBubbleFlowRoute,
   executeBubbleFlowRoute,
   executeBubbleFlowStreamRoute,
+  testBubbleFlowRoute,
   getBubbleFlowRoute,
   updateBubbleFlowRoute,
   updateBubbleFlowNameRoute,
@@ -416,6 +417,56 @@ app.openapi(executeBubbleFlowRoute, async (c) => {
     return c.json(result, 200);
   } catch (error) {
     // Return 404 for "BubbleFlow not found" errors like the original implementation
+    if (
+      error instanceof Error &&
+      (error.message === 'BubbleFlow not found' ||
+        error.message ===
+          'Something went wrong, please recreate the flow. If the problem persists, please contact Nodex support.')
+    ) {
+      return c.json({ error: 'BubbleFlow not found' }, 404);
+    }
+    throw error; // Let global error handler deal with other errors
+  }
+});
+
+app.openapi(testBubbleFlowRoute, async (c) => {
+  const id = parseInt(c.req.param('id'));
+  const body = c.req.valid('json') ?? {};
+  const userPayload = body.payload ?? {};
+
+  const userId = getUserId(c);
+
+  try {
+    const triggerEvent = {
+      type: 'webhook/http' as const,
+      timestamp: new Date().toISOString(),
+      executionId: crypto.randomUUID(),
+      path: `/${id}/test`,
+      body: userPayload,
+      ...userPayload,
+    };
+
+    const appType = getAppType(c);
+    const result = await executeBubbleFlowWithTracking(id, triggerEvent, {
+      userId,
+      appType,
+      pricingTable: PRICING_TABLE,
+      testMode: true,
+      approvedWriteCallSites: body.approvedWriteCallSites,
+    });
+
+    if (!result.success) {
+      return c.json(
+        {
+          error: result.error || 'Test run failed',
+          details: result.error,
+        },
+        400
+      );
+    }
+
+    return c.json(result, 200);
+  } catch (error) {
     if (
       error instanceof Error &&
       (error.message === 'BubbleFlow not found' ||

@@ -28,6 +28,12 @@ export interface BubbleResult<T> extends BubbleOperationResult {
   data: T;
   executionId: string;
   timestamp: Date;
+  /**
+   * True when the result was produced without executing the operation (test mode
+   * skipped a write-hinted operation and returned a recorded or generated mock).
+   * A mocked write returns a shape-valid result but the operation DID NOT happen.
+   */
+  mocked?: boolean;
 }
 
 /**

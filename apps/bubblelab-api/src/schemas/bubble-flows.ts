@@ -7,6 +7,7 @@ import {
   createEmptyBubbleFlowResponseSchema,
   executeBubbleFlowSchema,
   executeBubbleFlowResponseSchema,
+  testBubbleFlowSchema,
   bubbleFlowDetailsResponseSchema,
   updateBubbleFlowParametersSchema,
   updateBubbleFlowNameSchema,
@@ -143,6 +144,66 @@ export const executeBubbleFlowRoute = createRoute({
         },
       },
       description: 'Invalid ID format',
+    },
+    404: {
+      content: {
+        'application/json': {
+          schema: errorResponseSchema,
+        },
+      },
+      description: 'BubbleFlow not found',
+    },
+    500: {
+      content: {
+        'application/json': {
+          schema: errorResponseSchema,
+        },
+      },
+      description: 'Internal server error',
+    },
+  },
+  tags: ['BubbleFlow'],
+});
+
+// POST /:id/test - Execute stored BubbleFlow in TEST MODE (write-hinted
+// operations are mocked in BaseBubble.action(); reads run for real)
+export const testBubbleFlowRoute = createRoute({
+  method: 'post',
+  path: '/{id}/test',
+  request: {
+    params: z.object({
+      id: z
+        .string()
+        .regex(/^[0-9]+$/)
+        .openapi({
+          description: 'BubbleFlow ID',
+          example: '123',
+        }),
+    }),
+    body: {
+      content: {
+        'application/json': {
+          schema: testBubbleFlowSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: executeBubbleFlowResponseSchema,
+        },
+      },
+      description: 'BubbleFlow test run completed',
+    },
+    400: {
+      content: {
+        'application/json': {
+          schema: errorResponseSchema,
+        },
+      },
+      description: 'Invalid ID format or test run failed',
     },
     404: {
       content: {
