@@ -16,6 +16,11 @@
  * The generated files are committed and imported by each bubble class as its static
  * `operationMetadata` — colocated per integration, no central registry location.
  *
+ * Scope data (IR-6/7): operation entries carry `requiredScopes` copied from each cited method
+ * page's "Authorization scopes" section (any-of sets joined with '|'). Google method pages are
+ * the authoritative source; entries without documented scopes omit the field and the scope
+ * audit degrades honestly.
+ *
  * ## References (vendor doc roots used for citations; verified 2026-07-15)
  * - Resend:          https://resend.com/docs/api-reference/emails/send-email
  * - Gmail:           https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/send
@@ -45,6 +50,15 @@ interface OperationCitation {
   url: string;
   /** The vendor's own description of the operation (the prose the classifier reads). */
   quote: string;
+  /**
+   * OAuth scopes the vendor's method reference lists for this operation (IR-6/7 scope audit).
+   * Each entry is one requirement; ALL entries must be satisfied. Within an entry, '|'
+   * separates ALTERNATIVES — any one satisfies it (Google method pages say "requires one of
+   * the following OAuth scopes"). Entries mirror the cited method page EXACTLY; omit the field
+   * when the vendor documents no scopes for the operation (API keys without introspection) —
+   * the audit then degrades honestly instead of guessing.
+   */
+  requiredScopes?: string[];
 }
 
 interface BubbleDocSource {
@@ -52,6 +66,148 @@ interface BubbleDocSource {
   docRoot: string;
   operations: Record<string, OperationCitation>;
 }
+
+/** One requirement satisfied by ANY of the given scopes (the '|' encoding). */
+function anyOf(...scopes: string[]): string {
+  return scopes.join('|');
+}
+
+/**
+ * Per-method accepted-scope sets, copied EXACTLY from the cited Google method reference pages
+ * (each page's "Authorization scopes" section — "requires one of the following OAuth scopes").
+ * Verified against the live pages 2026-07-15; URLs are on the corresponding operation entries.
+ */
+const GAUTH = 'https://www.googleapis.com/auth/';
+const MAIL_GOOGLE = 'https://mail.google.com/';
+const GMAIL_MESSAGES_SEND = [
+  anyOf(
+    MAIL_GOOGLE,
+    `${GAUTH}gmail.modify`,
+    `${GAUTH}gmail.compose`,
+    `${GAUTH}gmail.send`
+  ),
+];
+const GMAIL_MESSAGES_READ = [
+  anyOf(
+    MAIL_GOOGLE,
+    `${GAUTH}gmail.modify`,
+    `${GAUTH}gmail.readonly`,
+    `${GAUTH}gmail.metadata`
+  ),
+];
+const GMAIL_MESSAGES_MODIFY = [
+  anyOf(
+    MAIL_GOOGLE,
+    `${GAUTH}gmail.modify`,
+    `${GAUTH}gmail.modify.restricted`
+  ),
+];
+const GMAIL_MESSAGES_DELETE = [anyOf(MAIL_GOOGLE)];
+const GMAIL_MESSAGES_TRASH = [anyOf(MAIL_GOOGLE, `${GAUTH}gmail.modify`)];
+const GMAIL_ATTACHMENTS_GET = [
+  anyOf(MAIL_GOOGLE, `${GAUTH}gmail.modify`, `${GAUTH}gmail.readonly`),
+];
+const GMAIL_THREADS_MODIFY = [anyOf(MAIL_GOOGLE, `${GAUTH}gmail.modify`)];
+const GMAIL_DRAFTS_WRITE = [
+  anyOf(MAIL_GOOGLE, `${GAUTH}gmail.modify`, `${GAUTH}gmail.compose`),
+];
+const GMAIL_DRAFTS_LIST = [
+  anyOf(
+    MAIL_GOOGLE,
+    `${GAUTH}gmail.modify`,
+    `${GAUTH}gmail.compose`,
+    `${GAUTH}gmail.readonly`
+  ),
+];
+const GMAIL_LABELS_LIST = [
+  anyOf(
+    MAIL_GOOGLE,
+    `${GAUTH}gmail.modify`,
+    `${GAUTH}gmail.readonly`,
+    `${GAUTH}gmail.labels`,
+    `${GAUTH}gmail.metadata`
+  ),
+];
+const GMAIL_LABELS_CREATE = [
+  anyOf(MAIL_GOOGLE, `${GAUTH}gmail.modify`, `${GAUTH}gmail.labels`),
+];
+const CALENDAR_LIST_SCOPES = [
+  anyOf(
+    `${GAUTH}calendar.readonly`,
+    `${GAUTH}calendar`,
+    `${GAUTH}calendar.calendarlist`,
+    `${GAUTH}calendar.calendarlist.readonly`
+  ),
+];
+const CALENDAR_EVENTS_READ = [
+  anyOf(
+    `${GAUTH}calendar.readonly`,
+    `${GAUTH}calendar`,
+    `${GAUTH}calendar.events.readonly`,
+    `${GAUTH}calendar.events`,
+    `${GAUTH}calendar.app.created`,
+    `${GAUTH}calendar.events.freebusy`,
+    `${GAUTH}calendar.events.owned`,
+    `${GAUTH}calendar.events.owned.readonly`,
+    `${GAUTH}calendar.events.public.readonly`
+  ),
+];
+const CALENDAR_EVENTS_WRITE = [
+  anyOf(
+    `${GAUTH}calendar`,
+    `${GAUTH}calendar.events`,
+    `${GAUTH}calendar.app.created`,
+    `${GAUTH}calendar.events.owned`
+  ),
+];
+const DRIVE_FILES_CREATE = [
+  anyOf(`${GAUTH}drive`, `${GAUTH}drive.appdata`, `${GAUTH}drive.file`),
+];
+const DRIVE_FILES_READ = [
+  anyOf(
+    `${GAUTH}drive`,
+    `${GAUTH}drive.appdata`,
+    `${GAUTH}drive.file`,
+    `${GAUTH}drive.meet.readonly`,
+    `${GAUTH}drive.metadata`,
+    `${GAUTH}drive.metadata.readonly`,
+    `${GAUTH}drive.photos.readonly`,
+    `${GAUTH}drive.readonly`
+  ),
+];
+const DRIVE_FILES_DELETE = [
+  anyOf(`${GAUTH}drive`, `${GAUTH}drive.appdata`, `${GAUTH}drive.file`),
+];
+const DRIVE_FILES_UPDATE = [
+  anyOf(
+    `${GAUTH}drive`,
+    `${GAUTH}drive.appdata`,
+    `${GAUTH}drive.file`,
+    `${GAUTH}drive.metadata`,
+    `${GAUTH}drive.scripts`
+  ),
+];
+const DRIVE_FILES_COPY = [
+  anyOf(
+    `${GAUTH}drive`,
+    `${GAUTH}drive.appdata`,
+    `${GAUTH}drive.file`,
+    `${GAUTH}drive.photos.readonly`
+  ),
+];
+const DRIVE_PERMISSIONS_CREATE = [anyOf(`${GAUTH}drive`, `${GAUTH}drive.file`)];
+const DOCS_DOCUMENTS_GET = [
+  anyOf(
+    `${GAUTH}documents`,
+    `${GAUTH}documents.readonly`,
+    `${GAUTH}drive`,
+    `${GAUTH}drive.readonly`,
+    `${GAUTH}drive.file`
+  ),
+];
+const DOCS_DOCUMENTS_BATCH_UPDATE = [
+  anyOf(`${GAUTH}documents`, `${GAUTH}drive`, `${GAUTH}drive.file`),
+];
 
 /**
  * Curated vendor-doc citations per bubble/operation. The quote is the classification input;
@@ -81,74 +237,91 @@ const VENDOR_DOCS: Partial<Record<BubbleName, BubbleDocSource>> = {
       'https://developers.google.com/workspace/gmail/api/reference/rest/v1',
     operations: {
       send_email: {
+        requiredScopes: GMAIL_MESSAGES_SEND,
         url: 'https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/send',
         quote:
           'Sends the specified message to the recipients in the To, Cc, and Bcc headers.',
       },
       get_email: {
+        requiredScopes: GMAIL_MESSAGES_READ,
         url: 'https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/get',
         quote: 'Gets the specified message.',
       },
       list_emails: {
+        requiredScopes: GMAIL_MESSAGES_READ,
         url: 'https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/list',
         quote: "Lists the messages in the user's mailbox.",
       },
       search_emails: {
+        requiredScopes: GMAIL_MESSAGES_READ,
         url: 'https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/list',
         quote: "Lists the messages in the user's mailbox.",
       },
       delete_email: {
+        requiredScopes: GMAIL_MESSAGES_DELETE,
         url: 'https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/delete',
         quote:
           'Immediately and permanently deletes the specified message. This operation cannot be undone.',
       },
       trash_email: {
+        requiredScopes: GMAIL_MESSAGES_TRASH,
         url: 'https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/trash',
         quote: 'Moves the specified message to the trash.',
       },
       get_attachment: {
+        requiredScopes: GMAIL_ATTACHMENTS_GET,
         url: 'https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages.attachments/get',
         quote: 'Gets the specified message attachment.',
       },
       mark_as_read: {
+        requiredScopes: GMAIL_MESSAGES_MODIFY,
         url: 'https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/modify',
         quote: 'Modifies the labels on the specified message.',
       },
       mark_as_unread: {
+        requiredScopes: GMAIL_MESSAGES_MODIFY,
         url: 'https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/modify',
         quote: 'Modifies the labels on the specified message.',
       },
       modify_message_labels: {
+        requiredScopes: GMAIL_MESSAGES_MODIFY,
         url: 'https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/modify',
         quote: 'Modifies the labels on the specified message.',
       },
       modify_thread_labels: {
+        requiredScopes: GMAIL_THREADS_MODIFY,
         url: 'https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.threads/modify',
         quote:
           'Modifies the labels applied to the thread. This applies to all messages in the thread.',
       },
       create_draft: {
+        requiredScopes: GMAIL_DRAFTS_WRITE,
         url: 'https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.drafts/create',
         quote: 'Creates a new draft with the DRAFT label.',
       },
       send_draft: {
+        requiredScopes: GMAIL_DRAFTS_WRITE,
         url: 'https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.drafts/send',
         quote:
           'Sends the specified, existing draft to the recipients in the To, Cc, and Bcc headers.',
       },
       list_drafts: {
+        requiredScopes: GMAIL_DRAFTS_LIST,
         url: 'https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.drafts/list',
         quote: "Lists the drafts in the user's mailbox.",
       },
       list_threads: {
+        requiredScopes: GMAIL_MESSAGES_READ,
         url: 'https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.threads/list',
         quote: "Lists the threads in the user's mailbox.",
       },
       list_labels: {
+        requiredScopes: GMAIL_LABELS_LIST,
         url: 'https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.labels/list',
         quote: "Lists all labels in the user's mailbox.",
       },
       create_label: {
+        requiredScopes: GMAIL_LABELS_CREATE,
         url: 'https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.labels/create',
         quote: 'Creates a new label.',
       },
@@ -159,26 +332,32 @@ const VENDOR_DOCS: Partial<Record<BubbleName, BubbleDocSource>> = {
       'https://developers.google.com/workspace/calendar/api/v3/reference',
     operations: {
       list_events: {
+        requiredScopes: CALENDAR_EVENTS_READ,
         url: 'https://developers.google.com/workspace/calendar/api/v3/reference/events/list',
         quote: 'Returns events on the specified calendar.',
       },
       get_event: {
+        requiredScopes: CALENDAR_EVENTS_READ,
         url: 'https://developers.google.com/workspace/calendar/api/v3/reference/events/get',
         quote: 'Returns an event based on its Google Calendar ID.',
       },
       create_event: {
+        requiredScopes: CALENDAR_EVENTS_WRITE,
         url: 'https://developers.google.com/workspace/calendar/api/v3/reference/events/insert',
         quote: 'Creates an event.',
       },
       update_event: {
+        requiredScopes: CALENDAR_EVENTS_WRITE,
         url: 'https://developers.google.com/workspace/calendar/api/v3/reference/events/update',
         quote: 'Updates an event.',
       },
       delete_event: {
+        requiredScopes: CALENDAR_EVENTS_WRITE,
         url: 'https://developers.google.com/workspace/calendar/api/v3/reference/events/delete',
         quote: 'Deletes an event.',
       },
       list_calendars: {
+        requiredScopes: CALENDAR_LIST_SCOPES,
         url: 'https://developers.google.com/workspace/calendar/api/v3/reference/calendarList/list',
         quote: "Returns the calendars on the user's calendar list.",
       },
@@ -189,52 +368,64 @@ const VENDOR_DOCS: Partial<Record<BubbleName, BubbleDocSource>> = {
       'https://developers.google.com/workspace/drive/api/reference/rest/v3',
     operations: {
       upload_file: {
+        requiredScopes: DRIVE_FILES_CREATE,
         url: 'https://developers.google.com/workspace/drive/api/reference/rest/v3/files/create',
         quote: 'Creates a new file.',
       },
       download_file: {
+        requiredScopes: DRIVE_FILES_READ,
         url: 'https://developers.google.com/workspace/drive/api/reference/rest/v3/files/get',
         quote: "Gets a file's metadata or content by ID.",
       },
       list_files: {
+        requiredScopes: DRIVE_FILES_READ,
         url: 'https://developers.google.com/workspace/drive/api/reference/rest/v3/files/list',
         quote: "Lists the user's files.",
       },
       create_folder: {
+        requiredScopes: DRIVE_FILES_CREATE,
         url: 'https://developers.google.com/workspace/drive/api/reference/rest/v3/files/create',
         quote: 'Creates a new file.',
       },
       delete_file: {
+        requiredScopes: DRIVE_FILES_DELETE,
         url: 'https://developers.google.com/workspace/drive/api/reference/rest/v3/files/delete',
         quote:
           'Permanently deletes a file owned by the user without moving it to the trash.',
       },
       get_file_info: {
+        requiredScopes: DRIVE_FILES_READ,
         url: 'https://developers.google.com/workspace/drive/api/reference/rest/v3/files/get',
         quote: "Gets a file's metadata or content by ID.",
       },
       share_file: {
+        requiredScopes: DRIVE_PERMISSIONS_CREATE,
         url: 'https://developers.google.com/workspace/drive/api/reference/rest/v3/permissions/create',
         quote: 'Creates a permission for a file or shared drive.',
       },
       move_file: {
+        requiredScopes: DRIVE_FILES_UPDATE,
         url: 'https://developers.google.com/workspace/drive/api/reference/rest/v3/files/update',
         quote: "Updates a file's metadata and/or content.",
       },
       copy_doc: {
+        requiredScopes: DRIVE_FILES_COPY,
         url: 'https://developers.google.com/workspace/drive/api/reference/rest/v3/files/copy',
         quote:
           'Creates a copy of a file and applies any requested updates with patch semantics.',
       },
       get_doc: {
+        requiredScopes: DOCS_DOCUMENTS_GET,
         url: 'https://developers.google.com/workspace/docs/api/reference/rest/v1/documents/get',
         quote: 'Gets the latest version of the specified document.',
       },
       update_doc: {
+        requiredScopes: DOCS_DOCUMENTS_BATCH_UPDATE,
         url: 'https://developers.google.com/workspace/docs/api/reference/rest/v1/documents/batchUpdate',
         quote: 'Applies one or more updates to the document.',
       },
       replace_text: {
+        requiredScopes: DOCS_DOCUMENTS_BATCH_UPDATE,
         url: 'https://developers.google.com/workspace/docs/api/reference/rest/v1/documents/batchUpdate',
         quote: 'Applies one or more updates to the document.',
       },
@@ -400,7 +591,12 @@ function classifyOperation(
     });
   }
   try {
-    return classifySideEffect(evidence);
+    const classification = classifySideEffect(evidence);
+    // Attach the vendor's documented accepted-scope set (IR-6/7 scope audit input).
+    if (citation?.requiredScopes && citation.requiredScopes.length > 0) {
+      return { ...classification, requiredScopes: citation.requiredScopes };
+    }
+    return classification;
   } catch (error) {
     if (!(error instanceof ClassificationError)) throw error;
     // Fail-safe: no doc signal → 'write', conservative destructive default

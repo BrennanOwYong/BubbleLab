@@ -25,6 +25,17 @@ export type {
   DocSignals,
 } from './utils/side-effect-classifier.js';
 
+// Export proactive scope audit (IR-6/7)
+export {
+  auditCredentialScopes,
+  collectScopeRequirements,
+  scopeAlternatives,
+} from './utils/scope-audit.js';
+export type {
+  ScopeAuditCallSite,
+  AuditCredentialScopesInput,
+} from './utils/scope-audit.js';
+
 // Export capabilities framework
 export * from './capabilities/index.js';
 
