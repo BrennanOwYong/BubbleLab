@@ -1,5 +1,6 @@
 import type { ZodTypeAny } from 'zod';
 import type { BubbleOperationResult } from './mock-data-generator.js';
+import type { ContractObservationSink } from './contract-observation.js';
 
 /** Identity of the bubble invocation asking for a recorded response (test mode). */
 export interface RecordedMockLookup {
@@ -132,6 +133,15 @@ export interface ExecutionMeta {
   approvedWriteCallSites?: string[];
   /** Contract KB seam: recorded real responses served as test-mode mocks. */
   recordedMockProvider?: RecordedMockProvider;
+  /**
+   * Contract KB seam (IR-11/12): receives one ContractObservation per fresh
+   * bubble result, emitted from BaseBubble.action() at the result-validation
+   * site. This is the drift signal's survival channel — it fires before any
+   * error propagation, so wrapper boundaries and user try/catch cannot
+   * swallow it. The API execution service installs a collector here and
+   * feeds the Contract KB after the run.
+   */
+  contractObservationSink?: ContractObservationSink;
   // Forward compat
   [key: string]: unknown;
 }

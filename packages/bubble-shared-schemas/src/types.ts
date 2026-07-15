@@ -236,4 +236,5 @@ export type BubbleName =
   | 'granola'
   | 'memberful'
   | 'luma'
-  | 'zoom';
+  | 'zoom'
+  | 'contract-drift-probe';

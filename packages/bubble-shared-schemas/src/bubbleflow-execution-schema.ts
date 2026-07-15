@@ -279,6 +279,31 @@ export const executeBubbleFlowResponseSchema = z
       description: 'Error message (if execution failed)',
       example: 'Validation error in BubbleFlow',
     }),
+    errorCode: z.string().optional().openapi({
+      description:
+        'Stable machine-readable failure code. OUTPUT_CONTRACT_VIOLATION ' +
+        'identifies a response that violated the declared resultSchema ' +
+        '(contract drift) — preserved across the runner boundary instead of ' +
+        'collapsing into the prose error message.',
+      example: 'OUTPUT_CONTRACT_VIOLATION',
+    }),
+    drift: z
+      .array(
+        z.object({
+          bubbleName: z.string(),
+          operation: z.string().optional(),
+          callSiteKey: z.string().optional(),
+          findings: z.array(
+            z.object({ path: z.string(), message: z.string() })
+          ),
+        })
+      )
+      .optional()
+      .openapi({
+        description:
+          'Structured contract-drift findings when errorCode is ' +
+          'OUTPUT_CONTRACT_VIOLATION: which bubble/operation/call site drifted and how.',
+      }),
   })
   .openapi('ExecuteBubbleFlowResponse');
 
