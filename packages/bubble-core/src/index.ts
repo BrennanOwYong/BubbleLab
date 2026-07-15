@@ -25,6 +25,24 @@ export type {
   DocSignals,
 } from './utils/side-effect-classifier.js';
 
+// Run-time grounding: docs-lie correction channel, drift signal, write-set
+// computation for the sign-off gate
+export {
+  getSideEffectOverrideRegistry,
+  SideEffectOverrideRegistry,
+  FileSideEffectOverrideStore,
+} from './utils/side-effect-overrides.js';
+export type { SideEffectOverrideStore } from './utils/side-effect-overrides.js';
+export {
+  detectMutationEvidence,
+  downgradeLyingRead,
+  probeCapturesDiffer,
+  RUNTIME_VERIFIED_CONFIDENCE,
+} from './utils/mutation-evidence.js';
+export type { MutationEvidence } from './utils/mutation-evidence.js';
+export { computeWriteSet, callSiteKeysOf } from './utils/write-set.js';
+export type { OperationMetadataLookup } from './utils/write-set.js';
+
 // Export capabilities framework
 export * from './capabilities/index.js';
 
@@ -33,6 +51,8 @@ export {
   BubbleError,
   BubbleValidationError,
   BubbleExecutionError,
+  BubbleDriftError,
+  isDriftError,
 } from './types/bubble-errors.js';
 
 // Export base classes

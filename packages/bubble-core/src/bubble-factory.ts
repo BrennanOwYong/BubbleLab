@@ -28,6 +28,7 @@ import {
   buildClassNameLookup as buildLookupForSource,
   parseBubbleInstancesFromSource,
 } from './utils/source-bubble-parser.js';
+import { getSideEffectOverrideRegistry } from './utils/side-effect-overrides.js';
 
 // Type for concrete bubble class constructors with static metadata
 export type BubbleClassWithMetadata<TResult extends object = object> = {
@@ -707,8 +708,14 @@ export class BubbleFactory {
       alias: BubbleClass.alias,
       credentialOptions: BubbleClass.credentialOptions,
       bubbleDependencies: BubbleClass.bubbleDependencies,
-      // Doc-grounded per-operation side-effect classifications (IR-8)
-      operationMetadata: BubbleClass.operationMetadata,
+      // Doc-grounded per-operation side-effect classifications (IR-8), with
+      // runtime-verified corrections applied on top (docs-lie channel): every
+      // catalogue consumer — get-bubble-details-tool, list-bubbles-tool, the
+      // codegen LLM — sees observed reality outranking the documentation.
+      operationMetadata: getSideEffectOverrideRegistry().applyTo(
+        BubbleClass.bubbleName,
+        BubbleClass.operationMetadata
+      ),
       // Provide richer dependency details (ai-agent may include tools)
       schema: BubbleClass.schema,
       resultSchema: BubbleClass.resultSchema,
