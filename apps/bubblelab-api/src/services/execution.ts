@@ -34,6 +34,11 @@ export interface ExecutionOptions {
   testMode?: boolean;
   /** Call-site keys approved to execute writes for real in test mode. */
   approvedWriteCallSites?: string[];
+  /**
+   * REAL-run defense in depth for the sign-off gate: BaseBubble.action()
+   * mocks any write-hinted operation not covered by approvedWriteCallSites.
+   */
+  enforceWriteSignOff?: boolean;
 }
 
 export interface StreamingExecutionOptions extends ExecutionOptions {
@@ -118,6 +123,7 @@ async function runBubbleFlowCommon(
     userCredentialMapping,
     testMode: options.testMode,
     approvedWriteCallSites: options.approvedWriteCallSites,
+    enforceWriteSignOff: options.enforceWriteSignOff,
   });
   const usageCheck = await getMonthlyLimitForPlan(options.userId);
 

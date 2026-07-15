@@ -10,8 +10,10 @@ import {
   type StreamingLogEvent,
   type StreamCallback,
   CredentialType,
+  WRITE_SIGNOFF_REQUIRED_ERROR_CODE,
 } from '@bubblelab/shared-schemas';
 import type { ExecutionResult } from '@bubblelab/shared-schemas';
+import { evaluateWriteSignOff } from './write-signoff.js';
 
 import { eq, and, sql } from 'drizzle-orm';
 import type { BubbleTriggerEventRegistry } from '@bubblelab/bubble-core';
@@ -114,6 +116,46 @@ export async function executeBubbleFlowWithTracking(
     );
   }
 
+  // THE SIGN-OFF GATE (REPO-MAP §4b) — server-side, authoritative, applied to
+  // every REAL run path (manual execute, streaming, webhook, cron). A run
+  // whose write-hinted call sites are not covered by an explicit persisted
+  // sign-off dispatches NOTHING. Test runs skip the gate: test mode mocks
+  // writes in BaseBubble.action() unless per-op grants are supplied, which
+  // are themselves the explicit sign-off for those operations.
+  let signOffApprovedKeys: string[] | undefined;
+  if (options.testMode !== true) {
+    const decision = await evaluateWriteSignOff({
+      bubbleParameters: flow.bubbleParameters,
+      metadata: flow.metadata,
+      originalCode: flow.originalCode,
+    });
+    if (!decision.allowed) {
+      const pendingSummary = decision.pending
+        .map(
+          (entry) =>
+            `${entry.bubbleName}.${entry.operation ?? '(no operation)'} [${entry.callSiteKey}]`
+        )
+        .join(', ');
+      return {
+        executionId: 0,
+        success: false,
+        error:
+          `Write sign-off required: this flow contains write-hinted operations that WILL ` +
+          `mutate real systems and may affect real users/data. Un-signed-off call sites: ` +
+          `${pendingSummary}. Approve them explicitly via POST /bubble-flow/${bubbleFlowId}/approve-writes, ` +
+          `or run POST /bubble-flow/${bubbleFlowId}/test to exercise the flow with writes mocked.`,
+        errorCode: WRITE_SIGNOFF_REQUIRED_ERROR_CODE,
+        pendingWriteSignOff: decision.pending,
+      };
+    }
+    // Defense in depth: stamp the approved identities into the run so
+    // BaseBubble.action() mocks any write-hinted call site outside them,
+    // even if a client bypassed this gate.
+    if (decision.writeSet.length > 0) {
+      signOffApprovedKeys = decision.approvedKeys;
+    }
+  }
+
   // Create execution record
   const execResult = await db
     .insert(bubbleFlowExecutions)
@@ -156,17 +198,24 @@ export async function executeBubbleFlowWithTracking(
         pricingTable: getPricingTable(),
         appType: appType,
         testMode: options.testMode,
-        approvedWriteCallSites: options.approvedWriteCallSites,
+        approvedWriteCallSites:
+          options.approvedWriteCallSites ?? signOffApprovedKeys,
+        enforceWriteSignOff: signOffApprovedKeys !== undefined,
       }
     );
 
-    // Update execution record with result and collected logs
+    // Update execution record with result and collected logs. Drift events
+    // (OUTPUT_MISMATCH) persist on the execution row — the drift signal's
+    // durable consumer, and the Contract KB's future ingest point (IR-11/12).
     await db
       .update(bubbleFlowExecutions)
       .set({
         result: cleanUpObjectForDisplayAndStorage({
           data: result.data,
           ...result.summary,
+          ...(result.errorCode && { errorCode: result.errorCode }),
+          ...(result.drift &&
+            result.drift.length > 0 && { drift: result.drift }),
         }),
         error: result.success ? null : result.error,
         status: result.success ? 'success' : 'error',
@@ -193,6 +242,10 @@ export async function executeBubbleFlowWithTracking(
         ? result.summary || 'Execution completed without logging'
         : result.data,
       error: result.error,
+      // Preserve the drift signal across this boundary too — consumers of the
+      // API response can tell OUTPUT_MISMATCH apart from generic failures.
+      errorCode: result.errorCode,
+      drift: result.drift,
     };
   } catch (error) {
     // Update execution record with error and collected logs

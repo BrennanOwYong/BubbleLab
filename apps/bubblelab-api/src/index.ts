@@ -40,6 +40,7 @@ import aiRoutes from './routes/ai.js';
 import templateSubmissionRoutes from './routes/template-submission.js';
 import browserbaseRoutes from './routes/browserbase.js';
 import { getBubbleFactory } from './services/bubble-factory-instance.js';
+import { configureSideEffectOverridePersistence } from './services/side-effect-override-store.js';
 
 const app = new OpenAPIHono({
   defaultHook: validationErrorHook,
@@ -116,6 +117,10 @@ try {
   await runMigrations();
   // Seed dev user after migrations (only in dev mode)
   await seedDevUser();
+  // Load persisted runtime-verified side-effect corrections BEFORE any run:
+  // a docs-lie caught in an earlier process must outrank the documentation
+  // in this one (never re-learned).
+  await configureSideEffectOverridePersistence();
   // Eagerly initialize bubble factory before handling any requests or starting cron
   await getBubbleFactory();
 } catch (error) {

@@ -20,9 +20,11 @@ import {
 import { injectCredentialsIntoBubbleParameters } from '../utils/bubble-parameters.js';
 import {
   CredentialType,
+  WRITE_SIGNOFF_REQUIRED_ERROR_CODE,
   type ParsedBubbleWithInfo,
   type ParsedWorkflow,
 } from '@bubblelab/shared-schemas';
+import { approveFlowWrites } from '../services/write-signoff.js';
 import { getUserId, getAppType } from '../middleware/auth.js';
 import { eq, and, count } from 'drizzle-orm';
 import { isValidBubbleTriggerEvent } from '@bubblelab/shared-schemas';
@@ -33,6 +35,7 @@ import {
   createEmptyBubbleFlowRoute,
   executeBubbleFlowRoute,
   executeBubbleFlowStreamRoute,
+  approveBubbleFlowWritesRoute,
   testBubbleFlowRoute,
   getBubbleFlowRoute,
   updateBubbleFlowRoute,
@@ -404,6 +407,11 @@ app.openapi(executeBubbleFlowRoute, async (c) => {
       pricingTable: PRICING_TABLE,
     });
 
+    // Sign-off gate: the run was blocked before dispatch — nothing executed.
+    if (result.errorCode === WRITE_SIGNOFF_REQUIRED_ERROR_CODE) {
+      return c.json(result, 409);
+    }
+
     if (!result.success) {
       return c.json(
         {
@@ -427,6 +435,32 @@ app.openapi(executeBubbleFlowRoute, async (c) => {
     }
     throw error; // Let global error handler deal with other errors
   }
+});
+
+app.openapi(approveBubbleFlowWritesRoute, async (c) => {
+  const id = parseInt(c.req.param('id'));
+  const body = c.req.valid('json');
+  const userId = getUserId(c);
+
+  const flow = await db.query.bubbleFlows.findFirst({
+    where: and(eq(bubbleFlows.id, id), eq(bubbleFlows.userId, userId)),
+  });
+  if (!flow) {
+    return c.json({ error: 'BubbleFlow not found' }, 404);
+  }
+
+  const result = await approveFlowWrites(
+    {
+      id: flow.id,
+      bubbleParameters: flow.bubbleParameters,
+      metadata: flow.metadata,
+      originalCode: flow.originalCode,
+    },
+    body.approvedWriteCallSites,
+    userId
+  );
+
+  return c.json(result, result.success ? 200 : 400);
 });
 
 app.openapi(testBubbleFlowRoute, async (c) => {

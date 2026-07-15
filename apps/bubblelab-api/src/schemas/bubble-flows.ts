@@ -19,6 +19,8 @@ import {
   validateBubbleFlowCodeSchema,
   generateBubbleFlowCodeSchema,
   validateBubbleFlowCodeResponseSchema,
+  approveBubbleFlowWritesSchema,
+  approveBubbleFlowWritesResponseSchema,
 } from './index.js';
 
 // POST /bubble-flow - Validate and store BubbleFlow
@@ -144,6 +146,79 @@ export const executeBubbleFlowRoute = createRoute({
         },
       },
       description: 'Invalid ID format',
+    },
+    404: {
+      content: {
+        'application/json': {
+          schema: errorResponseSchema,
+        },
+      },
+      description: 'BubbleFlow not found',
+    },
+    409: {
+      content: {
+        'application/json': {
+          schema: executeBubbleFlowResponseSchema,
+        },
+      },
+      description:
+        'Write sign-off required: the flow contains write-hinted operations ' +
+        'not covered by an explicit sign-off. Nothing was executed. The ' +
+        'pendingWriteSignOff field names every operation, what it will ' +
+        'mutate, and its call-site keys.',
+    },
+    500: {
+      content: {
+        'application/json': {
+          schema: errorResponseSchema,
+        },
+      },
+      description: 'Internal server error',
+    },
+  },
+  tags: ['BubbleFlow'],
+});
+
+// POST /:id/approve-writes - EXPLICIT WRITE SIGN-OFF (REPO-MAP §4b). Records
+// who approved which write-hinted call sites for the flow's current code.
+export const approveBubbleFlowWritesRoute = createRoute({
+  method: 'post',
+  path: '/{id}/approve-writes',
+  request: {
+    params: z.object({
+      id: z
+        .string()
+        .regex(/^[0-9]+$/)
+        .openapi({
+          description: 'BubbleFlow ID',
+          example: '123',
+        }),
+    }),
+    body: {
+      content: {
+        'application/json': {
+          schema: approveBubbleFlowWritesSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: approveBubbleFlowWritesResponseSchema,
+        },
+      },
+      description: 'Write sign-off recorded',
+    },
+    400: {
+      content: {
+        'application/json': {
+          schema: approveBubbleFlowWritesResponseSchema,
+        },
+      },
+      description:
+        'Sign-off rejected: it must cover every write-hinted call site',
     },
     404: {
       content: {
