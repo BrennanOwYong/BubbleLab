@@ -1,5 +1,6 @@
 // Export all types
 export * from './types/bubble.js';
+export * from './types/operation-side-effect.js';
 export * from '@bubblelab/shared-schemas';
 export * from './types/credentials.js';
 export * from './types/available-tools.js';
