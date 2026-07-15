@@ -394,6 +394,34 @@ Regarding JSON parsing for ai-agent, if JSON mode is enabled in ai-agent, the re
 Regarding variables not found errors, it is because the system does not yet support complex syntaxes like mapping multiple arrow functions inside loops, etc. Tell the user why and attempt to fix the issue by simplifying the code.
 `;
 
+/**
+ * Side-effect awareness + test-mode semantics for every code-writing agent.
+ * Grounded in the per-operation classifications each bubble declares
+ * (static operationMetadata, IR-8) — surfaced live by get-bubble-details-tool
+ * as "operationSideEffects" and "[side-effect: ...]" tags.
+ */
+export const SIDE_EFFECT_AND_TEST_MODE_INSTRUCTIONS = `OPERATION SIDE EFFECTS AND TEST MODE:
+
+Every bubble operation carries a side-effect classification, visible in get-bubble-details-tool output:
+- read: observes state only. Runs for real even in test mode.
+- write: creates a real record somewhere (sends an email, posts a message, inserts a row).
+- read_with_side_effects: mutates existing state without creating a record (mark-as-read, update, delete).
+- Operations with no classification are treated as write (fail-safe).
+
+TEST MODE (how users first run a generated flow):
+- In test mode, read operations execute for REAL; write and read_with_side_effects operations are MOCKED — they return a shape-valid result with mocked: true, but the operation DID NOT HAPPEN.
+- Therefore NEVER write a flow whose correctness depends on a mocked write having taken effect. Examples of forbidden patterns:
+  - send a message, then search for that same message to confirm delivery;
+  - create a record, then read it back by the id from the create result;
+  - update a row, then assert the new value by re-reading it.
+- Structure flows so writes are TERMINAL or independent: gather and transform data with reads first, then perform writes last, and report what was (or would be) written using the data you already hold — not by re-reading it.
+- A mocked write result still has success: true and plausible fields; treat its ids/timestamps as placeholders, never as durable references.
+
+FIXED PATH, AGENTIC NODES (product positioning — follow it):
+- The workflow's control-flow PATH is fixed at generation time: deterministic bubble calls, plain if/for logic in handle().
+- Use ai-agent ONLY as a NODE where genuine judgment is required (classify, summarize, extract from unstructured text, decide among options based on content). The agent may think inside its node; it never chooses which bubbles run next.
+- If an operation can be done deterministically (known API call, format conversion, filtering), do NOT delegate it to an ai-agent node.`;
+
 export const BUBBLE_SPECIFIC_INSTRUCTIONS = `BUBBLE SPECIFIC INSTRUCTIONS:
 1. When using the storage bubble, always use the bubble-lab-bucket bucket name, unless the user has their own s3/cloudflare bucket setup.
 2. When using the resend bubble, DO NOT set the 'from' parameter, it will be set automatically and use bubble lab's default email, unless the user has their own resend setup and account domain verified.
@@ -446,6 +474,8 @@ const researchTool = new ResearchAgentTool({...});
 ❌ Doesn't connect to how downstream bubbles use the results
 
 Comments should enable users to modify behavior without reading external documentation.
+
+${SIDE_EFFECT_AND_TEST_MODE_INSTRUCTIONS}
 `;
 
 export const DEBUGGING_INSTRUCTIONS = `
