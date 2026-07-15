@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ServiceBubble } from '../../types/service-bubble-class.js';
+import { POSTGRESQL_AUTH_METHODS } from './postgresql.auth-methods.js';
 import type { BubbleContext } from '../../types/bubble.js';
 import {
   CredentialType,
@@ -194,6 +195,8 @@ export class PostgreSQLBubble extends ServiceBubble<
   static readonly authType = 'connection-string' as const;
   // Required static metadata - TypeScript will enforce these exist
   static readonly bubbleName = 'postgresql';
+  // Doc-derived sign-in methods (IR-3/IR-4), see postgresql.auth-methods.ts
+  static readonly authMethods = POSTGRESQL_AUTH_METHODS;
   static readonly schema = PostgreSQLParamsSchema;
   static readonly resultSchema = PostgreSQLResultSchema;
   static readonly shortDescription =
