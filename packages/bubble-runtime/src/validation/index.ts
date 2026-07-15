@@ -10,7 +10,10 @@ import { BubbleInjector } from '../injection/BubbleInjector.js';
 import { BubbleFactory } from '@bubblelab/bubble-core';
 import { validateCronExpression } from '@bubblelab/shared-schemas';
 import { defaultLintRuleRegistry } from './lint-rules.js';
+import { validateBubbleParameterValues } from './param-value-validator.js';
 import ts from 'typescript';
+
+export { validateBubbleParameterValues } from './param-value-validator.js';
 
 export interface ValidationResult {
   valid: boolean;
@@ -136,6 +139,26 @@ export async function validateAndExtract(
     }
     // Get current bubbles (with clones, workflow, etc.) with original line numbers restored
     const bubbleParameters = script.getParsedBubbles();
+
+    // Step 5: Statically validate literal parameter VALUES against each
+    // bubble's declared Zod params schema — a bad literal input (invalid
+    // email, out-of-range number, unknown operation…) is rejected here,
+    // before any code ever runs.
+    const paramValueErrors = validateBubbleParameterValues(
+      bubbleParameters,
+      bubbleFactory
+    );
+    if (paramValueErrors.length > 0) {
+      return {
+        valid: false,
+        errors: paramValueErrors,
+        syntaxErrors: paramValueErrors,
+        bubbleParameters,
+        workflow: script.getWorkflow(),
+        inputSchema: script.getPayloadJsonSchema() || {},
+        trigger: script.getBubbleTriggerEventType() || undefined,
+      };
+    }
 
     // Extract required and optional credentials from bubble parameters
     const requiredCredentials: Record<string, CredentialType[]> = {};
