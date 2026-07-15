@@ -4,6 +4,10 @@ import {
   ParsedWorkflowSchema,
 } from './bubble-definition-schema';
 import { CredentialType } from './types';
+import {
+  ContractDriftEventSchema,
+  WriteSetEntrySchema,
+} from './run-grounding-schema.js';
 
 export const ServiceUsageSchema = z
   .object({
@@ -279,6 +283,25 @@ export const executeBubbleFlowResponseSchema = z
       description: 'Error message (if execution failed)',
       example: 'Validation error in BubbleFlow',
     }),
+    errorCode: z.string().optional().openapi({
+      description:
+        "Machine-readable failure class. 'OUTPUT_MISMATCH' marks contract drift (a real response violated the declared resultSchema); 'WRITE_SIGNOFF_REQUIRED' marks a run blocked at the sign-off gate.",
+      example: 'OUTPUT_MISMATCH',
+    }),
+    drift: z
+      .array(ContractDriftEventSchema)
+      .optional()
+      .openapi({
+        description:
+          'Every contract drift observed during the run (present even when flow code caught the thrown drift error)',
+      }),
+    pendingWriteSignOff: z
+      .array(WriteSetEntrySchema)
+      .optional()
+      .openapi({
+        description:
+          'Write-hinted call sites awaiting explicit sign-off; present when errorCode is WRITE_SIGNOFF_REQUIRED',
+      }),
   })
   .openapi('ExecuteBubbleFlowResponse');
 

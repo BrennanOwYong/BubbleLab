@@ -1,5 +1,10 @@
 import type { ZodTypeAny } from 'zod';
 import type { BubbleOperationResult } from './mock-data-generator.js';
+import type {
+  ContractDriftObserver,
+  MutationStateProbe,
+  SideEffectCorrectionObserver,
+} from './run-grounding-schema.js';
 
 /** Identity of the bubble invocation asking for a recorded response (test mode). */
 export interface RecordedMockLookup {
@@ -132,6 +137,32 @@ export interface ExecutionMeta {
   approvedWriteCallSites?: string[];
   /** Contract KB seam: recorded real responses served as test-mode mocks. */
   recordedMockProvider?: RecordedMockProvider;
+  /**
+   * Write sign-off enforcement for REAL (non-test) runs. When true,
+   * BaseBubble.action() mocks any write-hinted operation whose call site is
+   * not covered by approvedWriteCallSites (exact match, or a child of an
+   * approved site via `${approvedKey}.` prefix on currentUniqueId). The
+   * server-side gate is the authority; this is defense in depth so a lying
+   * client can never trigger an unapproved write.
+   */
+  enforceWriteSignOff?: boolean;
+  /**
+   * Drift consumer: invoked when a REAL response violates the declared
+   * resultSchema (code OUTPUT_MISMATCH). Fires BEFORE the drift error is
+   * thrown, so the signal reaches its consumer even when flow code catches
+   * the error.
+   */
+  onContractDrift?: ContractDriftObserver;
+  /**
+   * Docs-lie consumer: invoked when a doc-said-read operation is observed
+   * mutating state during a real run and gets reclassified.
+   */
+  onSideEffectCorrection?: SideEffectCorrectionObserver;
+  /**
+   * Optional caller-supplied state probe for docs-lie detection on read-hinted
+   * operations (captured before/after the real execution).
+   */
+  mutationProbe?: MutationStateProbe;
   // Forward compat
   [key: string]: unknown;
 }

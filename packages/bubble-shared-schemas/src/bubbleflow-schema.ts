@@ -8,6 +8,10 @@ import {
 import { CredentialType } from './types.js';
 import type { BubbleName } from './types.js';
 import { flowRoleSchema } from './permission-schema.js';
+import {
+  WriteSetEntrySchema,
+  WriteSignOffRecordSchema,
+} from './run-grounding-schema.js';
 // POST /bubble-flow - Create new BubbleFlow schema (with code)
 export const createBubbleFlowSchema = z
   .object({
@@ -124,6 +128,38 @@ export const testBubbleFlowSchema = z
       }),
   })
   .openapi('TestBubbleFlowRequest');
+
+// POST /:id/approve-writes - Explicit write sign-off. The requester must name
+// EVERY write-hinted call site; partial approval is rejected server-side.
+export const approveBubbleFlowWritesSchema = z
+  .object({
+    approvedWriteCallSites: z
+      .array(z.string())
+      .min(1)
+      .openapi({
+        description:
+          'Every write-hinted call-site key being signed off (primary key or ' +
+          'any alias from the pendingWriteSignOff payload). The sign-off is ' +
+          'rejected unless it covers the ENTIRE write set — a write can never ' +
+          'be half-approved.',
+      }),
+  })
+  .openapi('ApproveBubbleFlowWritesRequest');
+
+export const approveBubbleFlowWritesResponseSchema = z
+  .object({
+    success: z.boolean().openapi({
+      description: 'Whether the sign-off was recorded',
+    }),
+    error: z.string().optional().openapi({
+      description: 'Why the sign-off was rejected (if it was)',
+    }),
+    // Every write-hinted call site of the flow: what will mutate real systems
+    writeSet: z.array(WriteSetEntrySchema),
+    // The persisted sign-off record (who, when, code hash)
+    signOff: WriteSignOffRecordSchema.optional(),
+  })
+  .openapi('ApproveBubbleFlowWritesResponse');
 
 // PUT /bubble-flow/:id - Update BubbleFlow parameters schema
 export const updateBubbleFlowParametersSchema = z
