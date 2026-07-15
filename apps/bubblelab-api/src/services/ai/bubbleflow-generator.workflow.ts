@@ -66,6 +66,91 @@ type BubbleFlowGeneratorParamsParsed = BubbleFlowGeneratorParams & {
 
 const MAX_ITERATIONS = 50;
 
+/**
+ * Build the live capability catalogue section for the system prompt.
+ * Read fresh from the BubbleFactory on every generation (never a snapshot),
+ * including each operation's side-effect hint and required scopes (IR-8)
+ * so the model knows which operations mutate before it writes code.
+ */
+export function buildBubbleCatalogue(bubbleFactory: BubbleFactory): string {
+  return bubbleFactory
+    .listBubblesForCodeGenerator()
+    .map((name) => {
+      const metadata = bubbleFactory.getMetadata(name);
+      const line = `- ${name}: ${metadata?.shortDescription || 'No description'}`;
+      const opMeta = metadata?.operationMetadata;
+      if (!opMeta || Object.keys(opMeta).length === 0) return line;
+      const ops = Object.entries(opMeta)
+        .map(([op, m]) => {
+          const scopes = m.requiredScopes?.length
+            ? ` (scopes: ${m.requiredScopes.join(' ')})`
+            : '';
+          return `${op}=${m.sideEffect}${scopes}`;
+        })
+        .join(', ');
+      return `${line}\n  side-effects: ${ops}`;
+    })
+    .join('\n');
+}
+
+/**
+ * Shape the generator's final result. The static validator is the ONLY
+ * successful exit: code that fails validation (or was never produced)
+ * yields success=false with the validator's errors — never a silent
+ * "here is some garbage" result.
+ */
+export function buildFinalGenerationResult(args: {
+  agentSucceeded: boolean;
+  agentError: string;
+  agentResponse?: string;
+  toolCalls: GenerationResult['toolCalls'];
+  currentCode?: string;
+  finalValidation: { valid: boolean; errors?: string[] };
+}): Omit<GenerationResult, 'summary' | 'inputsSchema'> {
+  const {
+    agentSucceeded,
+    agentError,
+    agentResponse,
+    toolCalls,
+    currentCode,
+    finalValidation,
+  } = args;
+
+  if (!agentSucceeded || !currentCode) {
+    return {
+      toolCalls: [],
+      generatedCode: '',
+      isValid: false,
+      success: false,
+      error:
+        agentError ||
+        (agentResponse
+          ? `Generation produced no workflow code. Model response: ${agentResponse}`
+          : 'Failed to generate code'),
+    };
+  }
+
+  if (!finalValidation.valid) {
+    return {
+      toolCalls,
+      generatedCode: currentCode,
+      isValid: false,
+      success: false,
+      error: `Generated code failed static validation and was NOT stored: ${(
+        finalValidation.errors ?? ['unknown validation failure']
+      ).join('; ')}`,
+    };
+  }
+
+  return {
+    toolCalls,
+    generatedCode: currentCode,
+    isValid: true,
+    success: true,
+    error: '',
+  };
+}
+
 const TOOL_NAMES = {
   VALIDATION: 'bubbleflow-validation-tool',
   BUBBLE_DETAILS: 'get-bubble-details-tool',
@@ -329,17 +414,10 @@ ${AI_AGENT_BEHAVIOR_INSTRUCTIONS}`;
           }
         | undefined;
 
-      // Get available bubbles info
+      // Get available bubbles info — read LIVE from the factory on every
+      // generation, including per-operation side-effect hints and scopes.
       console.log('[BubbleFlowGenerator] Getting available bubbles...');
-      const availableBubbles = this.bubbleFactory.listBubblesForCodeGenerator();
-      console.log('[BubbleFlowGenerator] Available bubbles:', availableBubbles);
-
-      const bubbleDescriptions = availableBubbles
-        .map((name) => {
-          const metadata = this.bubbleFactory.getMetadata(name);
-          return `- ${name}: ${metadata?.shortDescription || 'No description'}`;
-        })
-        .join('\n');
+      const bubbleDescriptions = buildBubbleCatalogue(this.bubbleFactory);
 
       // Get boilerplate template
       console.log('[BubbleFlowGenerator] Generating boilerplate template...');
@@ -674,42 +752,39 @@ ${AI_AGENT_BEHAVIOR_INSTRUCTIONS}`;
       console.log('[BubbleFlowGenerator] Result success:', result.success);
       console.log('[BubbleFlowGenerator] Result error:', result.error);
 
-      if (!result.success || !currentCode) {
-        console.log('[BubbleFlowGenerator] AI agent failed');
-        return {
-          toolCalls: [],
-          generatedCode: '',
-          isValid: false,
-          success: false,
-          error: result.error || 'Failed to generate code',
-          summary: '',
-          inputsSchema: '',
-        };
+      // The static validator is the ONLY exit. Re-validate the final code
+      // authoritatively (hooks may have stale state after failed edits).
+      const finalValidation = currentCode
+        ? savedValidationResult?.valid === true
+          ? savedValidationResult
+          : await validateAndExtract(currentCode, this.bubbleFactory)
+        : { valid: false, errors: ['No code was generated'] };
+
+      const finalResult = buildFinalGenerationResult({
+        agentSucceeded: result.success,
+        agentError: result.error ?? '',
+        agentResponse: result.data?.response,
+        toolCalls: result.data?.toolCalls || [],
+        currentCode,
+        finalValidation,
+      });
+
+      if (!finalResult.success) {
+        console.log(
+          '[BubbleFlowGenerator] Generation failed loudly:',
+          finalResult.error
+        );
+        return { ...finalResult, summary: '', inputsSchema: '' };
       }
 
-      // Get the generated code from currentCode (set by hooks)
-      const generatedCode = currentCode || '';
-      const isValid = savedValidationResult?.valid ?? false;
-      const validationError = savedValidationResult?.errors.join('; ') ?? '';
+      // Run summarize agent only for validated code
+      const { summary, inputsSchema } = await this.runSummarizeAgent(
+        finalResult.generatedCode,
+        this.params.credentials,
+        this.streamingCallback
+      );
 
-      // Run summarize agent if validation passed
-      const { summary, inputsSchema } = isValid
-        ? await this.runSummarizeAgent(
-            generatedCode,
-            this.params.credentials,
-            this.streamingCallback
-          )
-        : { summary: '', inputsSchema: '' };
-
-      return {
-        toolCalls: result.data?.toolCalls || [],
-        generatedCode,
-        isValid,
-        success: true,
-        error: validationError,
-        summary,
-        inputsSchema,
-      };
+      return { ...finalResult, summary, inputsSchema };
     } catch (error) {
       console.error('[BubbleFlowGenerator] Error during generation:', error);
       return {

@@ -328,8 +328,10 @@ export async function runBoba(
     summary: result.data.summary,
     inputsSchema: result.data.inputsSchema,
     isValid: actualIsValid,
-    success: result.success,
-    error: result.error,
+    // Fail loudly: the generator's own success flag (validator-gated) must
+    // survive the bubble wrapper — success here means "validated code exists".
+    success: result.success && result.data.success,
+    error: result.data.error || result.error,
     toolCalls: result.data.toolCalls,
     bubbleCount: Object.keys(validationResult.bubbleParameters ?? {}).length,
     serviceUsage,
