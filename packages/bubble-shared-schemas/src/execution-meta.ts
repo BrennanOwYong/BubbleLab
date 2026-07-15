@@ -1,4 +1,27 @@
 import type { ZodTypeAny } from 'zod';
+import type { BubbleOperationResult } from './mock-data-generator.js';
+
+/** Identity of the bubble invocation asking for a recorded response (test mode). */
+export interface RecordedMockLookup {
+  bubbleName: string;
+  /** The `operation` discriminator of the current params, when the bubble has one. */
+  operation?: string;
+  /** Call-site identity (BubbleParser invocation key or dependency-graph unique id). */
+  callSiteKey?: string;
+}
+
+/**
+ * Contract KB seam: returns a RECORDED real response for a bubble invocation, to be used
+ * instead of the schema-derived generated mock when a write-hinted operation is skipped in
+ * test mode. Return undefined when no recording exists — the caller falls back to
+ * MockDataGenerator. The recording infrastructure (IR-11/12) plugs in here.
+ */
+export type RecordedMockProvider = (
+  lookup: RecordedMockLookup
+) =>
+  | BubbleOperationResult
+  | undefined
+  | Promise<BubbleOperationResult | undefined>;
 
 export interface PendingApproval {
   id: string;
@@ -98,6 +121,17 @@ export interface ExecutionMeta {
   _lastRunFlowName?: string;
   /** Flow IDs referenced during execution (edited, created, run, configured). */
   _referencedFlows?: Array<{ id: number; name?: string }>;
+  // Test mode (enforced in BaseBubble.action(): write-hinted operations return mocks
+  // instead of reaching performAction, so no client is constructed and no credential is read)
+  testMode?: boolean;
+  /**
+   * Call-site keys explicitly approved to execute for real while in test mode
+   * ("dummy-data" grant). Exact match only — no wildcards. An empty or missing
+   * list means every write-hinted operation is mocked.
+   */
+  approvedWriteCallSites?: string[];
+  /** Contract KB seam: recorded real responses served as test-mode mocks. */
+  recordedMockProvider?: RecordedMockProvider;
   // Forward compat
   [key: string]: unknown;
 }
