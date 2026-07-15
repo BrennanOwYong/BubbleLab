@@ -134,7 +134,7 @@ describe('backfilled metadata reachable from factory metadata (catalogue path)',
   beforeAll(async () => {
     factory = new BubbleFactory();
     await factory.registerDefaults();
-  }, 360_000);
+  }, 600_000);
 
   it('exposes operationMetadata for every backfilled bubble', () => {
     for (const name of BACKFILLED_BUBBLES) {
@@ -207,20 +207,27 @@ describe('backfilled metadata reachable from factory metadata (catalogue path)',
 });
 
 describe('catalogue surfacing for the code-generating LLM', () => {
-  it('get-bubble-details-tool emits per-operation side effects with provenance', async () => {
-    const tool = new GetBubbleDetailsTool({ bubbleName: 'resend' });
-    const result = await tool.action();
-    expect(result.success).toBe(true);
+  // The tool's performAction runs registerDefaults(); under parallel
+  // full-suite load on WSL//mnt/c the first source scan can exceed the
+  // default 60s testTimeout, so this test carries its own budget.
+  it(
+    'get-bubble-details-tool emits per-operation side effects with provenance',
+    { timeout: 600_000 },
+    async () => {
+      const tool = new GetBubbleDetailsTool({ bubbleName: 'resend' });
+      const result = await tool.action();
+      expect(result.success).toBe(true);
 
-    const sideEffects = result.data?.operationSideEffects;
-    expect(sideEffects).toBeDefined();
-    expect(sideEffects).toContain('send_email: write');
-    expect(sideEffects).toContain('get_email_status: read');
-    expect(sideEffects).toContain('citation:');
-    expect(sideEffects).toContain('source:');
+      const sideEffects = result.data?.operationSideEffects;
+      expect(sideEffects).toBeDefined();
+      expect(sideEffects).toContain('send_email: write');
+      expect(sideEffects).toContain('get_email_status: read');
+      expect(sideEffects).toContain('citation:');
+      expect(sideEffects).toContain('source:');
 
-    // Usage examples tag each operation with its side effect
-    expect(result.data?.usageExample).toContain('[side-effect: write]');
-    expect(result.data?.usageExample).toContain('[side-effect: read]');
-  });
+      // Usage examples tag each operation with its side effect
+      expect(result.data?.usageExample).toContain('[side-effect: write]');
+      expect(result.data?.usageExample).toContain('[side-effect: read]');
+    }
+  );
 });
