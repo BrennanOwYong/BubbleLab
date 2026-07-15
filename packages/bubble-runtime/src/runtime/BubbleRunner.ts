@@ -2,6 +2,8 @@ import {
   ExecutionResult,
   ParsedBubbleWithInfo,
   CredentialType,
+  DRIFT_ERROR_CODE,
+  type ContractDriftEvent,
   type ExecutionMeta,
 } from '@bubblelab/shared-schemas';
 import {
@@ -18,6 +20,7 @@ import {
   BubbleValidationError,
   BubbleExecutionError,
   BubbleError,
+  isDriftError,
 } from '@bubblelab/bubble-core';
 import type { ExecutionPlan, ExecutionStep, MiniStep } from './types';
 import { BubbleScript } from '../parse/BubbleScript';
@@ -56,6 +59,13 @@ export interface BubbleRunnerOptions {
    * mode ("dummy-data" grant). Exact match only.
    */
   approvedWriteCallSites?: string[];
+  /**
+   * REAL-run write-sign-off enforcement (defense in depth for the server-side
+   * gate): BaseBubble.action() mocks any write-hinted operation whose call
+   * site is not covered by approvedWriteCallSites. Rides the executionMeta
+   * channel like testMode — no source rewriting.
+   */
+  enforceWriteSignOff?: boolean;
 }
 
 export class BubbleRunner {
@@ -403,6 +413,11 @@ export class BubbleRunner {
    */
   async runAll(payload?: Partial<WebhookEvent>): Promise<ExecutionResult> {
     let tempFilePath: string | null = null;
+    // Drift collector: accumulates every OUTPUT_MISMATCH observed during the
+    // run, so the signal reaches the caller even when flow code catches the
+    // thrown drift error (HANDOFF §9 — the drift code must survive every
+    // wrapper boundary and have a consumer).
+    const driftEvents: ContractDriftEvent[] = [];
     console.log('Running all');
 
     try {
@@ -499,26 +514,29 @@ export class BubbleRunner {
       const flowInstance = this.instantiateFlowClass(FlowClass);
 
       // Attach execution metadata so generated code can thread it into BubbleContext.
-      // testMode / approvedWriteCallSites ride the same channel: the injected
-      // constructor context already carries executionMeta into every bubble, so
-      // the test-mode switch needs no additional source rewriting.
-      const executionMeta: ExecutionMeta | undefined =
-        this.options.executionMeta ||
-        this.options.testMode !== undefined ||
-        this.options.approvedWriteCallSites
-          ? {
-              ...this.options.executionMeta,
-              ...(this.options.testMode !== undefined && {
-                testMode: this.options.testMode,
-              }),
-              ...(this.options.approvedWriteCallSites && {
-                approvedWriteCallSites: this.options.approvedWriteCallSites,
-              }),
-            }
-          : undefined;
-      if (executionMeta) {
-        (flowInstance as any).__executionMeta__ = executionMeta;
-      }
+      // testMode / approvedWriteCallSites / enforceWriteSignOff ride the same
+      // channel: the injected constructor context already carries executionMeta
+      // into every bubble, so no additional source rewriting is needed.
+      // The drift collector chains any caller-supplied onContractDrift so both
+      // the runner result AND the caller's consumer see every event.
+      const callerDriftObserver = this.options.executionMeta?.onContractDrift;
+      const executionMeta: ExecutionMeta = {
+        ...this.options.executionMeta,
+        ...(this.options.testMode !== undefined && {
+          testMode: this.options.testMode,
+        }),
+        ...(this.options.approvedWriteCallSites && {
+          approvedWriteCallSites: this.options.approvedWriteCallSites,
+        }),
+        ...(this.options.enforceWriteSignOff !== undefined && {
+          enforceWriteSignOff: this.options.enforceWriteSignOff,
+        }),
+        onContractDrift: (event: ContractDriftEvent) => {
+          driftEvents.push(event);
+          callerDriftObserver?.(event);
+        },
+      };
+      (flowInstance as any).__executionMeta__ = executionMeta;
 
       // Ensure the logger is set on the flow instance
       if (this.logger) {
@@ -556,10 +574,56 @@ export class BubbleRunner {
         error: '',
         summary: this.logger.getExecutionSummary(),
         data: result,
+        // Drift observed but swallowed by flow-level try/catch still
+        // surfaces here — the signal always reaches a consumer.
+        ...(driftEvents.length > 0 && { drift: driftEvents }),
       };
     } catch (error: unknown) {
       // Enhanced error handling for bubble-specific errors
-      if (error instanceof BubbleValidationError) {
+      // DRIFT FIRST: checked by CODE (isDriftError), never by class identity
+      // alone — the generated temp-file flow links its own bubble-core module
+      // instance, and instanceof dies at that boundary. This branch is what
+      // keeps OUTPUT_MISMATCH from collapsing into a generic failure.
+      if (isDriftError(error)) {
+        const driftError = error as BubbleError & {
+          operation?: string;
+          deviations?: Array<{ path: string; message: string }>;
+        };
+        this.logger?.fatal(
+          `Contract drift (${DRIFT_ERROR_CODE}): ${driftError.message}`,
+          driftError,
+          {
+            variableId: driftError.variableId,
+            bubbleName: driftError.bubbleName,
+            additionalData: {
+              errorCode: DRIFT_ERROR_CODE,
+              operation: driftError.operation,
+              deviations: driftError.deviations,
+            },
+          }
+        );
+
+        if (
+          this.logger instanceof StreamingBubbleLogger ||
+          this.logger instanceof WebhookStreamLogger
+        ) {
+          this.logger.logExecutionComplete(
+            false,
+            undefined,
+            `Contract drift at ${driftError.bubbleName} (variableId: ${driftError.variableId}): ${driftError.message}`
+          );
+        }
+
+        return {
+          executionId: 0,
+          success: false,
+          summary: this.logger.getExecutionSummary(),
+          error: `Contract drift at ${driftError.bubbleName} (variableId: ${driftError.variableId}): ${driftError.message}`,
+          errorCode: DRIFT_ERROR_CODE,
+          drift: driftEvents,
+          data: undefined,
+        };
+      } else if (error instanceof BubbleValidationError) {
         const validationError = error as BubbleValidationError;
         this.logger?.fatal(
           `Bubble validation failed: ${validationError.message}`,
@@ -593,6 +657,7 @@ export class BubbleRunner {
           summary: this.logger.getExecutionSummary()!,
           error: `Bubble validation failed at ${validationError.bubbleName} (variableId: ${validationError.variableId}): ${validationError.message}`,
           data: undefined,
+          ...(driftEvents.length > 0 && { drift: driftEvents }),
         };
       } else if (error instanceof BubbleExecutionError) {
         const executionError = error as BubbleExecutionError;
@@ -628,6 +693,7 @@ export class BubbleRunner {
           summary: this.logger.getExecutionSummary(),
           error: `Bubble execution failed at ${executionError.bubbleName} (variableId: ${executionError.variableId}): ${executionError.message}`,
           data: undefined,
+          ...(driftEvents.length > 0 && { drift: driftEvents }),
         };
       } else if (error instanceof BubbleError) {
         // Generic bubble error
@@ -663,6 +729,7 @@ export class BubbleRunner {
           success: false,
           error: `Bubble error at ${bubbleError.bubbleName} (variableId: ${bubbleError.variableId}): ${bubbleError.message}`,
           data: undefined,
+          ...(driftEvents.length > 0 && { drift: driftEvents }),
         };
       } else {
         // Generic error fallback
@@ -686,6 +753,7 @@ export class BubbleRunner {
           success: false,
           error: safeError,
           data: undefined,
+          ...(driftEvents.length > 0 && { drift: driftEvents }),
         };
       }
     } finally {
