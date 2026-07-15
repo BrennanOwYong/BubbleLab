@@ -31,11 +31,24 @@ export interface StoredOAuthCredential {
 }
 
 /**
+ * Refresh a token when it expires within this window, not only after hard
+ * expiry (RFC 6749 §6 leaves timing to the client; the buffer absorbs clock
+ * skew and in-flight request latency).
+ */
+export const OAUTH_REFRESH_BUFFER_MS = 60_000;
+
+/**
  * OAuth service that handles OAuth flows, token management, and refresh
  * Uses @badgateway/oauth2-client for OAuth 2.0 operations
  */
 export class OAuthService {
   private clients: Map<string, OAuth2Client> = new Map();
+  /**
+   * Single-flight guard: at most one provider refresh per credential id at a
+   * time. Concurrent callers await the same promise instead of racing the
+   * token endpoint and rotating each other's refresh tokens.
+   */
+  private refreshInFlight: Map<number, Promise<string>> = new Map();
   private stateStore: Map<
     string,
     {
@@ -130,6 +143,15 @@ export class OAuthService {
         'Jira OAuth credentials not configured. Set JIRA_OAUTH_CLIENT_ID and JIRA_OAUTH_CLIENT_SECRET'
       );
     }
+  }
+
+  /**
+   * Register (or replace) the OAuth2 client for a provider. Used by tests to
+   * point a provider at a local token endpoint and available for dynamically
+   * configured providers.
+   */
+  registerClient(provider: string, client: OAuth2Client): void {
+    this.clients.set(provider, client);
   }
 
   /**
@@ -342,7 +364,22 @@ export class OAuthService {
   }
 
   /**
-   * Get a valid access token, always refreshing to ensure freshest credentials
+   * True when the token is expired or expires within the refresh buffer.
+   * A missing expiry means the provider issued a non-expiring token
+   * (e.g. Notion): treat it as valid rather than refreshing on every call.
+   */
+  private isExpiringSoon(expiresAt: Date | null | undefined): boolean {
+    if (!expiresAt) {
+      return false;
+    }
+    return expiresAt.getTime() - Date.now() <= OAUTH_REFRESH_BUFFER_MS;
+  }
+
+  /**
+   * Get a valid access token, refreshing only when the stored token is
+   * expired or inside the expiry buffer. An unconditional refresh per
+   * resolution races parallel executions into rotating each other's
+   * refresh tokens.
    */
   async getValidToken(credentialId: number): Promise<string | null> {
     const credential = await db.query.userCredentials.findFirst({
@@ -353,13 +390,18 @@ export class OAuthService {
       return null;
     }
 
-    // Always refresh if we have a refresh token to ensure we use the freshest credentials
-    if (credential.oauthRefreshToken) {
+    // Refresh only when the token is expiring and a refresh token exists
+    if (
+      credential.oauthRefreshToken &&
+      this.isExpiringSoon(credential.oauthExpiresAt)
+    ) {
       try {
         console.info(
-          `[oauthService] Refreshing OAuth token for credential ${credentialId}`
+          `[oauthService] Token for credential ${credentialId} is expiring, refreshing`
         );
-        const newToken = await this.refreshToken(credentialId);
+        const newToken = await this.refreshToken(credentialId, {
+          onlyIfExpiring: true,
+        });
         return newToken;
       } catch (error) {
         console.error(
@@ -370,7 +412,7 @@ export class OAuthService {
       }
     }
 
-    // Return stored token if no refresh token or refresh failed
+    // Return stored token if still valid, not refreshable, or refresh failed
     try {
       return await CredentialEncryption.decrypt(credential.oauthAccessToken);
     } catch (error) {
@@ -380,9 +422,42 @@ export class OAuthService {
   }
 
   /**
-   * Refresh an OAuth token using the refresh token
+   * Refresh an OAuth token using the refresh token.
+   *
+   * Single-flight: concurrent callers for the same credential await one
+   * shared refresh instead of each hitting the provider (rotation-safe).
+   * With `onlyIfExpiring` the refresh re-checks expiry against the current
+   * database row and skips the provider call when another caller (or another
+   * server instance) already refreshed; without it the refresh is
+   * unconditional, preserving the explicit `POST /oauth/:provider/refresh`
+   * semantics.
    */
-  async refreshToken(credentialId: number): Promise<string> {
+  async refreshToken(
+    credentialId: number,
+    options: { onlyIfExpiring?: boolean } = {}
+  ): Promise<string> {
+    const existing = this.refreshInFlight.get(credentialId);
+    if (existing) {
+      return existing;
+    }
+
+    const flight = this.performTokenRefresh(credentialId, options).finally(
+      () => {
+        this.refreshInFlight.delete(credentialId);
+      }
+    );
+    this.refreshInFlight.set(credentialId, flight);
+    return flight;
+  }
+
+  /**
+   * The actual refresh: provider call + rotated-token persistence. Only ever
+   * runs inside the single-flight guard in {@link refreshToken}.
+   */
+  private async performTokenRefresh(
+    credentialId: number,
+    options: { onlyIfExpiring?: boolean }
+  ): Promise<string> {
     const credential = await db.query.userCredentials.findFirst({
       where: eq(userCredentials.id, credentialId),
     });
@@ -396,6 +471,16 @@ export class OAuthService {
       !credential.oauthExpiresAt
     ) {
       throw new Error('OAuth credential not found or missing refresh token');
+    }
+
+    // Re-check expiry against the just-read row: a caller that queued behind
+    // an earlier flight (or another server instance) may find the token
+    // already refreshed; skip the provider call and reuse it.
+    if (
+      options.onlyIfExpiring &&
+      !this.isExpiringSoon(credential.oauthExpiresAt)
+    ) {
+      return await CredentialEncryption.decrypt(credential.oauthAccessToken);
     }
 
     const client = this.clients.get(credential.oauthProvider);
