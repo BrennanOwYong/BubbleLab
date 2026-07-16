@@ -33,6 +33,13 @@ export interface JsonSchema {
 
 export type WireLocation = 'path' | 'query' | 'body';
 
+/**
+ * How body fields are serialized on the wire: JSON.stringify, or
+ * application/x-www-form-urlencoded with deepObject bracket encoding
+ * (Stripe-style `metadata[key]=value`, `line_items[0][price]=...`).
+ */
+export type BodyEncoding = 'json' | 'form';
+
 /** One operation input field with its wire binding (composeInput flattening). */
 export interface WireField {
   /** Field name as it appears in the params schema (the wire name, verbatim). */
@@ -54,6 +61,8 @@ export interface OperationDraft {
   /** Spec-pointer citation, e.g. `sqlapi.yaml#/paths/~1api~1v2~1statements/post`. */
   citation: string;
   fields: WireField[];
+  /** Request-body wire serialization (only meaningful when body fields exist). */
+  bodyEncoding: BodyEncoding;
   /**
    * Merged 2xx response payload: union of every documented 2xx JSON object
    * schema's properties, all optional (presence varies by status code).

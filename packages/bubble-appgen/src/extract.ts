@@ -16,7 +16,12 @@ import type {
   OpenApiParameter,
   OpenApiPathItem,
 } from './openapi.js';
-import type { JsonSchema, OperationDraft, WireField } from './types.js';
+import type {
+  BodyEncoding,
+  JsonSchema,
+  OperationDraft,
+  WireField,
+} from './types.js';
 
 const HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete'] as const;
 
@@ -63,7 +68,11 @@ function extractFields(
   operationId: string,
   parameters: OpenApiParameter[],
   operation: OpenApiOperation
-): { fields: WireField[]; requestExample?: Record<string, unknown> } {
+): {
+  fields: WireField[];
+  bodyEncoding: BodyEncoding;
+  requestExample?: Record<string, unknown>;
+} {
   const fields: WireField[] = [];
   const seen = new Set<string>();
   const add = (field: WireField): void => {
@@ -101,21 +110,25 @@ function extractFields(
   }
 
   let requestExample: Record<string, unknown> | undefined;
+  let bodyEncoding: BodyEncoding = 'json';
   const body = operation.requestBody;
   if (body) {
     const json = body.content?.['application/json'];
-    if (!json?.schema) {
+    const form = body.content?.['application/x-www-form-urlencoded'];
+    const media = json ?? form;
+    bodyEncoding = json ? 'json' : 'form';
+    if (!media?.schema) {
       throw new Error(
-        `${operationId}: requestBody without application/json schema is unsupported`
+        `${operationId}: requestBody without a JSON or form-urlencoded schema is unsupported`
       );
     }
-    if (json.schema.type !== 'object' || !json.schema.properties) {
+    if (media.schema.type !== 'object' || !media.schema.properties) {
       throw new Error(
         `${operationId}: only object request bodies are flattened by the MVP generator`
       );
     }
-    const bodyRequired = new Set(json.schema.required ?? []);
-    for (const [name, propSchema] of Object.entries(json.schema.properties)) {
+    const bodyRequired = new Set(media.schema.required ?? []);
+    for (const [name, propSchema] of Object.entries(media.schema.properties)) {
       add({
         name,
         location: 'body',
@@ -123,13 +136,13 @@ function extractFields(
         schema: propSchema,
       });
     }
-    const example = json.example ?? json.schema.example;
+    const example = media.example ?? media.schema.example;
     if (example && typeof example === 'object' && !Array.isArray(example)) {
       requestExample = example as Record<string, unknown>;
     }
   }
 
-  return { fields, requestExample };
+  return { fields, bodyEncoding, requestExample };
 }
 
 /** Structural fingerprint of a schema, ignoring prose (example/description). */
@@ -206,7 +219,7 @@ export function extractOperations(
         (pathItem as OpenApiPathItem).parameters,
         operation.parameters
       );
-      const { fields, requestExample } = extractFields(
+      const { fields, bodyEncoding, requestExample } = extractFields(
         operation.operationId,
         parameters,
         operation
@@ -223,6 +236,7 @@ export function extractOperations(
         description: operation.description,
         citation: `${specName}#/paths/${pointerEscape(pathTemplate)}/${method}`,
         fields,
+        bodyEncoding,
         responseProperties,
         responseSources,
         requestExample,

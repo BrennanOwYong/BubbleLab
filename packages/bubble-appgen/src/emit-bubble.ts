@@ -221,7 +221,11 @@ function emitUrlExpression(
   return '`' + base + path + '${query}`';
 }
 
-function emitHandler(config: AppGenConfig, draft: OperationDraft): string {
+function emitHandler(
+  config: AppGenConfig,
+  draft: OperationDraft,
+  formCapable: boolean
+): string {
   const cls = config.className;
   const op = draft.name;
   const handler = `handle${pascal(op)}`;
@@ -265,10 +269,21 @@ function emitHandler(config: AppGenConfig, draft: OperationDraft): string {
     }
     lines.push('      });');
   }
+  const headersArgs = formCapable
+    ? hasBody
+      ? `token, '${draft.bodyEncoding}'`
+      : 'token'
+    : `token, ${hasBody}`;
   lines.push('      const response = await fetch(url, {');
   lines.push(`        method: '${draft.method}',`);
-  lines.push(`        headers: this.requestHeaders(token, ${hasBody}),`);
-  if (hasBody) lines.push('        body: JSON.stringify(body),');
+  lines.push(`        headers: this.requestHeaders(${headersArgs}),`);
+  if (hasBody) {
+    lines.push(
+      draft.bodyEncoding === 'form'
+        ? '        body: encodeForm(body),'
+        : '        body: JSON.stringify(body),'
+    );
+  }
   lines.push('      });');
   lines.push('      if (!response.ok) {');
   lines.push('        const errorText = await response.text();');
@@ -360,6 +375,12 @@ export function emitClassFile(
   const anyBody = drafts.some((d) =>
     d.fields.some((f) => f.location === 'body')
   );
+  // Form-capable apps get contentType-aware headers + the encodeForm helper;
+  // JSON-only apps keep the original (smaller) emission.
+  const anyForm = drafts.some(
+    (d) =>
+      d.bodyEncoding === 'form' && d.fields.some((f) => f.location === 'body')
+  );
 
   const parts: string[] = [];
   parts.push(
@@ -422,6 +443,42 @@ export function emitClassFile(
     parts.push('}');
     parts.push('');
   }
+  if (anyForm) {
+    parts.push('/**');
+    parts.push(
+      ' * Bracket-flatten nested values into application/x-www-form-urlencoded'
+    );
+    parts.push(
+      ' * pairs (OpenAPI deepObject style: metadata[key]=v, line_items[0][price]=v).'
+    );
+    parts.push(' */');
+    parts.push(
+      'function encodeForm(record: Record<string, unknown>): string {'
+    );
+    parts.push('  const search = new URLSearchParams();');
+    parts.push('  const walk = (key: string, value: unknown): void => {');
+    parts.push('    if (value === undefined || value === null) return;');
+    parts.push('    if (Array.isArray(value)) {');
+    parts.push(
+      '      value.forEach((item, index) => walk(`${key}[${index}]`, item));'
+    );
+    parts.push("    } else if (typeof value === 'object') {");
+    parts.push(
+      '      for (const [child, childValue] of Object.entries(value)) {'
+    );
+    parts.push('        walk(`${key}[${child}]`, childValue);');
+    parts.push('      }');
+    parts.push('    } else {');
+    parts.push('      search.append(key, String(value));');
+    parts.push('    }');
+    parts.push('  };');
+    parts.push(
+      '  for (const [key, value] of Object.entries(record)) walk(key, value);'
+    );
+    parts.push('  return search.toString();');
+    parts.push('}');
+    parts.push('');
+  }
   parts.push(`export class ${cls}Bubble<`);
   parts.push(`  T extends ${cls}ParamsInput = ${cls}ParamsInput,`);
   parts.push('> extends ServiceBubble<');
@@ -464,7 +521,11 @@ export function emitClassFile(
   parts.push('');
   parts.push('  private requestHeaders(');
   parts.push('    token: string,');
-  parts.push('    hasBody: boolean');
+  if (anyForm) {
+    parts.push("    contentType?: 'json' | 'form'");
+  } else {
+    parts.push('    hasBody: boolean');
+  }
   parts.push('  ): Record<string, string> {');
   parts.push('    const headers: Record<string, string> = {');
   parts.push('      Authorization: `Bearer ${token}`,');
@@ -475,7 +536,20 @@ export function emitClassFile(
     parts.push(`      ${emitKey(header)}: ${JSON.stringify(value)},`);
   }
   parts.push('    };');
-  parts.push("    if (hasBody) headers['Content-Type'] = 'application/json';");
+  if (anyForm) {
+    parts.push("    if (contentType === 'json') {");
+    parts.push("      headers['Content-Type'] = 'application/json';");
+    parts.push('    }');
+    parts.push("    if (contentType === 'form') {");
+    parts.push(
+      "      headers['Content-Type'] = 'application/x-www-form-urlencoded';"
+    );
+    parts.push('    }');
+  } else {
+    parts.push(
+      "    if (hasBody) headers['Content-Type'] = 'application/json';"
+    );
+  }
   parts.push('    return headers;');
   parts.push('  }');
   parts.push('');
@@ -508,7 +582,11 @@ export function emitClassFile(
       '`, {'
   );
   parts.push(`      method: '${probe.method}',`);
-  parts.push('      headers: this.requestHeaders(token, false),');
+  parts.push(
+    anyForm
+      ? '      headers: this.requestHeaders(token),'
+      : '      headers: this.requestHeaders(token, false),'
+  );
   parts.push('    });');
   parts.push('    return response.status !== 401 && response.status !== 403;');
   parts.push('  }');
@@ -551,7 +629,7 @@ export function emitClassFile(
   parts.push('  }');
   parts.push('');
   for (const draft of drafts) {
-    parts.push(emitHandler(config, draft));
+    parts.push(emitHandler(config, draft, anyForm));
     parts.push('');
   }
   parts.push('}');
