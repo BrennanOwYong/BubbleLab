@@ -14,7 +14,8 @@
  * Usage:
  *   bun scripts/trim-openapi.ts --source <full-spec.json|yaml> --trim examples/<app>.trim.json
  */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
@@ -397,4 +398,14 @@ const trimmed: Json = {
 
 const outPath = resolve(packageRoot, 'fixtures', config.output);
 writeFileSync(outPath, stringifyYaml(trimmed, { lineWidth: 0 }));
+
+// Format with the repo prettier so re-trimming is a no-op diff against
+// committed (pre-commit-hook-formatted) fixtures — idempotent regeneration.
+const prettierBin = resolve(packageRoot, '../../node_modules/.bin/prettier');
+if (existsSync(prettierBin)) {
+  execFileSync(prettierBin, ['--write', outPath], { stdio: 'ignore' });
+  console.log('formatted fixture with repo prettier');
+} else {
+  console.warn('repo prettier not found; fixture left unformatted');
+}
 console.log(`wrote ${outPath}`);
