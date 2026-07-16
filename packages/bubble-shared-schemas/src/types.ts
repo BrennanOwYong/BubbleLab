@@ -121,6 +121,15 @@ export enum CredentialType {
   // Snowflake SQL API v2 Programmatic Access Token (generated snowflake-sql-api bubble)
   SNOWFLAKE_PAT = 'SNOWFLAKE_PAT',
 
+  // Google BigQuery OAuth 2.0 access token (generated bigquery bubble)
+  BIGQUERY_TOKEN = 'BIGQUERY_TOKEN',
+  // Amazon Redshift Data API credential (generated redshift-data bubble; live
+  // calls additionally require AWS SigV4 request signing, which the generated
+  // raw-fetch bearer pattern does not implement yet)
+  REDSHIFT_DATA_CRED = 'REDSHIFT_DATA_CRED',
+  // Databricks personal access token (generated databricks-sql bubble)
+  DATABRICKS_PAT = 'DATABRICKS_PAT',
+
   // Salesforce Credentials
   SALESFORCE_CRED = 'SALESFORCE_CRED',
 
@@ -239,4 +248,7 @@ export type BubbleName =
   | 'granola'
   | 'memberful'
   | 'luma'
-  | 'zoom';
+  | 'zoom'
+  | 'bigquery'
+  | 'redshift-data'
+  | 'databricks-sql';

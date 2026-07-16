@@ -691,6 +691,30 @@ export const CREDENTIAL_TYPE_CONFIG: Record<CredentialType, CredentialConfig> =
       namePlaceholder: 'My Snowflake PAT',
       credentialConfigurations: {},
     },
+    [CredentialType.BIGQUERY_TOKEN]: {
+      label: 'Google BigQuery Access Token',
+      description:
+        'OAuth 2.0 access token with a BigQuery scope for the generated bigquery bubble; the API base URL is a bubble parameter',
+      placeholder: 'Your Google OAuth 2.0 access token',
+      namePlaceholder: 'My BigQuery Token',
+      credentialConfigurations: {},
+    },
+    [CredentialType.REDSHIFT_DATA_CRED]: {
+      label: 'Amazon Redshift Data API',
+      description:
+        'Credential slot for the generated redshift-data bubble; the regional endpoint is a bubble parameter. Live calls additionally require AWS SigV4 request signing, which the generated raw-fetch pattern does not implement yet',
+      placeholder: 'Your Redshift Data API credential',
+      namePlaceholder: 'My Redshift Data API',
+      credentialConfigurations: {},
+    },
+    [CredentialType.DATABRICKS_PAT]: {
+      label: 'Databricks Personal Access Token',
+      description:
+        'Personal access token for the Databricks SQL Statement Execution API (generated databricks-sql bubble); the workspace URL is a bubble parameter',
+      placeholder: 'Your Databricks personal access token',
+      namePlaceholder: 'My Databricks PAT',
+      credentialConfigurations: {},
+    },
     [CredentialType.DOCUSIGN_CRED]: {
       label: 'DocuSign',
       description: 'OAuth connection to DocuSign for eSignature operations',
@@ -831,6 +855,9 @@ export const CREDENTIAL_ENV_MAP: Record<CredentialType, string> = {
   [CredentialType.SLAB_CRED]: 'SLAB_API_TOKEN',
   [CredentialType.SNOWFLAKE_CRED]: '', // Multi-field credential (account + username + privateKey + optional fields), no single env var
   [CredentialType.SNOWFLAKE_PAT]: 'SNOWFLAKE_PAT',
+  [CredentialType.BIGQUERY_TOKEN]: 'BIGQUERY_TOKEN',
+  [CredentialType.REDSHIFT_DATA_CRED]: '', // SigV4 credential pair, no single env var; runtime signing not implemented yet
+  [CredentialType.DATABRICKS_PAT]: 'DATABRICKS_PAT',
   [CredentialType.SALESFORCE_CRED]: '', // OAuth credential, no env var
   [CredentialType.ASANA_CRED]: '', // OAuth credential, no env var
   [CredentialType.DISCORD_CRED]: '', // OAuth credential, no env var
@@ -3088,6 +3115,9 @@ export const BUBBLE_CREDENTIAL_OPTIONS: Record<
   slab: [CredentialType.SLAB_CRED],
   snowflake: [CredentialType.SNOWFLAKE_CRED],
   'snowflake-sql-api': [CredentialType.SNOWFLAKE_PAT],
+  bigquery: [CredentialType.BIGQUERY_TOKEN],
+  'redshift-data': [CredentialType.REDSHIFT_DATA_CRED],
+  'databricks-sql': [CredentialType.DATABRICKS_PAT],
   salesforce: [CredentialType.SALESFORCE_CRED],
   asana: [CredentialType.ASANA_CRED],
   discord: [CredentialType.DISCORD_CRED],

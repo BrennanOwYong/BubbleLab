@@ -84,6 +84,15 @@ export const CREDENTIAL_CONFIGURATION_MAP: Record<
   [CredentialType.SNOWFLAKE_PAT]: {
     accountUrl: BubbleParameterType.STRING,
   },
+  [CredentialType.BIGQUERY_TOKEN]: {
+    endpointUrl: BubbleParameterType.STRING,
+  },
+  [CredentialType.REDSHIFT_DATA_CRED]: {
+    endpointUrl: BubbleParameterType.STRING,
+  },
+  [CredentialType.DATABRICKS_PAT]: {
+    workspaceUrl: BubbleParameterType.STRING,
+  },
   [CredentialType.SALESFORCE_CRED]: {},
   [CredentialType.ASANA_CRED]: {},
   [CredentialType.DISCORD_CRED]: {},
