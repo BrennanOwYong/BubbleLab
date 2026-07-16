@@ -78,8 +78,9 @@ export class SnowflakeSqlApiBubble<
 
   constructor(
     params: T = {
-      operation: 'submit_statement',
+      operation: 'get_statement_status',
       accountUrl: 'https://org-account.snowflakecomputing.com',
+      statementHandle: 'e4ce975e-f7ff-4b5e-b15e-bf25f59371ae',
     } as T,
     context?: BubbleContext
   ) {

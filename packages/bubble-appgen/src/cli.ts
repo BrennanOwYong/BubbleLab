@@ -6,7 +6,8 @@
  * Usage:
  *   bun src/cli.ts --spec fixtures/sqlapi.yaml --config examples/<app>.config.json [--out <dir>]
  */
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadOpenApi } from './openapi.js';
@@ -62,6 +63,16 @@ mkdirSync(outDir, { recursive: true });
 for (const file of files) {
   writeFileSync(join(outDir, file.fileName), file.content);
   console.log(`wrote ${join(outDir, file.fileName)}`);
+}
+
+// Format with the repo prettier so regeneration is a no-op diff against
+// committed (pre-commit-hook-formatted) files — idempotent regeneration.
+const prettierBin = resolve(packageRoot, '../../node_modules/.bin/prettier');
+if (existsSync(prettierBin)) {
+  execFileSync(prettierBin, ['--write', outDir], { stdio: 'ignore' });
+  console.log('formatted output with repo prettier');
+} else {
+  console.warn('repo prettier not found; output left unformatted');
 }
 
 const elapsed = Math.round(performance.now() - started);
