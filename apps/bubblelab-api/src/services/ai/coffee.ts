@@ -377,10 +377,10 @@ export async function runCoffee(
   apiStreamingCallback?: StreamingCallback
 ): Promise<CoffeeResponse> {
   // Check for required API keys
-  if (!env.GOOGLE_API_KEY) {
+  if (!env.OPENAI_API_KEY) {
     return {
       type: 'error',
-      error: `Google API key is required to run Coffee, please make sure the environment variable ${CREDENTIAL_ENV_MAP[CredentialType.GOOGLE_GEMINI_CRED]} is set.`,
+      error: `OpenAI API key is required to run Coffee, please make sure the environment variable ${CREDENTIAL_ENV_MAP[CredentialType.OPENAI_CRED]} is set, please obtain one https://platform.openai.com/api-keys.`,
       success: false,
     };
   }
@@ -400,8 +400,11 @@ export async function runCoffee(
     // The history is passed as separate messages instead of a single serialized string
     const conversationHistory = buildConversationHistory(request);
 
-    // Merge credentials
+    // Merge credentials with default OpenAI credential (planning model runs
+    // on openai/*). Google/OpenRouter entries stay as harmless empty-string
+    // fallbacks for callers that pass their own keys.
     const mergedCredentials: Partial<Record<CredentialType, string>> = {
+      [CredentialType.OPENAI_CRED]: process.env.OPENAI_API_KEY || '',
       [CredentialType.GOOGLE_GEMINI_CRED]: process.env.GOOGLE_API_KEY || '',
       [CredentialType.OPENROUTER_CRED]: process.env.OPENROUTER_API_KEY || '',
       [CredentialType.FIRECRAWL_API_KEY]: process.env.FIRE_CRAWL_API_KEY || '',
@@ -461,7 +464,8 @@ export async function runCoffee(
         model: {
           model: COFFEE_DEFAULT_MODEL,
           reasoningEffort: 'medium',
-          temperature: 0.7,
+          // No explicit temperature: GPT-5-family reasoning models only accept
+          // the default (1); mirrors the verified Boba openai/* configs.
           jsonMode: true,
         },
         tools: [
