@@ -22,6 +22,9 @@ export const GOOGLE_DRIVE_OPERATION_METADATA: BubbleOperationMetadata = {
     source: 'prose',
     citation:
       'https://developers.google.com/workspace/drive/api/reference/rest/v3/files/create — "Creates a new file."',
+    requiredScopes: [
+      'https://www.googleapis.com/auth/drive|https://www.googleapis.com/auth/drive.appdata|https://www.googleapis.com/auth/drive.file',
+    ],
   },
   download_file: {
     sideEffect: 'read',
@@ -31,6 +34,9 @@ export const GOOGLE_DRIVE_OPERATION_METADATA: BubbleOperationMetadata = {
     source: 'prose',
     citation:
       'https://developers.google.com/workspace/drive/api/reference/rest/v3/files/get — "Gets a file\'s metadata or content by ID."',
+    requiredScopes: [
+      'https://www.googleapis.com/auth/drive|https://www.googleapis.com/auth/drive.appdata|https://www.googleapis.com/auth/drive.file|https://www.googleapis.com/auth/drive.meet.readonly|https://www.googleapis.com/auth/drive.metadata|https://www.googleapis.com/auth/drive.metadata.readonly|https://www.googleapis.com/auth/drive.photos.readonly|https://www.googleapis.com/auth/drive.readonly',
+    ],
   },
   list_files: {
     sideEffect: 'read',
@@ -40,6 +46,9 @@ export const GOOGLE_DRIVE_OPERATION_METADATA: BubbleOperationMetadata = {
     source: 'prose',
     citation:
       'https://developers.google.com/workspace/drive/api/reference/rest/v3/files/list — "Lists the user\'s files."',
+    requiredScopes: [
+      'https://www.googleapis.com/auth/drive|https://www.googleapis.com/auth/drive.appdata|https://www.googleapis.com/auth/drive.file|https://www.googleapis.com/auth/drive.meet.readonly|https://www.googleapis.com/auth/drive.metadata|https://www.googleapis.com/auth/drive.metadata.readonly|https://www.googleapis.com/auth/drive.photos.readonly|https://www.googleapis.com/auth/drive.readonly',
+    ],
   },
   create_folder: {
     sideEffect: 'write',
@@ -49,6 +58,9 @@ export const GOOGLE_DRIVE_OPERATION_METADATA: BubbleOperationMetadata = {
     source: 'prose',
     citation:
       'https://developers.google.com/workspace/drive/api/reference/rest/v3/files/create — "Creates a new file."',
+    requiredScopes: [
+      'https://www.googleapis.com/auth/drive|https://www.googleapis.com/auth/drive.appdata|https://www.googleapis.com/auth/drive.file',
+    ],
   },
   delete_file: {
     sideEffect: 'read_with_side_effects',
@@ -58,6 +70,9 @@ export const GOOGLE_DRIVE_OPERATION_METADATA: BubbleOperationMetadata = {
     source: 'prose',
     citation:
       'packages/bubble-core/src/bubbles/service-bubble/google-drive.ts#operation:delete_file — "Delete a file or folder from Google Drive" (schema prose; vendor doc root: https://developers.google.com/workspace/drive/api/reference/rest/v3)',
+    requiredScopes: [
+      'https://www.googleapis.com/auth/drive|https://www.googleapis.com/auth/drive.appdata|https://www.googleapis.com/auth/drive.file',
+    ],
   },
   get_file_info: {
     sideEffect: 'read',
@@ -67,6 +82,9 @@ export const GOOGLE_DRIVE_OPERATION_METADATA: BubbleOperationMetadata = {
     source: 'prose',
     citation:
       'https://developers.google.com/workspace/drive/api/reference/rest/v3/files/get — "Gets a file\'s metadata or content by ID."',
+    requiredScopes: [
+      'https://www.googleapis.com/auth/drive|https://www.googleapis.com/auth/drive.appdata|https://www.googleapis.com/auth/drive.file|https://www.googleapis.com/auth/drive.meet.readonly|https://www.googleapis.com/auth/drive.metadata|https://www.googleapis.com/auth/drive.metadata.readonly|https://www.googleapis.com/auth/drive.photos.readonly|https://www.googleapis.com/auth/drive.readonly',
+    ],
   },
   share_file: {
     sideEffect: 'write',
@@ -76,6 +94,9 @@ export const GOOGLE_DRIVE_OPERATION_METADATA: BubbleOperationMetadata = {
     source: 'prose',
     citation:
       'https://developers.google.com/workspace/drive/api/reference/rest/v3/permissions/create — "Creates a permission for a file or shared drive."',
+    requiredScopes: [
+      'https://www.googleapis.com/auth/drive|https://www.googleapis.com/auth/drive.file',
+    ],
   },
   move_file: {
     sideEffect: 'read_with_side_effects',
@@ -85,6 +106,9 @@ export const GOOGLE_DRIVE_OPERATION_METADATA: BubbleOperationMetadata = {
     source: 'prose',
     citation:
       'https://developers.google.com/workspace/drive/api/reference/rest/v3/files/update — "Updates a file\'s metadata and/or content."',
+    requiredScopes: [
+      'https://www.googleapis.com/auth/drive|https://www.googleapis.com/auth/drive.appdata|https://www.googleapis.com/auth/drive.file|https://www.googleapis.com/auth/drive.metadata|https://www.googleapis.com/auth/drive.scripts',
+    ],
   },
   get_doc: {
     sideEffect: 'read',
@@ -94,6 +118,9 @@ export const GOOGLE_DRIVE_OPERATION_METADATA: BubbleOperationMetadata = {
     source: 'prose',
     citation:
       'https://developers.google.com/workspace/docs/api/reference/rest/v1/documents/get — "Gets the latest version of the specified document."',
+    requiredScopes: [
+      'https://www.googleapis.com/auth/documents|https://www.googleapis.com/auth/documents.readonly|https://www.googleapis.com/auth/drive|https://www.googleapis.com/auth/drive.readonly|https://www.googleapis.com/auth/drive.file',
+    ],
   },
   update_doc: {
     sideEffect: 'read_with_side_effects',
@@ -103,6 +130,9 @@ export const GOOGLE_DRIVE_OPERATION_METADATA: BubbleOperationMetadata = {
     source: 'prose',
     citation:
       'https://developers.google.com/workspace/docs/api/reference/rest/v1/documents/batchUpdate — "Applies one or more updates to the document."',
+    requiredScopes: [
+      'https://www.googleapis.com/auth/documents|https://www.googleapis.com/auth/drive|https://www.googleapis.com/auth/drive.file',
+    ],
   },
   replace_text: {
     sideEffect: 'read_with_side_effects',
@@ -112,6 +142,9 @@ export const GOOGLE_DRIVE_OPERATION_METADATA: BubbleOperationMetadata = {
     source: 'prose',
     citation:
       'https://developers.google.com/workspace/docs/api/reference/rest/v1/documents/batchUpdate — "Applies one or more updates to the document."',
+    requiredScopes: [
+      'https://www.googleapis.com/auth/documents|https://www.googleapis.com/auth/drive|https://www.googleapis.com/auth/drive.file',
+    ],
   },
   copy_doc: {
     sideEffect: 'write',
@@ -121,5 +154,8 @@ export const GOOGLE_DRIVE_OPERATION_METADATA: BubbleOperationMetadata = {
     source: 'prose',
     citation:
       'https://developers.google.com/workspace/drive/api/reference/rest/v3/files/copy — "Creates a copy of a file and applies any requested updates with patch semantics."',
+    requiredScopes: [
+      'https://www.googleapis.com/auth/drive|https://www.googleapis.com/auth/drive.appdata|https://www.googleapis.com/auth/drive.file|https://www.googleapis.com/auth/drive.photos.readonly',
+    ],
   },
 };

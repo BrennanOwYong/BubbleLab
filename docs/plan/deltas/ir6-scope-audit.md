@@ -122,6 +122,15 @@ RFC 6750 §3.1.
 Reference design: `integration_stitcher/packages/auth/src/scope-audit.ts` (+ its
 `scope-audit.test.ts`).
 
-## Gate results (2026-07-15, WSL `/mnt/c`)
+## Gate results (2026-07-16, Linux-native clone)
 
-(to be filled after the gate run)
+Run after committing the regenerated operation-metadata files (the backfill's
+requiredScopes output for gmail, google-calendar, google-drive) and rebuilding
+shared-schemas -> bubble-core -> bubble-runtime.
+
+- `packages/bubble-core` `vitest run src/utils/scope-audit.test.ts`: 14/14 pass.
+- `apps/bubblelab-api` `bun test src/routes/bubble-flows-scope-audit.test.ts`
+  (with `DATABASE_URL=file:./test.db BUBBLE_ENV=test --preload ./src/test/setup.ts`):
+  4/4 pass.
+- Regression: `bubble-flows-enhanced.test.ts` + `bubble-flows-implicit-any.test.ts`:
+  8/8 pass across both files.

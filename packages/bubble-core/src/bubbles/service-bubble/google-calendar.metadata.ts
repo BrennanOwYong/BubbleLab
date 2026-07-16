@@ -22,6 +22,9 @@ export const GOOGLE_CALENDAR_OPERATION_METADATA: BubbleOperationMetadata = {
     source: 'prose',
     citation:
       'https://developers.google.com/workspace/calendar/api/v3/reference/calendarList/list — "Returns the calendars on the user\'s calendar list."',
+    requiredScopes: [
+      'https://www.googleapis.com/auth/calendar.readonly|https://www.googleapis.com/auth/calendar|https://www.googleapis.com/auth/calendar.calendarlist|https://www.googleapis.com/auth/calendar.calendarlist.readonly',
+    ],
   },
   list_events: {
     sideEffect: 'read',
@@ -31,6 +34,9 @@ export const GOOGLE_CALENDAR_OPERATION_METADATA: BubbleOperationMetadata = {
     source: 'prose',
     citation:
       'https://developers.google.com/workspace/calendar/api/v3/reference/events/list — "Returns events on the specified calendar."',
+    requiredScopes: [
+      'https://www.googleapis.com/auth/calendar.readonly|https://www.googleapis.com/auth/calendar|https://www.googleapis.com/auth/calendar.events.readonly|https://www.googleapis.com/auth/calendar.events|https://www.googleapis.com/auth/calendar.app.created|https://www.googleapis.com/auth/calendar.events.freebusy|https://www.googleapis.com/auth/calendar.events.owned|https://www.googleapis.com/auth/calendar.events.owned.readonly|https://www.googleapis.com/auth/calendar.events.public.readonly',
+    ],
   },
   get_event: {
     sideEffect: 'read',
@@ -40,6 +46,9 @@ export const GOOGLE_CALENDAR_OPERATION_METADATA: BubbleOperationMetadata = {
     source: 'prose',
     citation:
       'https://developers.google.com/workspace/calendar/api/v3/reference/events/get — "Returns an event based on its Google Calendar ID."',
+    requiredScopes: [
+      'https://www.googleapis.com/auth/calendar.readonly|https://www.googleapis.com/auth/calendar|https://www.googleapis.com/auth/calendar.events.readonly|https://www.googleapis.com/auth/calendar.events|https://www.googleapis.com/auth/calendar.app.created|https://www.googleapis.com/auth/calendar.events.freebusy|https://www.googleapis.com/auth/calendar.events.owned|https://www.googleapis.com/auth/calendar.events.owned.readonly|https://www.googleapis.com/auth/calendar.events.public.readonly',
+    ],
   },
   create_event: {
     sideEffect: 'write',
@@ -49,6 +58,9 @@ export const GOOGLE_CALENDAR_OPERATION_METADATA: BubbleOperationMetadata = {
     source: 'prose',
     citation:
       'https://developers.google.com/workspace/calendar/api/v3/reference/events/insert — "Creates an event."',
+    requiredScopes: [
+      'https://www.googleapis.com/auth/calendar|https://www.googleapis.com/auth/calendar.events|https://www.googleapis.com/auth/calendar.app.created|https://www.googleapis.com/auth/calendar.events.owned',
+    ],
   },
   update_event: {
     sideEffect: 'read_with_side_effects',
@@ -58,6 +70,9 @@ export const GOOGLE_CALENDAR_OPERATION_METADATA: BubbleOperationMetadata = {
     source: 'prose',
     citation:
       'https://developers.google.com/workspace/calendar/api/v3/reference/events/update — "Updates an event."',
+    requiredScopes: [
+      'https://www.googleapis.com/auth/calendar|https://www.googleapis.com/auth/calendar.events|https://www.googleapis.com/auth/calendar.app.created|https://www.googleapis.com/auth/calendar.events.owned',
+    ],
   },
   delete_event: {
     sideEffect: 'read_with_side_effects',
@@ -67,5 +82,8 @@ export const GOOGLE_CALENDAR_OPERATION_METADATA: BubbleOperationMetadata = {
     source: 'prose',
     citation:
       'https://developers.google.com/workspace/calendar/api/v3/reference/events/delete — "Deletes an event."',
+    requiredScopes: [
+      'https://www.googleapis.com/auth/calendar|https://www.googleapis.com/auth/calendar.events|https://www.googleapis.com/auth/calendar.app.created|https://www.googleapis.com/auth/calendar.events.owned',
+    ],
   },
 };
