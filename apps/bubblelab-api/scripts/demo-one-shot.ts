@@ -6,8 +6,8 @@
  *   2. Static validation gate — a flow with a bad literal parameter is
  *      REJECTED at compile time, provably without executing any tool
  *   3. Test-mode run of a stored-shape flow — the write is MOCKED, no network
- *   4. Real LLM generation (runs only when GOOGLE_API_KEY + OPENROUTER_API_KEY
- *      exist; otherwise reported as SKIPPED — never faked):
+ *   4. Real LLM generation (runs only when OPENAI_API_KEY
+ *      exists; otherwise reported as SKIPPED — never faked):
  *      a normal prompt must yield validated code; an impossible prompt must
  *      FAIL LOUDLY (success=false) instead of emitting garbage.
  *
@@ -74,7 +74,9 @@ const BAD_LITERAL_FLOW = GOOD_FLOW.replace(
 );
 
 if (BAD_LITERAL_FLOW === GOOD_FLOW) {
-  throw new Error('demo fixture replace failed — BAD_LITERAL_FLOW is unchanged');
+  throw new Error(
+    'demo fixture replace failed — BAD_LITERAL_FLOW is unchanged'
+  );
 }
 
 async function main() {
@@ -112,7 +114,9 @@ async function main() {
   }
 
   const goodResult = await validateAndExtract(GOOD_FLOW, factory, false);
-  console.log(`\ncontrol (same flow, runtime-provided recipient): valid: ${goodResult.valid}`);
+  console.log(
+    `\ncontrol (same flow, runtime-provided recipient): valid: ${goodResult.valid}`
+  );
   if (!goodResult.valid) {
     console.log(goodResult.errors);
     throw new Error('DEMO FAILED: the control flow should validate');
@@ -131,7 +135,11 @@ async function main() {
   console.log(`flow return: ${JSON.stringify(runResult.data)}`);
   console.log(`network attempts during test-mode run: ${networkAttempts}`);
   const flowReturn = runResult.data as { sent?: boolean; mocked?: boolean };
-  if (!runResult.success || flowReturn?.mocked !== true || networkAttempts > 0) {
+  if (
+    !runResult.success ||
+    flowReturn?.mocked !== true ||
+    networkAttempts > 0
+  ) {
     throw new Error(
       'DEMO FAILED: test-mode run should mock the write with zero network'
     );
@@ -141,11 +149,11 @@ async function main() {
   );
 
   // ── 4. Real LLM generation (honest about requirements) ──────────────────
-  section('4) One-shot LLM generation (needs GOOGLE_API_KEY + OPENROUTER_API_KEY)');
-  if (!process.env.GOOGLE_API_KEY || !process.env.OPENROUTER_API_KEY) {
+  section('4) One-shot LLM generation (needs OPENAI_API_KEY)');
+  if (!process.env.OPENAI_API_KEY) {
     console.log(
-      'SKIPPED: GOOGLE_API_KEY / OPENROUTER_API_KEY not set. No fake success —\n' +
-        'set the keys and re-run to watch a natural-language prompt become a\n' +
+      'SKIPPED: OPENAI_API_KEY not set. No fake success —\n' +
+        'set the key and re-run to watch a natural-language prompt become a\n' +
         'validated, storable flow, and an impossible prompt fail loudly.'
     );
     console.log('\nDemo finished: offline stages all passed.');
@@ -161,7 +169,9 @@ async function main() {
   console.log(`success: ${gen.success}, isValid: ${gen.isValid}`);
   if (!gen.success || !gen.isValid) {
     console.log(`error: ${gen.error}`);
-    throw new Error('DEMO FAILED: a feasible prompt did not produce valid code');
+    throw new Error(
+      'DEMO FAILED: a feasible prompt did not produce valid code'
+    );
   }
   console.log('--- generated code (validated) ---');
   console.log(gen.generatedCode);

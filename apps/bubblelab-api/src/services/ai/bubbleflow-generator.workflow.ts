@@ -239,10 +239,10 @@ export class BubbleFlowGeneratorWorkflow extends WorkflowBubble<
       {
         name: 'Flow Summary Agent',
         model: {
-          model: 'google/gemini-2.5-flash',
+          model: 'openai/gpt-5-mini',
           jsonMode: true,
           backupModel: {
-            model: 'anthropic/claude-haiku-4-5',
+            model: 'openai/gpt-5.1',
           },
         },
         message:
@@ -604,11 +604,9 @@ ${AI_AGENT_BEHAVIOR_INSTRUCTIONS}`;
 
           model: {
             reasoningEffort: 'medium',
-            model: 'google/gemini-3-flash-preview',
-            temperature: 0.3,
+            model: 'openai/gpt-5.2',
             backupModel: {
-              model: 'anthropic/claude-sonnet-4-5',
-              temperature: 0.3,
+              model: 'openai/gpt-5.1',
             },
           },
           tools: [

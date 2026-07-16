@@ -241,7 +241,7 @@ export async function runBoba(
   // Combine the original prompt with the full context
   const enrichedPrompt = fullContext ? `${prompt}\n\n${fullContext}` : prompt;
 
-  if (!env.OPENROUTER_API_KEY) {
+  if (!env.OPENAI_API_KEY) {
     return {
       summary: '',
       inputsSchema: '',
@@ -249,17 +249,7 @@ export async function runBoba(
       generatedCode: '',
       isValid: false,
       success: false,
-      error: `OpenRouter API key is required to run (for apply model), please make sure the environment variable ${CREDENTIAL_ENV_MAP[CredentialType.OPENROUTER_CRED]} is set, please obtain one https://openrouter.ai/settings/keys.`,
-    };
-  } else if (!env.GOOGLE_API_KEY) {
-    return {
-      summary: '',
-      inputsSchema: '',
-      toolCalls: [],
-      generatedCode: '',
-      isValid: false,
-      success: false,
-      error: `Google API key is required to run (for main generation model), please make sure the environment variable ${CREDENTIAL_ENV_MAP[CredentialType.GOOGLE_GEMINI_CRED]} is set, please obtain one https://console.cloud.google.com/apis/credentials.`,
+      error: `OpenAI API key is required to run (main generation and summarize models), please make sure the environment variable ${CREDENTIAL_ENV_MAP[CredentialType.OPENAI_CRED]} is set, please obtain one https://platform.openai.com/api-keys.`,
     };
   }
 
@@ -268,8 +258,11 @@ export async function runBoba(
     pricingTable: getPricingTable(),
   });
 
-  // Merge provided credentials with default Google Gemini credential
+  // Merge provided credentials with default OpenAI credential (generation +
+  // summarize models both run on openai/*). Google/OpenRouter entries stay as
+  // harmless empty-string fallbacks for callers that pass their own keys.
   const mergedCredentials: Partial<Record<CredentialType, string>> = {
+    [CredentialType.OPENAI_CRED]: process.env.OPENAI_API_KEY || '',
     [CredentialType.GOOGLE_GEMINI_CRED]: process.env.GOOGLE_API_KEY || '',
     [CredentialType.OPENROUTER_CRED]: process.env.OPENROUTER_API_KEY || '',
 
