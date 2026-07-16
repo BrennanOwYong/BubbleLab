@@ -71,7 +71,13 @@ Nothing downstream could identify drift, and nothing consumed it.
   Zod-validated document per integration: versions, pending clusters,
   samples) + `contract_observations` (append-only audit log with
   provenance: production vs test, grounded, accepted, action, errorCode,
-  flow/execution ids). Migrations generated for sqlite and postgres.
+  flow/execution ids). The original branch commits shipped the schema
+  changes WITHOUT drizzle migrations, so `migrate()` never created the
+  tables and every API suite failed at `beforeEach` with "no such table:
+  contract_observations". The follow-up fix commit generates them for both
+  dialects (`drizzle-sqlite/0018_material_luke_cage.sql`,
+  `drizzle-postgres/0018_sudden_frank_castle.sql`), each creating
+  `contract_kb_documents` and `contract_observations`.
 - **THE CONSUMER** (`apps/bubblelab-api/src/services/contract-kb-service.ts`
   wired in `execution.ts#runBubbleFlowCommon`): every run — production and
   test — gets a collector sink on `executionMeta`; after `runAll()` the
