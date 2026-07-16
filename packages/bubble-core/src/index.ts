@@ -123,6 +123,8 @@ export { SlabBubble } from './bubbles/service-bubble/slab/index.js';
 export type { SlabParamsInput } from './bubbles/service-bubble/slab/index.js';
 export { SnowflakeBubble } from './bubbles/service-bubble/snowflake/index.js';
 export type { SnowflakeParamsInput } from './bubbles/service-bubble/snowflake/index.js';
+export { SnowflakeSqlApiBubble } from './bubbles/service-bubble/snowflake-sql-api/index.js';
+export type { SnowflakeSqlApiParamsInput } from './bubbles/service-bubble/snowflake-sql-api/index.js';
 export { SalesforceBubble } from './bubbles/service-bubble/salesforce/index.js';
 export type { SalesforceParamsInput } from './bubbles/service-bubble/salesforce/index.js';
 export { AsanaBubble } from './bubbles/service-bubble/asana/index.js';

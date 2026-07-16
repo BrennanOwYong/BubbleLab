@@ -111,6 +111,7 @@ const getServiceNameForCredentialType = (
     [CredentialType.ZENDESK_CRED]: 'Zendesk',
     [CredentialType.SLAB_CRED]: 'Slab',
     [CredentialType.SNOWFLAKE_CRED]: 'Snowflake',
+    [CredentialType.SNOWFLAKE_PAT]: 'Snowflake',
     [CredentialType.SALESFORCE_CRED]: 'Salesforce',
     [CredentialType.ASANA_CRED]: 'Asana',
     [CredentialType.DISCORD_CRED]: 'Discord',

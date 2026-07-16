@@ -1,0 +1,20 @@
+{
+  "name": "@bubblelab/bubble-appgen",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Contract-first bubble generator: OpenAPI spec in, type-enforced ServiceBubble out (ADD-ANY-APP stages S1-S6)",
+  "scripts": {
+    "generate:snowflake-sql-api": "bun src/cli.ts --spec fixtures/sqlapi.yaml --config examples/snowflake-sql-api.config.json",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bubblelab/shared-schemas": "workspace:*",
+    "yaml": "^2.8.1"
+  },
+  "devDependencies": {
+    "@bubblelab/bubble-core": "workspace:*",
+    "@types/node": "^20.12.12",
+    "typescript": "^5.8.3"
+  }
+}

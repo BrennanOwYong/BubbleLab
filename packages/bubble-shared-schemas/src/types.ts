@@ -118,6 +118,8 @@ export enum CredentialType {
 
   // Snowflake Credentials
   SNOWFLAKE_CRED = 'SNOWFLAKE_CRED',
+  // Snowflake SQL API v2 Programmatic Access Token (generated snowflake-sql-api bubble)
+  SNOWFLAKE_PAT = 'SNOWFLAKE_PAT',
 
   // Salesforce Credentials
   SALESFORCE_CRED = 'SALESFORCE_CRED',
@@ -226,6 +228,7 @@ export type BubbleName =
   | 'zendesk'
   | 'slab'
   | 'snowflake'
+  | 'snowflake-sql-api'
   | 'salesforce'
   | 'asana'
   | 'discord'

@@ -187,6 +187,7 @@ export class BubbleFactory {
       'zendesk',
       'slab',
       'snowflake',
+      'snowflake-sql-api',
       'salesforce',
       'asana',
       'discord',
@@ -448,6 +449,9 @@ export class BubbleFactory {
     const { SnowflakeBubble } = await import(
       './bubbles/service-bubble/snowflake/index.js'
     );
+    const { SnowflakeSqlApiBubble } = await import(
+      './bubbles/service-bubble/snowflake-sql-api/index.js'
+    );
     const { SalesforceBubble } = await import(
       './bubbles/service-bubble/salesforce/index.js'
     );
@@ -648,6 +652,10 @@ export class BubbleFactory {
     this.register('zendesk', ZendeskBubble as BubbleClassWithMetadata);
     this.register('slab', SlabBubble as BubbleClassWithMetadata);
     this.register('snowflake', SnowflakeBubble as BubbleClassWithMetadata);
+    this.register(
+      'snowflake-sql-api',
+      SnowflakeSqlApiBubble as BubbleClassWithMetadata
+    );
     this.register('salesforce', SalesforceBubble as BubbleClassWithMetadata);
     this.register('asana', AsanaBubble as BubbleClassWithMetadata);
     this.register('discord', DiscordBubble as BubbleClassWithMetadata);

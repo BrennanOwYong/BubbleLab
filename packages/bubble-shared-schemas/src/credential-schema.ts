@@ -683,6 +683,14 @@ export const CREDENTIAL_TYPE_CONFIG: Record<CredentialType, CredentialConfig> =
         },
       ],
     },
+    [CredentialType.SNOWFLAKE_PAT]: {
+      label: 'Snowflake Programmatic Access Token',
+      description:
+        'Programmatic access token for the Snowflake SQL API v2 (generated snowflake-sql-api bubble); the per-account URL is a bubble parameter',
+      placeholder: 'Your Snowflake programmatic access token',
+      namePlaceholder: 'My Snowflake PAT',
+      credentialConfigurations: {},
+    },
     [CredentialType.DOCUSIGN_CRED]: {
       label: 'DocuSign',
       description: 'OAuth connection to DocuSign for eSignature operations',
@@ -822,6 +830,7 @@ export const CREDENTIAL_ENV_MAP: Record<CredentialType, string> = {
   [CredentialType.ZENDESK_CRED]: '', // OAuth credential, no env var
   [CredentialType.SLAB_CRED]: 'SLAB_API_TOKEN',
   [CredentialType.SNOWFLAKE_CRED]: '', // Multi-field credential (account + username + privateKey + optional fields), no single env var
+  [CredentialType.SNOWFLAKE_PAT]: 'SNOWFLAKE_PAT',
   [CredentialType.SALESFORCE_CRED]: '', // OAuth credential, no env var
   [CredentialType.ASANA_CRED]: '', // OAuth credential, no env var
   [CredentialType.DISCORD_CRED]: '', // OAuth credential, no env var
@@ -3078,6 +3087,7 @@ export const BUBBLE_CREDENTIAL_OPTIONS: Record<
   zendesk: [CredentialType.ZENDESK_CRED],
   slab: [CredentialType.SLAB_CRED],
   snowflake: [CredentialType.SNOWFLAKE_CRED],
+  'snowflake-sql-api': [CredentialType.SNOWFLAKE_PAT],
   salesforce: [CredentialType.SALESFORCE_CRED],
   asana: [CredentialType.ASANA_CRED],
   discord: [CredentialType.DISCORD_CRED],

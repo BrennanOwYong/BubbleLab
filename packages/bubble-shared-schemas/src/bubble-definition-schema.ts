@@ -81,6 +81,9 @@ export const CREDENTIAL_CONFIGURATION_MAP: Record<
   [CredentialType.ZENDESK_CRED]: {},
   [CredentialType.SLAB_CRED]: {},
   [CredentialType.SNOWFLAKE_CRED]: {},
+  [CredentialType.SNOWFLAKE_PAT]: {
+    accountUrl: BubbleParameterType.STRING,
+  },
   [CredentialType.SALESFORCE_CRED]: {},
   [CredentialType.ASANA_CRED]: {},
   [CredentialType.DISCORD_CRED]: {},
