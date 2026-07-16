@@ -603,7 +603,7 @@ ${AI_AGENT_BEHAVIOR_INSTRUCTIONS}`;
           ),
 
           model: {
-            reasoningEffort: 'low',
+            reasoningEffort: 'medium',
             model: 'openai/gpt-5.2',
             backupModel: {
               model: 'openai/gpt-5.1',
