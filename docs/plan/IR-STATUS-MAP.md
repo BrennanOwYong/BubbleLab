@@ -99,3 +99,34 @@ Rule: a feature's plan lands on main first; it branches from main; builds + test
   `{source, citation, confidence}`; 59-operation backfill across 6 bubbles. Prerequisite for Tester + KB.
 - **PR #3 · test-mode switch** — a `testMode` flag on the run context; write-hinted operations return a
   mock above `performAction`, so no client is constructed and no credential is read. Reads still run.
+
+---
+
+## 7. Verification log
+
+- **2026-07-16 · one-shot generator on OpenAI (branch `improve/stitch-generator`, commit `04d8faf`, pushed,
+  NOT merged).** Wired generation to OpenAI (primary `openai/gpt-5.2`, summarize `openai/gpt-5-mini`; Boba
+  precondition now requires only `OPENAI_API_KEY`; OpenRouter confirmed unused for generation). Ran
+  `demo-one-shot.ts` end to end on the user's key:
+  - Stage 1 (capability catalogue) PASS.
+  - Stage 2 (bad literal rejected at compile, 0 network) PASS — the static param validator delta works.
+  - Stage 3 (test-mode mocked write → `{"sent":true,"mocked":true}`, 0 network) PASS.
+  - Stage 4a (real prompt → validated BubbleFlow code, 16 agent iterations on gpt-5.2) PASS.
+  - Stage 4b (impossible prompt must fail loudly) DID NOT hold: gpt-5.2 reinterpreted the infeasible
+    request into a valid flow instead of refusing (Gemini refused; gpt-5.2 substitutes a feasible reading).
+    Model-behavior gap, not a wiring fault. See FU-1.
+  - Reproduce: checkout `improve/stitch-generator` in the main tree, then
+    `cd apps/bubblelab-api && ~/.bun/bin/bun run scripts/demo-one-shot.ts` (Linux bun by absolute path).
+
+## Follow-ups (open)
+
+- **FU-1 — infeasible-prompt refusal.** Add an instruction to `SYSTEM_PROMPT_BASE`
+  (`bubbleflow-generator.workflow.ts:161`) to fail with an error when a requested capability has no bubble,
+  instead of reinterpreting it into a feasible flow. Surfaced because gpt-5.2 is more eager than Gemini.
+- **FU-2 — generated flows still default to Google.** Generated flows embed
+  `google/gemini-2.5-flash-lite` in their own `AIAgentBubble` params (from the boilerplate / generation
+  prompts), so a generated flow still needs Google credentials at flow runtime. Extend the all-LLM-via-OpenAI
+  decision (§3.2) into the boilerplate so generated flows default to `openai/*`.
+- **Note — main dist is branch-built.** The gitignored `packages/bubble-runtime/dist` in the main checkout
+  was rebuilt from branch source during verification (includes the param validator). Rebuild on main before
+  trusting main-only runtime behavior.
