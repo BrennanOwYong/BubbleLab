@@ -20,8 +20,8 @@ export async function* sseToAsyncIterable(
   let buffer = '';
   let lastActivityTime = Date.now();
 
-  const INACTIVITY_TIMEOUT = 120000; // 2 minutes without any data = dead connection
-  const READ_TIMEOUT = 45000; // 45 seconds per read operation
+  const INACTIVITY_TIMEOUT = 600000; // 10 min without any data = dead connection (reasoning models stream in long silent bursts)
+  const READ_TIMEOUT = 300000; // 5 min per read (gpt-5.x reasoning can be silent for minutes between SSE events)
 
   // Monitor connection health - cleanup if no activity for 2 minutes
   const healthChecker = setInterval(() => {
