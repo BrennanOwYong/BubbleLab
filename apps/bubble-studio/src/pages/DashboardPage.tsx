@@ -347,9 +347,10 @@ export class UntitledFlow extends BubbleFlow<'webhook/http'> {
         publicMetadata?.onboardingCompleted === true ||
         localStorage.getItem('onboardingCompleted') === 'true';
 
+      // Onboarding questionnaire (role + gift-card prompt) removed per product
+      // decision: treat every user as already onboarded so it never shows.
       if (!hasCompletedOnboarding) {
-        // Show onboarding questionnaire for new users
-        setShowOnboardingQuestionnaire(true);
+        localStorage.setItem('onboardingCompleted', 'true');
       }
     }
   }, [isSignedIn, isUserLoaded, user, hasCheckedOnboarding, showSignInModal]);
