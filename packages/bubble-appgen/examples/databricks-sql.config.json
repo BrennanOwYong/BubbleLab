@@ -1,0 +1,20 @@
+{
+  "appName": "databricks-sql",
+  "className": "DatabricksSql",
+  "service": "databricks",
+  "alias": "dbx-sql",
+  "shortDescription": "Databricks SQL Statement Execution API integration generated from a hand-transcribed OpenAPI snippet of the official docs (execute SQL on a SQL warehouse, poll status and fetch results)",
+  "credentialType": "DATABRICKS_PAT",
+  "authHeaders": {
+    "User-Agent": "bubblelab/1.0"
+  },
+  "baseUrlParam": {
+    "name": "workspaceUrl",
+    "description": "Per-workspace Databricks URL",
+    "example": "https://dbc-a1b2c3d4-e5f6.cloud.databricks.com"
+  },
+  "operations": ["ExecuteStatement", "GetStatement"],
+  "specName": "databricks-sql-statements.yaml",
+  "docsUrl": "https://docs.databricks.com/api/workspace/statementexecution",
+  "carrierFields": ["statement", "sql", "query", "code", "command"]
+}

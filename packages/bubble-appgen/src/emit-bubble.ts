@@ -267,7 +267,7 @@ function emitHandler(config: AppGenConfig, draft: OperationDraft): string {
   }
   lines.push('      const response = await fetch(url, {');
   lines.push(`        method: '${draft.method}',`);
-  lines.push(`        headers: this.requestHeaders(token, ${hasBody}),`);
+  lines.push(`        headers: ${headersExpression(config, draft, hasBody)},`);
   if (hasBody) lines.push('        body: JSON.stringify(body),');
   lines.push('      });');
   lines.push('      if (!response.ok) {');
@@ -304,14 +304,32 @@ function emitHandler(config: AppGenConfig, draft: OperationDraft): string {
 /**
  * The cheapest credential probe: a GET classified `read`, else any GET (a GET
  * never carries a body, so a synthesized-handle probe cannot execute work).
- * A write-classified non-GET is never used as the probe.
+ * A write-classified non-GET is never used as the probe. RPC-style APIs with
+ * no GET at all name a read-classified probe via config.probeOperation.
  */
 function pickProbe(
+  config: AppGenConfig,
   classified: Array<{
     draft: OperationDraft;
     metadata: OperationSideEffectMetadata;
   }>
 ): OperationDraft {
+  if (config.probeOperation !== undefined) {
+    const named = classified.find(
+      ({ draft }) => draft.operationId === config.probeOperation
+    );
+    if (!named) {
+      throw new Error(
+        `probeOperation "${config.probeOperation}" is not among the generated operations`
+      );
+    }
+    if (named.metadata.sideEffect !== 'read') {
+      throw new Error(
+        `probeOperation "${config.probeOperation}" classifies as ${named.metadata.sideEffect}; only a read-classified operation may probe credentials`
+      );
+    }
+    return named.draft;
+  }
   const readGet = classified.find(
     ({ draft, metadata }) =>
       draft.method === 'GET' && metadata.sideEffect === 'read'
@@ -322,6 +340,25 @@ function pickProbe(
   throw new Error(
     'no GET operation available for testCredential(); supply a probe operation in the config'
   );
+}
+
+/**
+ * Header expression for one operation: the shared requestHeaders() call,
+ * spread-merged with the operation's static headers when the config declares
+ * any (config.operationHeaders keyed by operationId).
+ */
+function headersExpression(
+  config: AppGenConfig,
+  draft: OperationDraft,
+  hasBody: boolean
+): string {
+  const extra = config.operationHeaders?.[draft.operationId];
+  const base = `this.requestHeaders(token, ${hasBody})`;
+  if (!extra || Object.keys(extra).length === 0) return base;
+  const entries = Object.entries(extra)
+    .map(([name, value]) => `${JSON.stringify(name)}: ${JSON.stringify(value)}`)
+    .join(', ');
+  return `{ ...${base}, ${entries} }`;
 }
 
 /** Synthesized literal params for an operation (constructor default, probe). */
@@ -351,7 +388,7 @@ export function emitClassFile(
   const cls = config.className;
   const drafts = classified.map((c) => c.draft);
   const metadataConst = `${upperSnake(config.appName)}_OPERATION_METADATA`;
-  const probe = pickProbe(classified);
+  const probe = pickProbe(config, classified);
   // Constructor default = the probe operation (never a write-shaped default).
   const defaults = synthesizedParams(config, probe);
   const anyQuery = drafts.some((d) =>
@@ -457,9 +494,10 @@ export function emitClassFile(
   parts.push('');
   parts.push('  constructor(');
   parts.push(`    params: T = ${JSON.stringify(defaults)} as T,`);
-  parts.push('    context?: BubbleContext');
+  parts.push('    context?: BubbleContext,');
+  parts.push('    instanceId?: string');
   parts.push('  ) {');
-  parts.push('    super(params, context);');
+  parts.push('    super(params, context, instanceId);');
   parts.push('  }');
   parts.push('');
   parts.push('  private requestHeaders(');
@@ -475,7 +513,9 @@ export function emitClassFile(
     parts.push(`      ${emitKey(header)}: ${JSON.stringify(value)},`);
   }
   parts.push('    };');
-  parts.push("    if (hasBody) headers['Content-Type'] = 'application/json';");
+  parts.push(
+    "    if (hasBody) headers['Content-Type'] ??= 'application/json';"
+  );
   parts.push('    return headers;');
   parts.push('  }');
   parts.push('');
@@ -500,6 +540,17 @@ export function emitClassFile(
     /\{([^}]+)\}/g,
     (_match, name: string) => String(probeParams[name])
   );
+  // A non-GET probe (RPC-style API) sends its synthesized required body so
+  // the server reaches auth validation instead of failing on serialization.
+  const probeBody: Record<string, unknown> = {};
+  if (probe.method !== 'GET') {
+    for (const field of probe.fields) {
+      if (field.location === 'body' && field.required) {
+        probeBody[field.name] = exampleFor(field.schema);
+      }
+    }
+  }
+  const probeHasBody = Object.keys(probeBody).length > 0;
   parts.push(
     '    const response = await fetch(`${trimBaseUrl(params.' +
       config.baseUrlParam.name +
@@ -508,7 +559,12 @@ export function emitClassFile(
       '`, {'
   );
   parts.push(`      method: '${probe.method}',`);
-  parts.push('      headers: this.requestHeaders(token, false),');
+  parts.push(
+    `      headers: ${headersExpression(config, probe, probeHasBody)},`
+  );
+  if (probeHasBody) {
+    parts.push(`      body: JSON.stringify(${JSON.stringify(probeBody)}),`);
+  }
   parts.push('    });');
   parts.push('    return response.status !== 401 && response.status !== 403;');
   parts.push('  }');

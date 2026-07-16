@@ -1,0 +1,26 @@
+{
+  "appName": "bigquery",
+  "className": "BigQuery",
+  "service": "bigquery",
+  "alias": "bq",
+  "shortDescription": "Google BigQuery REST API v2 integration generated from the official API Discovery document (run SQL queries, stream row inserts, list datasets and tables)",
+  "credentialType": "BIGQUERY_TOKEN",
+  "authHeaders": {
+    "User-Agent": "bubblelab/1.0"
+  },
+  "baseUrlParam": {
+    "name": "endpointUrl",
+    "description": "BigQuery REST API base URL (regional/private endpoints supported)",
+    "example": "https://bigquery.googleapis.com/bigquery/v2"
+  },
+  "operations": [
+    "JobsQuery",
+    "JobsGetQueryResults",
+    "TabledataInsertAll",
+    "DatasetsList",
+    "TablesList"
+  ],
+  "specName": "bigquery-v2.openapi.json",
+  "docsUrl": "https://cloud.google.com/bigquery/docs/reference/rest",
+  "carrierFields": ["statement", "sql", "query", "code", "command"]
+}
