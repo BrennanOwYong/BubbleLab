@@ -195,6 +195,10 @@ export {
   type StripeParamsInput,
   type StripeResult,
 } from './bubbles/service-bubble/stripe/index.js';
+export { StripePaymentsApiBubble } from './bubbles/service-bubble/stripe-payments-api/index.js';
+export type { StripePaymentsApiParamsInput } from './bubbles/service-bubble/stripe-payments-api/index.js';
+export { KrakenSpotApiBubble } from './bubbles/service-bubble/kraken-spot-api/index.js';
+export type { KrakenSpotApiParamsInput } from './bubbles/service-bubble/kraken-spot-api/index.js';
 export {
   SendSafelyBubble,
   SendSafelyParamsSchema,

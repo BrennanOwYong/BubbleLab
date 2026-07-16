@@ -422,6 +422,14 @@ export const CREDENTIAL_TYPE_CONFIG: Record<CredentialType, CredentialConfig> =
       namePlaceholder: 'My Stripe API Key',
       credentialConfigurations: {},
     },
+    [CredentialType.KRAKEN_API_KEY]: {
+      label: 'Kraken API Key',
+      description:
+        'Kraken Spot REST API key (generated kraken-spot-api bubble). Public market-data operations work with any placeholder value; private endpoints additionally require API-Sign request signing, which this bubble does not implement.',
+      placeholder: 'Your Kraken API key',
+      namePlaceholder: 'My Kraken API Key',
+      credentialConfigurations: {},
+    },
     [CredentialType.CONFLUENCE_CRED]: {
       label: 'Confluence',
       description:
@@ -816,6 +824,7 @@ export const CREDENTIAL_ENV_MAP: Record<CredentialType, string> = {
   [CredentialType.ASHBY_CRED]: 'ASHBY_API_KEY',
   [CredentialType.FULLENRICH_API_KEY]: 'FULLENRICH_API_KEY',
   [CredentialType.STRIPE_CRED]: 'STRIPE_SECRET_KEY',
+  [CredentialType.KRAKEN_API_KEY]: 'KRAKEN_API_KEY',
   [CredentialType.CONFLUENCE_CRED]: '', // OAuth credential, no env var
   [CredentialType.POSTHOG_API_KEY]: 'POSTHOG_API_KEY',
   [CredentialType.SENDSAFELY_CRED]: '', // Multi-field credential (host + apiKey + apiSecret), no single env var
@@ -3073,6 +3082,8 @@ export const BUBBLE_CREDENTIAL_OPTIONS: Record<
     ...BROWSERBASE_OPTIONAL_CREDENTIALS,
   ],
   stripe: [CredentialType.STRIPE_CRED],
+  'stripe-payments-api': [CredentialType.STRIPE_CRED],
+  'kraken-spot-api': [CredentialType.KRAKEN_API_KEY],
   confluence: [CredentialType.CONFLUENCE_CRED],
   sendsafely: [CredentialType.SENDSAFELY_CRED],
   's3-storage': [CredentialType.S3_CRED],

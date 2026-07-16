@@ -174,6 +174,8 @@ export class BubbleFactory {
       'ashby',
       'fullenrich',
       'stripe',
+      'stripe-payments-api',
+      'kraken-spot-api',
       'sendsafely',
       'yc-scraper-tool',
       'posthog',
@@ -412,6 +414,12 @@ export class BubbleFactory {
     const { StripeBubble } = await import(
       './bubbles/service-bubble/stripe/index.js'
     );
+    const { StripePaymentsApiBubble } = await import(
+      './bubbles/service-bubble/stripe-payments-api/index.js'
+    );
+    const { KrakenSpotApiBubble } = await import(
+      './bubbles/service-bubble/kraken-spot-api/index.js'
+    );
     const { SendSafelyBubble } = await import(
       './bubbles/service-bubble/sendsafely/index.js'
     );
@@ -639,6 +647,14 @@ export class BubbleFactory {
       LinkedInAcceptInvitationsTool as unknown as BubbleClassWithMetadata
     );
     this.register('stripe', StripeBubble as BubbleClassWithMetadata);
+    this.register(
+      'stripe-payments-api',
+      StripePaymentsApiBubble as BubbleClassWithMetadata
+    );
+    this.register(
+      'kraken-spot-api',
+      KrakenSpotApiBubble as BubbleClassWithMetadata
+    );
     this.register('sendsafely', SendSafelyBubble as BubbleClassWithMetadata);
     this.register('yc-scraper-tool', YCScraperTool as BubbleClassWithMetadata);
     this.register('posthog', PosthogBubble as BubbleClassWithMetadata);

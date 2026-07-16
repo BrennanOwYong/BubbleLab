@@ -67,6 +67,7 @@ export const CREDENTIAL_CONFIGURATION_MAP: Record<
   [CredentialType.ASHBY_CRED]: {},
   [CredentialType.FULLENRICH_API_KEY]: {},
   [CredentialType.STRIPE_CRED]: {},
+  [CredentialType.KRAKEN_API_KEY]: {},
   [CredentialType.CONFLUENCE_CRED]: {},
   [CredentialType.POSTHOG_API_KEY]: {},
   [CredentialType.SENDSAFELY_CRED]: {},

@@ -96,6 +96,7 @@ const getServiceNameForCredentialType = (
     [CredentialType.FULLENRICH_API_KEY]: 'FullEnrich',
     [CredentialType.LINKEDIN_CRED]: 'LinkedIn',
     [CredentialType.STRIPE_CRED]: 'Stripe',
+    [CredentialType.KRAKEN_API_KEY]: 'Kraken',
     [CredentialType.CREDENTIAL_WILDCARD]: 'Wiki',
     [CredentialType.CONFLUENCE_CRED]: 'Confluence',
     [CredentialType.POSTHOG_API_KEY]: 'PostHog',

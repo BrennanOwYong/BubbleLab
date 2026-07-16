@@ -1,0 +1,1824 @@
+openapi: 3.0.0
+info:
+  title: 'Stripe API (BubbleLab trimmed subset: payments, payouts, refunds, charges, balance)'
+  version: 2026-06-24.dahlia
+  description: Request bodies are application/x-www-form-urlencoded with deepObject bracket encoding per https://docs.stripe.com/api/requests. Trimmed subset of https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.json (source version 2026-06-24.dahlia); regenerate with scripts/trim-openapi.ts.
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+paths:
+  /v1/payment_intents:
+    post:
+      operationId: CreatePaymentIntent
+      summary: Create a PaymentIntent
+      description: <p>Creates a PaymentIntent object.</p> <p>After the PaymentIntent is created, attach a payment method and <a href="/docs/api/payment_intents/confirm">confirm</a> to continue the payment. Learn more a…
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                amount:
+                  type: integer
+                  description: Amount intended to be collected by this PaymentIntent. A positive integer representing how much to charge in the [smallest currency unit](https://docs.stripe.com/currencies#zero-decimal) (e.g., 100 c…
+                currency:
+                  type: string
+                  format: currency
+                  description: Three-letter [ISO currency code](https://www.iso.org/iso-4217-currency-codes.html), in lowercase. Must be a [supported currency](https://stripe.com/docs/currencies).
+                automatic_payment_methods:
+                  type: object
+                  description: When you enable this parameter, this PaymentIntent accepts payment methods that you enable in the Dashboard and that are compatible with this PaymentIntent's other parameters.
+                  properties:
+                    allow_redirects:
+                      type: string
+                      enum:
+                        - always
+                        - never
+                    enabled:
+                      type: boolean
+                  required:
+                    - enabled
+                confirm:
+                  type: boolean
+                  description: Set to `true` to attempt to [confirm this PaymentIntent](https://docs.stripe.com/api/payment_intents/confirm) immediately. This parameter defaults to `false`. When creating and confirming a PaymentIn…
+                customer:
+                  type: string
+                  maxLength: 5000
+                  description: ID of the Customer this PaymentIntent belongs to, if one exists. Payment methods attached to other Customers cannot be used with this PaymentIntent. If [setup_future_usage](https://api.stripe.com#pay…
+                description:
+                  type: string
+                  maxLength: 1000
+                  description: An arbitrary string attached to the object. Often useful for displaying to users.
+                metadata:
+                  type: object
+                  description: Set of [key-value pairs](https://docs.stripe.com/api/metadata) that you can attach to an object. This can be useful for storing additional information about the object in a structured format. Individ…
+                  additionalProperties:
+                    type: string
+                payment_method:
+                  type: string
+                  maxLength: 5000
+                  description: ID of the payment method (a PaymentMethod, Card, or [compatible Source](https://docs.stripe.com/payments/payment-methods/transitioning#compatibility) object) to attach to this PaymentIntent. If you o…
+                receipt_email:
+                  type: string
+                  description: Email address to send the receipt to. If you specify `receipt_email` for a payment in live mode, you send a receipt regardless of your [email settings](https://dashboard.stripe.com/account/emails).
+                statement_descriptor:
+                  type: string
+                  maxLength: 22
+                  description: Text that appears on the customer's statement as the statement descriptor for a non-card charge. This value overrides the account's default statement descriptor. For information about requirements, i…
+              required:
+                - amount
+                - currency
+      responses:
+        '200':
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                type: object
+                description: A PaymentIntent guides you through the process of collecting a payment from your customer. We recommend that you create exactly one PaymentIntent for each order or customer session in your system. Yo…
+                properties:
+                  amount:
+                    type: integer
+                    description: Amount intended to be collected by this PaymentIntent. A positive integer representing how much to charge in the [smallest currency unit](https://docs.stripe.com/currencies#zero-decimal) (e.g., 100 c…
+                  amount_capturable:
+                    type: integer
+                    description: Amount that can be captured from this PaymentIntent.
+                  amount_details:
+                    anyOf:
+                      - type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                      - type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                  amount_received:
+                    type: integer
+                    description: Amount that this PaymentIntent collects.
+                  application:
+                    anyOf:
+                      - type: string
+                        maxLength: 5000
+                      - type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                    description: ID of the Connect application that created the PaymentIntent.
+                  application_fee_amount:
+                    type: integer
+                    nullable: true
+                    description: The amount of the application fee (if any) that will be requested to be applied to the payment and transferred to the application owner's Stripe account. The amount of the application fee collected w…
+                  automatic_payment_methods:
+                    anyOf:
+                      - type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                    description: Settings to configure compatible payment methods from the [Stripe Dashboard](https://dashboard.stripe.com/settings/payment_methods)
+                  canceled_at:
+                    type: integer
+                    format: unix-time
+                    nullable: true
+                    description: Populated when `status` is `canceled`, this is the time at which the PaymentIntent was canceled. Measured in seconds since the Unix epoch.
+                  cancellation_reason:
+                    type: string
+                    enum:
+                      - abandoned
+                      - automatic
+                      - duplicate
+                      - expired
+                      - failed_invoice
+                      - fraudulent
+                      - requested_by_customer
+                      - void_invoice
+                    nullable: true
+                    description: Reason for cancellation of this PaymentIntent, either user-provided (`duplicate`, `fraudulent`, `requested_by_customer`, or `abandoned`) or generated by Stripe internally (`failed_invoice`, `void_inv…
+                  capture_method:
+                    type: string
+                    enum:
+                      - automatic
+                      - automatic_async
+                      - manual
+                    description: Controls when the funds will be captured from the customer's account.
+                  client_secret:
+                    type: string
+                    nullable: true
+                    maxLength: 5000
+                    description: The client secret of this PaymentIntent. Used for client-side retrieval using a publishable key. The client secret can be used to complete a payment from your frontend. It should not be stored, logge…
+                  confirmation_method:
+                    type: string
+                    enum:
+                      - automatic
+                      - manual
+                    description: Describes whether we can confirm this PaymentIntent automatically, or if it requires customer action to confirm the payment.
+                  created:
+                    type: integer
+                    format: unix-time
+                    description: Time at which the object was created. Measured in seconds since the Unix epoch.
+                  currency:
+                    type: string
+                    format: currency
+                    description: Three-letter [ISO currency code](https://www.iso.org/iso-4217-currency-codes.html), in lowercase. Must be a [supported currency](https://stripe.com/docs/currencies).
+                  customer:
+                    anyOf:
+                      - type: string
+                        maxLength: 5000
+                      - type: object
+                        description: This object represents a customer of your business. Use it to [create recurring charges](https://docs.stripe.com/invoicing/customer), [save payment](https://docs.stripe.com/payments/save-during-payme… (nested object collapsed at trim depth limit)
+                      - type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                    description: ID of the Customer this PaymentIntent belongs to, if one exists. Payment methods attached to other Customers cannot be used with this PaymentIntent. If [setup_future_usage](https://api.stripe.com#pay…
+                  customer_account:
+                    type: string
+                    nullable: true
+                    maxLength: 5000
+                    description: ID of the Account representing the customer that this PaymentIntent belongs to, if one exists. Payment methods attached to other Accounts cannot be used with this PaymentIntent. If [setup_future_usag…
+                  description:
+                    type: string
+                    nullable: true
+                    maxLength: 5000
+                    description: An arbitrary string attached to the object. Often useful for displaying to users.
+                  excluded_payment_method_types:
+                    type: array
+                    nullable: true
+                    description: The list of payment method types to exclude from use with this payment.
+                    items:
+                      type: string
+                      enum:
+                        - acss_debit
+                        - affirm
+                        - afterpay_clearpay
+                        - alipay
+                        - alma
+                        - amazon_pay
+                        - au_becs_debit
+                        - bacs_debit
+                        - bancontact
+                        - billie
+                        - bizum
+                        - blik
+                        - boleto
+                        - card
+                        - cashapp
+                        - crypto
+                        - customer_balance
+                        - eps
+                        - fpx
+                        - giropay
+                        - grabpay
+                        - ideal
+                        - kakao_pay
+                        - klarna
+                        - konbini
+                        - kr_card
+                        - mb_way
+                        - mobilepay
+                        - multibanco
+                        - naver_pay
+                        - nz_bank_account
+                        - oxxo
+                        - p24
+                        - pay_by_bank
+                        - payco
+                        - paynow
+                        - paypal
+                        - payto
+                        - pix
+                        - promptpay
+                        - revolut_pay
+                        - samsung_pay
+                        - satispay
+                        - scalapay
+                        - sepa_debit
+                        - sofort
+                        - sunbit
+                        - swish
+                        - twint
+                        - upi
+                        - us_bank_account
+                        - wechat_pay
+                        - zip
+                  hooks:
+                    type: object
+                    properties:
+                      inputs:
+                        type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                  id:
+                    type: string
+                    maxLength: 5000
+                    description: Unique identifier for the object.
+                  last_payment_error:
+                    anyOf:
+                      - type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                    description: The payment error encountered in the previous PaymentIntent confirmation. It will be cleared if the PaymentIntent is later updated for any reason.
+                  latest_charge:
+                    anyOf:
+                      - type: string
+                        maxLength: 5000
+                      - type: object
+                        description: The `Charge` object represents a single attempt to move money into your Stripe account. PaymentIntent confirmation is the most common way to create Charges, but [Account Debits](https://docs.stripe.c… (nested object collapsed at trim depth limit)
+                    description: ID of the latest [Charge object](https://docs.stripe.com/api/charges) created by this PaymentIntent. This property is `null` until PaymentIntent confirmation is attempted.
+                  livemode:
+                    type: boolean
+                    description: If the object exists in live mode, the value is `true`. If the object exists in test mode, the value is `false`.
+                  managed_payments:
+                    anyOf:
+                      - type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                    description: Settings for Managed Payments.
+                  metadata:
+                    type: object
+                    description: Set of [key-value pairs](https://docs.stripe.com/api/metadata) that you can attach to an object. This can be useful for storing additional information about the object in a structured format. Learn m…
+                    additionalProperties:
+                      type: string
+                      maxLength: 500
+                  next_action:
+                    anyOf:
+                      - type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                    description: If present, this property tells you what actions you need to take in order for your customer to fulfill a payment using the provided source.
+                  object:
+                    type: string
+                    enum:
+                      - payment_intent
+                    description: String representing the object's type. Objects of the same type share the same value.
+                  on_behalf_of:
+                    anyOf:
+                      - type: string
+                        maxLength: 5000
+                      - type: object
+                        description: For new integrations, we recommend using the [Accounts v2 API](/api/v2/core/accounts), in place of /v1/accounts and /v1/customers to represent a user. This is an object representing a Stripe account.… (nested object collapsed at trim depth limit)
+                    description: You can specify the settlement merchant as the connected account using the `on_behalf_of` attribute on the charge. See the PaymentIntents [use case for connected accounts](/payments/connected-account…
+                  payment_details:
+                    type: object
+                    properties:
+                      customer_reference:
+                        type: string
+                        nullable: true
+                        maxLength: 5000
+                        description: A unique value to identify the customer. This field is available only for card payments. This field is truncated to 25 alphanumeric characters, excluding spaces, before being sent to card networks.
+                      order_reference:
+                        type: string
+                        nullable: true
+                        maxLength: 5000
+                        description: A unique value assigned by the business to identify the transaction. Required for L2 and L3 rates. For Cards, this field is truncated to 25 alphanumeric characters, excluding spaces, before being sen…
+                  payment_method:
+                    anyOf:
+                      - type: string
+                        maxLength: 5000
+                      - type: object
+                        description: PaymentMethod objects represent your customer's payment instruments. You can use them with [PaymentIntents](https://docs.stripe.com/payments/payment-intents) to collect payments or save them to Custo… (nested object collapsed at trim depth limit)
+                    description: ID of the payment method used in this PaymentIntent.
+                  payment_method_configuration_details:
+                    anyOf:
+                      - type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                    description: Information about the [payment method configuration](https://docs.stripe.com/api/payment_method_configurations) used for this PaymentIntent.
+                  payment_method_options:
+                    anyOf:
+                      - type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                    description: Payment-method-specific configuration for this PaymentIntent.
+                  payment_method_types:
+                    type: array
+                    description: The list of payment method types (e.g. card) that this PaymentIntent is allowed to use. A comprehensive list of valid payment method types can be found [here](https://docs.stripe.com/api/payment_meth…
+                    items:
+                      type: string
+                      maxLength: 5000
+                  presentment_details:
+                    type: object
+                    properties:
+                      presentment_amount:
+                        type: integer
+                        description: Amount intended to be collected by this payment, denominated in `presentment_currency`.
+                      presentment_currency:
+                        type: string
+                        maxLength: 5000
+                        description: Currency presented to the customer during payment.
+                    required: &a1
+                      - presentment_amount
+                      - presentment_currency
+                  processing:
+                    anyOf:
+                      - type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                    description: If present, this property tells you about the processing state of the payment.
+                  receipt_email:
+                    type: string
+                    nullable: true
+                    maxLength: 5000
+                    description: Email address that the receipt for the resulting payment will be sent to. If `receipt_email` is specified for a payment in live mode, a receipt will be sent regardless of your [email settings](https:…
+                  review:
+                    anyOf:
+                      - type: string
+                        maxLength: 5000
+                      - type: object
+                        description: Reviews can be used to supplement automated fraud detection with human expertise. Learn more about [Radar](/radar) and reviewing payments [here](https://docs.stripe.com/radar/reviews). (nested object collapsed at trim depth limit)
+                    description: ID of the review associated with this PaymentIntent, if any.
+                  setup_future_usage:
+                    type: string
+                    enum:
+                      - off_session
+                      - on_session
+                    nullable: true
+                    description: Indicates that you intend to make future payments with this PaymentIntent's payment method. If you provide a Customer with the PaymentIntent, you can use this parameter to [attach the payment method]…
+                  shipping:
+                    anyOf:
+                      - type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                    description: Shipping information for this PaymentIntent.
+                  statement_descriptor:
+                    type: string
+                    nullable: true
+                    maxLength: 5000
+                    description: Text that appears on the customer's statement as the statement descriptor for a non-card charge. This value overrides the account's default statement descriptor. For information about requirements, i…
+                  statement_descriptor_suffix:
+                    type: string
+                    nullable: true
+                    maxLength: 5000
+                    description: Provides information about a card charge. Concatenated to the account's [statement descriptor prefix](https://docs.stripe.com/get-started/account/statement-descriptors#static) to form the complete st…
+                  status:
+                    type: string
+                    enum:
+                      - canceled
+                      - processing
+                      - requires_action
+                      - requires_capture
+                      - requires_confirmation
+                      - requires_payment_method
+                      - succeeded
+                    description: Status of this PaymentIntent, one of `requires_payment_method`, `requires_confirmation`, `requires_action`, `processing`, `requires_capture`, `canceled`, or `succeeded`. Read more about each PaymentI…
+                  transfer_data:
+                    anyOf:
+                      - type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                    description: The data that automatically creates a Transfer after the payment finalizes. Learn more about the [use case for connected accounts](https://docs.stripe.com/payments/connected-accounts).
+                  transfer_group:
+                    type: string
+                    nullable: true
+                    maxLength: 5000
+                    description: A string that identifies the resulting payment as part of a group. Learn more about the [use case for connected accounts](https://docs.stripe.com/connect/separate-charges-and-transfers).
+                required:
+                  - created
+                  - id
+                  - livemode
+                  - object
+                  - status
+  /v1/payment_links:
+    post:
+      operationId: CreatePaymentLink
+      summary: Create a payment link
+      description: <p>Creates a payment link.</p>
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                line_items:
+                  type: array
+                  description: The line items representing what is being sold. Each line item represents an item being sold. Up to 20 line items are supported.
+                  items:
+                    type: object
+                    properties:
+                      adjustable_quantity:
+                        type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                      price:
+                        type: string
+                        maxLength: 5000
+                      price_data:
+                        type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                      quantity:
+                        type: integer
+                    required:
+                      - quantity
+                currency:
+                  type: string
+                  format: currency
+                  description: Three-letter [ISO currency code](https://www.iso.org/iso-4217-currency-codes.html), in lowercase. Must be a [supported currency](https://stripe.com/docs/currencies) and supported by each line item's …
+                allow_promotion_codes:
+                  type: boolean
+                  description: Enables user redeemable promotion codes.
+                after_completion:
+                  type: object
+                  description: Behavior after the purchase is complete.
+                  properties:
+                    hosted_confirmation:
+                      type: object
+                      description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                    redirect:
+                      type: object
+                      description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                    type:
+                      type: string
+                      enum:
+                        - hosted_confirmation
+                        - redirect
+                  required:
+                    - type
+                metadata:
+                  type: object
+                  description: Set of [key-value pairs](https://docs.stripe.com/api/metadata) that you can attach to an object. This can be useful for storing additional information about the object in a structured format. Individ…
+                  additionalProperties:
+                    type: string
+              required:
+                - line_items
+      responses:
+        '200':
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                type: object
+                description: A payment link is a shareable URL that will take your customers to a hosted payment page. A payment link can be shared and used multiple times. When a customer opens a payment link it will open a new…
+                properties:
+                  active:
+                    type: boolean
+                    description: Whether the payment link's `url` is active. If `false`, customers visiting the URL will be shown a page saying that the link has been deactivated.
+                  after_completion:
+                    type: object
+                    properties:
+                      hosted_confirmation:
+                        type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                      redirect:
+                        type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                      type:
+                        type: string
+                        enum:
+                          - hosted_confirmation
+                          - redirect
+                        description: The specified behavior after the purchase is complete.
+                    required:
+                      - type
+                  allow_promotion_codes:
+                    type: boolean
+                    description: Whether user redeemable promotion codes are enabled.
+                  application:
+                    anyOf:
+                      - type: string
+                        maxLength: 5000
+                      - type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                      - type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                    description: The ID of the Connect application that created the Payment Link.
+                  application_fee_amount:
+                    type: integer
+                    nullable: true
+                    description: The amount of the application fee (if any) that will be requested to be applied to the payment and transferred to the application owner's Stripe account.
+                  application_fee_percent:
+                    type: number
+                    nullable: true
+                    description: This represents the percentage of the subscription invoice total that will be transferred to the application owner's Stripe account.
+                  automatic_tax:
+                    type: object
+                    properties:
+                      enabled:
+                        type: boolean
+                        description: If `true`, tax will be calculated automatically using the customer's location.
+                      liability:
+                        anyOf:
+                          - type: object
+                            description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                        description: The account that's liable for tax. If set, the business address and tax registrations required to perform the tax calculation are loaded from this account. The tax transaction is returned in the repo…
+                    required:
+                      - enabled
+                  billing_address_collection:
+                    type: string
+                    enum:
+                      - auto
+                      - required
+                    description: Configuration for collecting the customer's billing address. Defaults to `auto`.
+                  consent_collection:
+                    anyOf:
+                      - type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                    description: When set, provides configuration to gather active consent from customers.
+                  currency:
+                    type: string
+                    format: currency
+                    description: Three-letter [ISO currency code](https://www.iso.org/iso-4217-currency-codes.html), in lowercase. Must be a [supported currency](https://stripe.com/docs/currencies).
+                  custom_fields:
+                    type: array
+                    description: Collect additional information from your customer using custom fields. Up to 3 fields are supported. You can't set this parameter if `ui_mode` is `custom`.
+                    items:
+                      type: object
+                      properties:
+                        dropdown:
+                          type: object
+                          description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                        key:
+                          type: string
+                          maxLength: 5000
+                          description: String of your choice that your integration can use to reconcile this field. Must be unique to this field, alphanumeric, and up to 200 characters.
+                        label:
+                          type: object
+                          description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                        numeric:
+                          type: object
+                          description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                        optional:
+                          type: boolean
+                          description: Whether the customer is required to complete the field before completing the Checkout Session. Defaults to `false`.
+                        text:
+                          type: object
+                          description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                        type:
+                          type: string
+                          enum:
+                            - dropdown
+                            - numeric
+                            - text
+                          description: The type of the field.
+                      required:
+                        - key
+                        - label
+                        - optional
+                        - type
+                  custom_text:
+                    type: object
+                    properties:
+                      after_submit:
+                        anyOf:
+                          - type: object
+                            description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                        description: Custom text that should be displayed after the payment confirmation button.
+                      shipping_address:
+                        anyOf:
+                          - type: object
+                            description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                        description: Custom text that should be displayed alongside shipping address collection.
+                      submit:
+                        anyOf:
+                          - type: object
+                            description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                        description: Custom text that should be displayed alongside the payment confirmation button.
+                      terms_of_service_acceptance:
+                        anyOf:
+                          - type: object
+                            description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                        description: Custom text that should be displayed in place of the default terms of service agreement text.
+                  customer_creation:
+                    type: string
+                    enum:
+                      - always
+                      - if_required
+                    description: Configuration for Customer creation during checkout.
+                  id:
+                    type: string
+                    maxLength: 5000
+                    description: Unique identifier for the object.
+                  inactive_message:
+                    type: string
+                    nullable: true
+                    maxLength: 5000
+                    description: The custom message to be displayed to a customer when a payment link is no longer active.
+                  invoice_creation:
+                    anyOf:
+                      - type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                    description: Configuration for creating invoice for payment mode payment links.
+                  line_items:
+                    type: object
+                    description: The line items representing what is being sold.
+                    properties:
+                      data:
+                        type: array
+                        description: Details about each object.
+                        items:
+                          type: object
+                          description: A line item. (nested object collapsed at trim depth limit)
+                      has_more:
+                        type: boolean
+                        description: True if this list has another page of items after this one that can be fetched.
+                      object:
+                        type: string
+                        enum:
+                          - list
+                        description: String representing the object's type. Objects of the same type share the same value. Always has the value `list`.
+                      url:
+                        type: string
+                        maxLength: 5000
+                        description: The URL where this list can be accessed.
+                    required:
+                      - data
+                      - has_more
+                      - object
+                      - url
+                  livemode:
+                    type: boolean
+                    description: If the object exists in live mode, the value is `true`. If the object exists in test mode, the value is `false`.
+                  managed_payments:
+                    anyOf:
+                      - type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                    description: Settings for Managed Payments for this Payment Link and resulting [CheckoutSessions](/api/checkout/sessions/object), [PaymentIntents](/api/payment_intents/object), [Invoices](/api/invoices/object), a…
+                  metadata:
+                    type: object
+                    description: Set of [key-value pairs](https://docs.stripe.com/api/metadata) that you can attach to an object. This can be useful for storing additional information about the object in a structured format.
+                    additionalProperties:
+                      type: string
+                      maxLength: 500
+                  name_collection:
+                    type: object
+                    properties:
+                      business:
+                        type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                      individual:
+                        type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                  object:
+                    type: string
+                    enum:
+                      - payment_link
+                    description: String representing the object's type. Objects of the same type share the same value.
+                  on_behalf_of:
+                    anyOf:
+                      - type: string
+                        maxLength: 5000
+                      - type: object
+                        description: For new integrations, we recommend using the [Accounts v2 API](/api/v2/core/accounts), in place of /v1/accounts and /v1/customers to represent a user. This is an object representing a Stripe account.… (nested object collapsed at trim depth limit)
+                    description: The account on behalf of which to charge. See the [Connect documentation](https://support.stripe.com/questions/sending-invoices-on-behalf-of-connected-accounts) for details.
+                  optional_items:
+                    type: array
+                    nullable: true
+                    description: The optional items presented to the customer at checkout.
+                    items:
+                      type: object
+                      properties:
+                        adjustable_quantity:
+                          anyOf:
+                            - type: object
+                              description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                        price:
+                          type: string
+                          maxLength: 5000
+                        quantity:
+                          type: integer
+                      required:
+                        - price
+                        - quantity
+                  payment_intent_data:
+                    anyOf:
+                      - type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                    description: Indicates the parameters to be passed to PaymentIntent creation during checkout.
+                  payment_method_collection:
+                    type: string
+                    enum:
+                      - always
+                      - if_required
+                    description: Configuration for collecting a payment method during checkout. Defaults to `always`.
+                  payment_method_options:
+                    anyOf:
+                      - type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                    description: Payment-method-specific configuration.
+                  payment_method_types:
+                    type: array
+                    nullable: true
+                    description: The list of payment method types that customers can use. When `null`, Stripe will dynamically show relevant payment methods you've enabled in your [payment method settings](https://dashboard.stripe.c…
+                    items:
+                      type: string
+                      enum:
+                        - affirm
+                        - afterpay_clearpay
+                        - alipay
+                        - alma
+                        - au_becs_debit
+                        - bacs_debit
+                        - bancontact
+                        - billie
+                        - bizum
+                        - blik
+                        - boleto
+                        - card
+                        - cashapp
+                        - eps
+                        - fpx
+                        - giropay
+                        - grabpay
+                        - ideal
+                        - klarna
+                        - konbini
+                        - link
+                        - mb_way
+                        - mobilepay
+                        - multibanco
+                        - oxxo
+                        - p24
+                        - pay_by_bank
+                        - paynow
+                        - paypal
+                        - payto
+                        - pix
+                        - promptpay
+                        - satispay
+                        - sepa_debit
+                        - sofort
+                        - sunbit
+                        - swish
+                        - twint
+                        - upi
+                        - us_bank_account
+                        - wechat_pay
+                        - zip
+                  phone_number_collection:
+                    type: object
+                    properties:
+                      enabled:
+                        type: boolean
+                        description: If `true`, a phone number will be collected during checkout.
+                    required:
+                      - enabled
+                  restrictions:
+                    anyOf:
+                      - type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                    description: Settings that restrict the usage of a payment link.
+                  shipping_address_collection:
+                    anyOf:
+                      - type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                    description: Configuration for collecting the customer's shipping address.
+                  shipping_options:
+                    type: array
+                    description: The shipping rate options applied to the session.
+                    items:
+                      type: object
+                      properties:
+                        shipping_amount:
+                          type: integer
+                          description: A non-negative integer in cents representing how much to charge.
+                        shipping_rate:
+                          anyOf:
+                            - type: string
+                              maxLength: 5000
+                            - type: object
+                              description: Shipping rates describe the price of shipping presented to your customers and applied to a purchase. For more information, see [Charge for shipping](https://docs.stripe.com/payments/during-payment/ch… (nested object collapsed at trim depth limit)
+                          description: The ID of the Shipping Rate to use for this shipping option.
+                      required:
+                        - shipping_amount
+                        - shipping_rate
+                  submit_type:
+                    type: string
+                    enum:
+                      - auto
+                      - book
+                      - donate
+                      - pay
+                      - subscribe
+                    description: Indicates the type of transaction being performed which customizes relevant text on the page, such as the submit button.
+                  subscription_data:
+                    anyOf:
+                      - type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                    description: When creating a subscription, the specified configuration data will be used. There must be at least one line item with a recurring price to use `subscription_data`.
+                  tax_id_collection:
+                    type: object
+                    properties:
+                      enabled:
+                        type: boolean
+                        description: Indicates whether tax ID collection is enabled for the session.
+                      required:
+                        type: string
+                        enum:
+                          - if_supported
+                          - never
+                    required:
+                      - enabled
+                      - required
+                  transfer_data:
+                    anyOf:
+                      - type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                    description: The account (if any) the payments will be attributed to for tax reporting, and where funds from each payment will be transferred to.
+                  url:
+                    type: string
+                    maxLength: 5000
+                    description: The public URL that can be shared with customers.
+                required:
+                  - active
+                  - after_completion
+                  - allow_promotion_codes
+                  - automatic_tax
+                  - billing_address_collection
+                  - currency
+                  - custom_fields
+                  - custom_text
+                  - customer_creation
+                  - id
+                  - livemode
+                  - metadata
+                  - object
+                  - payment_method_collection
+                  - phone_number_collection
+                  - shipping_options
+                  - submit_type
+                  - tax_id_collection
+                  - url
+  /v1/payouts:
+    post:
+      operationId: CreatePayout
+      summary: Create a payout
+      description: <p>To send funds to your own bank account, create a new payout object. Your <a href="#balance">Stripe balance</a> must cover the payout amount. If it doesn’t, you receive an “Insufficient Funds” erro…
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                amount:
+                  type: integer
+                  description: A positive integer in cents representing how much to payout.
+                currency:
+                  type: string
+                  format: currency
+                  description: Three-letter [ISO currency code](https://www.iso.org/iso-4217-currency-codes.html), in lowercase. Must be a [supported currency](https://stripe.com/docs/currencies).
+                description:
+                  type: string
+                  maxLength: 5000
+                  description: An arbitrary string attached to the object. Often useful for displaying to users.
+                destination:
+                  type: string
+                  description: The ID of a bank account or a card to send the payout to. If you don't provide a destination, we use the default external account for the specified currency.
+                metadata:
+                  type: object
+                  description: Set of [key-value pairs](https://docs.stripe.com/api/metadata) that you can attach to an object. This can be useful for storing additional information about the object in a structured format. Individ…
+                  additionalProperties:
+                    type: string
+                method:
+                  type: string
+                  enum:
+                    - instant
+                    - standard
+                  maxLength: 5000
+                  description: The method used to send this payout, which is `standard` or `instant`. We support `instant` for payouts to debit cards and bank accounts in certain countries. Learn more about [bank support for Insta…
+                source_type:
+                  type: string
+                  enum:
+                    - bank_account
+                    - card
+                    - fpx
+                  maxLength: 5000
+                  description: The balance type of your Stripe balance to draw this payout from. Balances for different payment sources are kept separately. You can find the amounts with the Balances API. One of `bank_account`, `c…
+                statement_descriptor:
+                  type: string
+                  maxLength: 22
+                  description: A string that displays on the recipient's bank or card statement (up to 22 characters). A `statement_descriptor` that's longer than 22 characters return an error. Most banks truncate this information…
+              required:
+                - amount
+                - currency
+      responses:
+        '200':
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                type: object
+                description: A `Payout` object is created when you receive funds from Stripe, or when you initiate a payout to either a bank account or debit card of a [connected Stripe account](/docs/connect/bank-debit-card-pay…
+                properties:
+                  amount:
+                    type: integer
+                    description: The amount (in cents (or local equivalent)) that transfers to your bank account or debit card.
+                  application_fee:
+                    anyOf:
+                      - type: string
+                        maxLength: 5000
+                      - type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                    description: The application fee (if any) for the payout. [See the Connect documentation](https://docs.stripe.com/connect/instant-payouts#monetization-and-fees) for details.
+                  application_fee_amount:
+                    type: integer
+                    nullable: true
+                    description: The amount of the application fee (if any) requested for the payout. [See the Connect documentation](https://docs.stripe.com/connect/instant-payouts#monetization-and-fees) for details.
+                  arrival_date:
+                    type: integer
+                    format: unix-time
+                    description: Date that you can expect the payout to arrive in the bank. This factors in delays to account for weekends or bank holidays.
+                  automatic:
+                    type: boolean
+                    description: Returns `true` if the payout is created by an [automated payout schedule](https://docs.stripe.com/payouts#payout-schedule) and `false` if it's [requested manually](https://stripe.com/docs/payouts#man…
+                  balance_transaction:
+                    anyOf:
+                      - type: string
+                        maxLength: 5000
+                      - type: object
+                        description: 'Balance transactions represent funds moving through your Stripe account. Stripe creates them for every type of transaction that enters or leaves your Stripe account balance. Related guide: [Balance t… (nested object collapsed at trim depth limit)'
+                    description: ID of the balance transaction that describes the impact of this payout on your account balance.
+                  created:
+                    type: integer
+                    format: unix-time
+                    description: Time at which the object was created. Measured in seconds since the Unix epoch.
+                  currency:
+                    type: string
+                    format: currency
+                    description: Three-letter [ISO currency code](https://www.iso.org/iso-4217-currency-codes.html), in lowercase. Must be a [supported currency](https://stripe.com/docs/currencies).
+                  description:
+                    type: string
+                    nullable: true
+                    maxLength: 5000
+                    description: An arbitrary string attached to the object. Often useful for displaying to users.
+                  destination:
+                    anyOf:
+                      - type: string
+                        maxLength: 5000
+                      - type: object
+                        description: These bank accounts are payment methods on `Customer` objects. On the other hand [External Accounts](/api#external_accounts) are transfer destinations on `Account` objects for connected accounts. The… (nested object collapsed at trim depth limit)
+                      - type: object
+                        description: 'You can store multiple cards on a customer in order to charge the customer later. You can also store multiple debit cards on a recipient in order to transfer to those cards later. Related guide: [Car… (nested object collapsed at trim depth limit)'
+                      - type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                      - type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                    description: ID of the bank account or card the payout is sent to.
+                  failure_balance_transaction:
+                    anyOf:
+                      - type: string
+                        maxLength: 5000
+                      - type: object
+                        description: 'Balance transactions represent funds moving through your Stripe account. Stripe creates them for every type of transaction that enters or leaves your Stripe account balance. Related guide: [Balance t… (nested object collapsed at trim depth limit)'
+                    description: If the payout fails or cancels, this is the ID of the balance transaction that reverses the initial balance transaction and returns the funds from the failed payout back in your balance.
+                  failure_code:
+                    type: string
+                    nullable: true
+                    maxLength: 5000
+                    description: Error code that provides a reason for a payout failure, if available. View our [list of failure codes](https://docs.stripe.com/api#payout_failures).
+                  failure_message:
+                    type: string
+                    nullable: true
+                    maxLength: 5000
+                    description: Message that provides the reason for a payout failure, if available.
+                  id:
+                    type: string
+                    maxLength: 5000
+                    description: Unique identifier for the object.
+                  livemode:
+                    type: boolean
+                    description: If the object exists in live mode, the value is `true`. If the object exists in test mode, the value is `false`.
+                  metadata:
+                    type: object
+                    nullable: true
+                    description: Set of [key-value pairs](https://docs.stripe.com/api/metadata) that you can attach to an object. This can be useful for storing additional information about the object in a structured format.
+                    additionalProperties:
+                      type: string
+                      maxLength: 500
+                  method:
+                    type: string
+                    maxLength: 5000
+                    description: The method used to send this payout, which can be `standard` or `instant`. `instant` is supported for payouts to debit cards and bank accounts in certain countries. Learn more about [bank support for…
+                  object:
+                    type: string
+                    enum:
+                      - payout
+                    description: String representing the object's type. Objects of the same type share the same value.
+                  original_payout:
+                    anyOf:
+                      - type: string
+                        maxLength: 5000
+                      - type: object
+                        description: Recursive vendor schema "payout" truncated; see the vendor API reference.
+                    description: If the payout reverses another, this is the ID of the original payout.
+                  payout_method:
+                    type: string
+                    nullable: true
+                    maxLength: 5000
+                    description: ID of the v2 FinancialAccount the funds are sent to.
+                  reconciliation_status:
+                    type: string
+                    enum:
+                      - completed
+                      - in_progress
+                      - not_applicable
+                    description: If `completed`, you can use the [Balance Transactions API](https://docs.stripe.com/api/balance_transactions/list#balance_transaction_list-payout) to list all balance transactions that are paid out in…
+                  reversed_by:
+                    anyOf:
+                      - type: string
+                        maxLength: 5000
+                      - type: object
+                        description: Recursive vendor schema "payout" truncated; see the vendor API reference.
+                    description: If the payout reverses, this is the ID of the payout that reverses this payout.
+                  source_type:
+                    type: string
+                    maxLength: 5000
+                    description: 'The source balance this payout came from, which can be one of the following: `card`, `fpx`, or `bank_account`.'
+                  statement_descriptor:
+                    type: string
+                    nullable: true
+                    maxLength: 5000
+                    description: Extra information about a payout that displays on the user's bank statement.
+                  status:
+                    type: string
+                    maxLength: 5000
+                    description: "Current status of the payout: `paid`, `pending`, `in_transit`, `canceled` or `failed`. A payout is `pending` until it's submitted to the bank, when it becomes `in_transit`. The status changes to `pai…"
+                  trace_id:
+                    anyOf:
+                      - type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                    description: A value that generates from the beneficiary's bank that allows users to track payouts with their bank. Banks might call this a "reference number" or something similar.
+                  type:
+                    type: string
+                    enum:
+                      - bank_account
+                      - card
+                    description: Can be `bank_account` or `card`.
+                required:
+                  - amount
+                  - arrival_date
+                  - automatic
+                  - created
+                  - currency
+                  - id
+                  - livemode
+                  - method
+                  - object
+                  - reconciliation_status
+                  - source_type
+                  - status
+                  - type
+  /v1/refunds:
+    post:
+      operationId: CreateRefund
+      summary: Create customer balance refund
+      description: <p>When you create a new refund, you must specify a Charge or a PaymentIntent object on which to create it.</p> <p>Creating a new refund will refund a charge that has previously been created but not …
+      requestBody:
+        required: false
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                amount:
+                  type: integer
+                charge:
+                  type: string
+                  maxLength: 5000
+                  description: The identifier of the charge to refund.
+                payment_intent:
+                  type: string
+                  maxLength: 5000
+                  description: The identifier of the PaymentIntent to refund.
+                currency:
+                  type: string
+                  format: currency
+                  description: Three-letter [ISO currency code](https://www.iso.org/iso-4217-currency-codes.html), in lowercase. Must be a [supported currency](https://stripe.com/docs/currencies).
+                customer:
+                  type: string
+                  maxLength: 5000
+                  description: Customer whose customer balance to refund from.
+                metadata:
+                  anyOf:
+                    - type: object
+                      additionalProperties:
+                        type: string
+                    - type: string
+                      enum:
+                        - ''
+                  description: Set of [key-value pairs](https://docs.stripe.com/api/metadata) that you can attach to an object. This can be useful for storing additional information about the object in a structured format. Individ…
+                reason:
+                  type: string
+                  enum:
+                    - duplicate
+                    - fraudulent
+                    - requested_by_customer
+                  maxLength: 5000
+                  description: String indicating the reason for the refund. If set, possible values are `duplicate`, `fraudulent`, and `requested_by_customer`. If you believe the charge to be fraudulent, specifying `fraudulent` as…
+                instructions_email:
+                  type: string
+                  description: For payment methods without native refund support (e.g., Konbini, PromptPay), use this email from the customer to receive refund instructions.
+      responses:
+        '200':
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                type: object
+                description: "Refund objects allow you to refund a previously created charge that isn't refunded yet. Funds are refunded to the credit or debit card that's initially charged. Related guide: [Refunds](https://docs.…"
+                properties:
+                  amount:
+                    type: integer
+                    description: Amount, in cents (or local equivalent).
+                  balance_transaction:
+                    anyOf:
+                      - type: string
+                        maxLength: 5000
+                      - type: object
+                        description: 'Balance transactions represent funds moving through your Stripe account. Stripe creates them for every type of transaction that enters or leaves your Stripe account balance. Related guide: [Balance t… (nested object collapsed at trim depth limit)'
+                    description: Balance transaction that describes the impact on your account balance.
+                  charge:
+                    anyOf:
+                      - type: string
+                        maxLength: 5000
+                      - type: object
+                        description: The `Charge` object represents a single attempt to move money into your Stripe account. PaymentIntent confirmation is the most common way to create Charges, but [Account Debits](https://docs.stripe.c… (nested object collapsed at trim depth limit)
+                    description: ID of the charge that's refunded.
+                  created:
+                    type: integer
+                    format: unix-time
+                    description: Time at which the object was created. Measured in seconds since the Unix epoch.
+                  currency:
+                    type: string
+                    format: currency
+                    description: Three-letter [ISO currency code](https://www.iso.org/iso-4217-currency-codes.html), in lowercase. Must be a [supported currency](https://stripe.com/docs/currencies).
+                  description:
+                    type: string
+                    maxLength: 5000
+                    description: An arbitrary string attached to the object. You can use this for displaying to users (available on non-card refunds only).
+                  destination_details:
+                    type: object
+                    properties:
+                      affirm:
+                        type: object
+                      afterpay_clearpay:
+                        type: object
+                      alipay:
+                        type: object
+                      alma:
+                        type: object
+                      amazon_pay:
+                        type: object
+                      au_bank_transfer:
+                        type: object
+                      blik:
+                        type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                      br_bank_transfer:
+                        type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                      card:
+                        type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                      cashapp:
+                        type: object
+                      crypto:
+                        type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                      customer_cash_balance:
+                        type: object
+                      eps:
+                        type: object
+                      eu_bank_transfer:
+                        type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                      gb_bank_transfer:
+                        type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                      giropay:
+                        type: object
+                      grabpay:
+                        type: object
+                      jp_bank_transfer:
+                        type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                      klarna:
+                        type: object
+                      mb_way:
+                        type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                      multibanco:
+                        type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                      mx_bank_transfer:
+                        type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                      nz_bank_transfer:
+                        type: object
+                      p24:
+                        type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                      paynow:
+                        type: object
+                      paypal:
+                        type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                      pix:
+                        type: object
+                      revolut:
+                        type: object
+                      scalapay:
+                        type: object
+                      sofort:
+                        type: object
+                      swish:
+                        type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                      th_bank_transfer:
+                        type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                      twint:
+                        type: object
+                      type:
+                        type: string
+                        maxLength: 5000
+                        description: The type of transaction-specific details of the payment method used in the refund (e.g., `card`). An additional hash is included on `destination_details` with a name matching this value. It contains …
+                      us_bank_transfer:
+                        type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                      wechat_pay:
+                        type: object
+                      zip:
+                        type: object
+                    required:
+                      - type
+                  failure_balance_transaction:
+                    anyOf:
+                      - type: string
+                        maxLength: 5000
+                      - type: object
+                        description: 'Balance transactions represent funds moving through your Stripe account. Stripe creates them for every type of transaction that enters or leaves your Stripe account balance. Related guide: [Balance t… (nested object collapsed at trim depth limit)'
+                    description: After the refund fails, this balance transaction describes the adjustment made on your account balance that reverses the initial balance transaction.
+                  failure_reason:
+                    type: string
+                    maxLength: 5000
+                    description: 'Provides the reason for the refund failure. Possible values are: `lost_or_stolen_card`, `expired_or_canceled_card`, `charge_for_pending_refund_disputed`, `insufficient_funds`, `declined`, `merchant_r…'
+                  id:
+                    type: string
+                    maxLength: 5000
+                    description: Unique identifier for the object.
+                  instructions_email:
+                    type: string
+                    maxLength: 5000
+                    description: For payment methods without native refund support (for example, Konbini, PromptPay), provide an email address for the customer to receive refund instructions.
+                  metadata:
+                    type: object
+                    nullable: true
+                    description: Set of [key-value pairs](https://docs.stripe.com/api/metadata) that you can attach to an object. This can be useful for storing additional information about the object in a structured format.
+                    additionalProperties:
+                      type: string
+                      maxLength: 500
+                  next_action:
+                    type: object
+                    properties:
+                      display_details:
+                        type: object
+                        description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                      type:
+                        type: string
+                        maxLength: 5000
+                        description: Type of the next action to perform.
+                    required:
+                      - type
+                  object:
+                    type: string
+                    enum:
+                      - refund
+                    description: String representing the object's type. Objects of the same type share the same value.
+                  payment_intent:
+                    anyOf:
+                      - type: string
+                        maxLength: 5000
+                      - type: object
+                        description: A PaymentIntent guides you through the process of collecting a payment from your customer. We recommend that you create exactly one PaymentIntent for each order or customer session in your system. Yo… (nested object collapsed at trim depth limit)
+                    description: ID of the PaymentIntent that's refunded.
+                  pending_reason:
+                    type: string
+                    enum:
+                      - charge_pending
+                      - insufficient_funds
+                      - processing
+                    description: 'Provides the reason for why the refund is pending. Possible values are: `processing`, `insufficient_funds`, or `charge_pending`.'
+                  presentment_details:
+                    type: object
+                    properties:
+                      presentment_amount:
+                        type: integer
+                        description: Amount intended to be collected by this payment, denominated in `presentment_currency`.
+                      presentment_currency:
+                        type: string
+                        maxLength: 5000
+                        description: Currency presented to the customer during payment.
+                    required: *a1
+                  reason:
+                    type: string
+                    enum:
+                      - duplicate
+                      - expired_uncaptured_charge
+                      - fraudulent
+                      - requested_by_customer
+                    nullable: true
+                    description: Reason for the refund, which is either user-provided (`duplicate`, `fraudulent`, or `requested_by_customer`) or generated by Stripe internally (`expired_uncaptured_charge`).
+                  receipt_number:
+                    type: string
+                    nullable: true
+                    maxLength: 5000
+                    description: This is the transaction number that appears on email receipts sent for this refund.
+                  source_transfer_reversal:
+                    anyOf:
+                      - type: string
+                        maxLength: 5000
+                      - type: object
+                        description: '[Stripe Connect](https://docs.stripe.com/connect) platforms can reverse transfers made to a connected account, either entirely or partially, and can also specify whether to refund any related applica… (nested object collapsed at trim depth limit)'
+                    description: The transfer reversal that's associated with the refund. Only present if the charge came from another Stripe account.
+                  status:
+                    type: string
+                    nullable: true
+                    maxLength: 5000
+                    description: Status of the refund. This can be `pending`, `requires_action`, `succeeded`, `failed`, or `canceled`. Learn more about [failed refunds](https://docs.stripe.com/refunds#failed-refunds).
+                  transfer_reversal:
+                    anyOf:
+                      - type: string
+                        maxLength: 5000
+                      - type: object
+                        description: '[Stripe Connect](https://docs.stripe.com/connect) platforms can reverse transfers made to a connected account, either entirely or partially, and can also specify whether to refund any related applica… (nested object collapsed at trim depth limit)'
+                    description: This refers to the transfer reversal object if the accompanying transfer reverses. This is only applicable if the charge was created using the destination parameter.
+                required:
+                  - amount
+                  - created
+                  - currency
+                  - id
+                  - object
+  /v1/charges:
+    get:
+      operationId: ListCharges
+      summary: List all charges
+      description: <p>Returns a list of charges you’ve previously created. The charges are returned in sorted order, with the most recent charges appearing first.</p>
+      parameters:
+        - name: customer
+          in: query
+          required: false
+          description: Only return charges for the customer specified by this customer ID.
+          schema:
+            type: string
+            maxLength: 5000
+        - name: ending_before
+          in: query
+          required: false
+          description: A cursor for use in pagination. `ending_before` is an object ID that defines your place in the list. For instance, if you make a list request and receive 100 objects, starting with `obj_bar`, your su…
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: A limit on the number of objects to be returned. Limit can range between 1 and 100, and the default is 10.
+          schema:
+            type: integer
+        - name: payment_intent
+          in: query
+          required: false
+          description: Only return charges that were created by the PaymentIntent specified by this PaymentIntent ID.
+          schema:
+            type: string
+            maxLength: 5000
+        - name: starting_after
+          in: query
+          required: false
+          description: A cursor for use in pagination. `starting_after` is an object ID that defines your place in the list. For instance, if you make a list request and receive 100 objects, ending with `obj_foo`, your sub…
+          schema:
+            type: string
+        - name: transfer_group
+          in: query
+          required: false
+          description: Only return charges for this transfer group, limited to 100.
+          schema:
+            type: string
+            maxLength: 5000
+      responses:
+        '200':
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      description: The `Charge` object represents a single attempt to move money into your Stripe account. PaymentIntent confirmation is the most common way to create Charges, but [Account Debits](https://docs.stripe.c…
+                      properties:
+                        amount:
+                          type: integer
+                          description: Amount intended to be collected by this payment. A positive integer representing how much to charge in the [smallest currency unit](https://docs.stripe.com/currencies#zero-decimal) (e.g., 100 cents t…
+                        amount_captured:
+                          type: integer
+                          description: Amount in cents (or local equivalent) captured (can be less than the amount attribute on the charge if a partial capture was made).
+                        amount_refunded:
+                          type: integer
+                          description: Amount in cents (or local equivalent) refunded (can be less than the amount attribute on the charge if a partial refund was issued).
+                        application:
+                          anyOf:
+                            - type: string
+                              maxLength: 5000
+                            - type: object
+                              description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                          description: ID of the Connect application that created the charge.
+                        application_fee:
+                          anyOf:
+                            - type: string
+                              maxLength: 5000
+                            - type: object
+                              description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                          description: The application fee (if any) for the charge. [See the Connect documentation](https://docs.stripe.com/connect/direct-charges#collect-fees) for details.
+                        application_fee_amount:
+                          type: integer
+                          nullable: true
+                          description: The amount of the application fee (if any) requested for the charge. [See the Connect documentation](https://docs.stripe.com/connect/direct-charges#collect-fees) for details.
+                        balance_transaction:
+                          anyOf:
+                            - type: string
+                              maxLength: 5000
+                            - type: object
+                              description: 'Balance transactions represent funds moving through your Stripe account. Stripe creates them for every type of transaction that enters or leaves your Stripe account balance. Related guide: [Balance t… (nested object collapsed at trim depth limit)'
+                          description: ID of the balance transaction that describes the impact of this charge on your account balance (not including refunds or disputes).
+                        billing_details:
+                          type: object
+                          description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                        calculated_statement_descriptor:
+                          type: string
+                          nullable: true
+                          maxLength: 5000
+                          description: The full statement descriptor that is passed to card networks, and that is displayed on your customers' credit card and bank statements. Allows you to see what the statement descriptor looks like aft…
+                        captured:
+                          type: boolean
+                          description: If the charge was created without capturing, this Boolean represents whether it is still uncaptured or has since been captured.
+                        created:
+                          type: integer
+                          format: unix-time
+                          description: Time at which the object was created. Measured in seconds since the Unix epoch.
+                        currency:
+                          type: string
+                          format: currency
+                          description: Three-letter [ISO currency code](https://www.iso.org/iso-4217-currency-codes.html), in lowercase. Must be a [supported currency](https://stripe.com/docs/currencies).
+                        customer:
+                          anyOf:
+                            - type: string
+                              maxLength: 5000
+                            - type: object
+                              description: This object represents a customer of your business. Use it to [create recurring charges](https://docs.stripe.com/invoicing/customer), [save payment](https://docs.stripe.com/payments/save-during-payme… (nested object collapsed at trim depth limit)
+                            - type: object
+                              description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                          description: ID of the customer this charge is for if one exists.
+                        description:
+                          type: string
+                          nullable: true
+                          maxLength: 40000
+                          description: An arbitrary string attached to the object. Often useful for displaying to users.
+                        disputed:
+                          type: boolean
+                          description: Whether the charge has been disputed.
+                        failure_balance_transaction:
+                          anyOf:
+                            - type: string
+                              maxLength: 5000
+                            - type: object
+                              description: 'Balance transactions represent funds moving through your Stripe account. Stripe creates them for every type of transaction that enters or leaves your Stripe account balance. Related guide: [Balance t… (nested object collapsed at trim depth limit)'
+                          description: ID of the balance transaction that describes the reversal of the balance on your account due to payment failure.
+                        failure_code:
+                          type: string
+                          nullable: true
+                          maxLength: 5000
+                          description: Error code explaining reason for charge failure if available (see [the errors section](https://docs.stripe.com/error-codes) for a list of codes).
+                        failure_message:
+                          type: string
+                          nullable: true
+                          maxLength: 5000
+                          description: Message to user further explaining reason for charge failure if available.
+                        fraud_details:
+                          anyOf:
+                            - type: object
+                              description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                          description: Information on fraud assessments for the charge.
+                        id:
+                          type: string
+                          maxLength: 5000
+                          description: Unique identifier for the object.
+                        livemode:
+                          type: boolean
+                          description: If the object exists in live mode, the value is `true`. If the object exists in test mode, the value is `false`.
+                        metadata:
+                          type: object
+                          description: Set of [key-value pairs](https://docs.stripe.com/api/metadata) that you can attach to an object. This can be useful for storing additional information about the object in a structured format.
+                          additionalProperties:
+                            type: string
+                            maxLength: 500
+                        object:
+                          type: string
+                          enum:
+                            - charge
+                          description: String representing the object's type. Objects of the same type share the same value.
+                        on_behalf_of:
+                          anyOf:
+                            - type: string
+                              maxLength: 5000
+                            - type: object
+                              description: For new integrations, we recommend using the [Accounts v2 API](/api/v2/core/accounts), in place of /v1/accounts and /v1/customers to represent a user. This is an object representing a Stripe account.… (nested object collapsed at trim depth limit)
+                          description: The account (if any) the charge was made on behalf of without triggering an automatic transfer. See the [Connect documentation](https://docs.stripe.com/connect/separate-charges-and-transfers) for det…
+                        outcome:
+                          anyOf:
+                            - type: object
+                              description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                          description: Details about whether the payment was accepted, and why. See [understanding declines](https://docs.stripe.com/declines) for details.
+                        paid:
+                          type: boolean
+                          description: '`true` if the charge succeeded, or was successfully authorized for later capture.'
+                        payment_intent:
+                          anyOf:
+                            - type: string
+                              maxLength: 5000
+                            - type: object
+                              description: A PaymentIntent guides you through the process of collecting a payment from your customer. We recommend that you create exactly one PaymentIntent for each order or customer session in your system. Yo… (nested object collapsed at trim depth limit)
+                          description: ID of the PaymentIntent associated with this charge, if one exists.
+                        payment_method:
+                          type: string
+                          nullable: true
+                          maxLength: 5000
+                          description: ID of the payment method used in this charge.
+                        payment_method_details:
+                          anyOf:
+                            - type: object
+                              description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                          description: Details about the payment method at the time of the transaction.
+                        presentment_details:
+                          type: object
+                          description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                        radar_options:
+                          type: object
+                          description: Options to configure Radar. See [Radar Session](https://docs.stripe.com/radar/radar-session) for more information. (nested object collapsed at trim depth limit)
+                        receipt_email:
+                          type: string
+                          nullable: true
+                          maxLength: 5000
+                          description: This is the email address that the receipt for this charge was sent to.
+                        receipt_number:
+                          type: string
+                          nullable: true
+                          maxLength: 5000
+                          description: This is the transaction number that appears on email receipts sent for this charge. This attribute will be `null` until a receipt has been sent.
+                        receipt_url:
+                          type: string
+                          nullable: true
+                          maxLength: 5000
+                          description: This is the URL to view the receipt for this charge. The receipt is kept up-to-date to the latest state of the charge, including any refunds. If the charge is for an Invoice, the receipt will be styl…
+                        refunded:
+                          type: boolean
+                          description: Whether the charge has been fully refunded. If the charge is only partially refunded, this attribute will still be false.
+                        refunds:
+                          type: object
+                          description: A list of refunds that have been applied to the charge. (nested object collapsed at trim depth limit)
+                        review:
+                          anyOf:
+                            - type: string
+                              maxLength: 5000
+                            - type: object
+                              description: Reviews can be used to supplement automated fraud detection with human expertise. Learn more about [Radar](/radar) and reviewing payments [here](https://docs.stripe.com/radar/reviews). (nested object collapsed at trim depth limit)
+                          description: ID of the review associated with this charge if one exists.
+                        shipping:
+                          anyOf:
+                            - type: object
+                              description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                          description: Shipping information for the charge.
+                        source_transfer:
+                          anyOf:
+                            - type: string
+                              maxLength: 5000
+                            - type: object
+                              description: A `Transfer` object is created when you move funds between Stripe accounts as part of Connect. Before April 6, 2017, transfers also represented movement of funds from a Stripe account to a card or ba… (nested object collapsed at trim depth limit)
+                          description: The transfer ID which created this charge. Only present if the charge came from another Stripe account. [See the Connect documentation](https://docs.stripe.com/connect/destination-charges) for detail…
+                        statement_descriptor:
+                          type: string
+                          nullable: true
+                          maxLength: 5000
+                          description: For a non-card charge, text that appears on the customer's statement as the statement descriptor. This value overrides the account's default statement descriptor. For information about requirements, …
+                        statement_descriptor_suffix:
+                          type: string
+                          nullable: true
+                          maxLength: 5000
+                          description: Provides information about a card charge. Concatenated to the account's [statement descriptor prefix](https://docs.stripe.com/get-started/account/statement-descriptors#static) to form the complete st…
+                        status:
+                          type: string
+                          enum:
+                            - failed
+                            - pending
+                            - succeeded
+                          description: The status of the payment is either `succeeded`, `pending`, or `failed`.
+                        transfer:
+                          anyOf:
+                            - type: string
+                              maxLength: 5000
+                            - type: object
+                              description: A `Transfer` object is created when you move funds between Stripe accounts as part of Connect. Before April 6, 2017, transfers also represented movement of funds from a Stripe account to a card or ba… (nested object collapsed at trim depth limit)
+                          description: ID of the transfer to the `destination` account (only applicable if the charge was created using the `destination` parameter).
+                        transfer_data:
+                          anyOf:
+                            - type: object
+                              description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                          description: An optional dictionary including the account to automatically transfer to as part of a destination charge. [See the Connect documentation](https://docs.stripe.com/connect/destination-charges) for det…
+                        transfer_group:
+                          type: string
+                          nullable: true
+                          maxLength: 5000
+                          description: A string that identifies this transaction as part of a group. See the [Connect documentation](https://docs.stripe.com/connect/separate-charges-and-transfers#transfer-options) for details.
+                      required:
+                        - amount
+                        - amount_captured
+                        - amount_refunded
+                        - billing_details
+                        - captured
+                        - created
+                        - currency
+                        - disputed
+                        - id
+                        - livemode
+                        - metadata
+                        - object
+                        - paid
+                        - refunded
+                        - status
+                  has_more:
+                    type: boolean
+                    description: True if this list has another page of items after this one that can be fetched.
+                  object:
+                    type: string
+                    enum:
+                      - list
+                    description: String representing the object's type. Objects of the same type share the same value. Always has the value `list`.
+                  url:
+                    type: string
+                    maxLength: 5000
+                    description: The URL where this list can be accessed.
+                required:
+                  - data
+                  - has_more
+                  - object
+                  - url
+  /v1/balance:
+    get:
+      operationId: GetBalance
+      summary: Retrieve balance
+      description: <p>Retrieves the current account balance, based on the authentication that was used to make the request. For a sample request, see <a href="/docs/connect/account-balances#accounting-for-negative-bala…
+      responses:
+        '200':
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                type: object
+                description: This is an object representing your Stripe balance. You can retrieve it to see the balance currently on your Stripe account. The top-level `available` and `pending` comprise your "payments balance." …
+                properties:
+                  available:
+                    type: array
+                    description: Available funds that you can transfer or pay out automatically by Stripe or explicitly through the [Transfers API](https://api.stripe.com#transfers) or [Payouts API](https://api.stripe.com#payouts). …
+                    items:
+                      type: object
+                      properties:
+                        amount:
+                          type: integer
+                          description: Balance amount.
+                        currency:
+                          type: string
+                          format: currency
+                          description: Three-letter [ISO currency code](https://www.iso.org/iso-4217-currency-codes.html), in lowercase. Must be a [supported currency](https://stripe.com/docs/currencies).
+                        source_types:
+                          type: object
+                          description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                      required: &a2
+                        - amount
+                        - currency
+                  connect_reserved:
+                    type: array
+                    description: Funds held due to negative balances on connected accounts where [account.controller.requirement_collection](/api/accounts/object#account_object-controller-requirement_collection) is `application`, wh…
+                    items:
+                      type: object
+                      properties:
+                        amount:
+                          type: integer
+                          description: Balance amount.
+                        currency:
+                          type: string
+                          format: currency
+                          description: Three-letter [ISO currency code](https://www.iso.org/iso-4217-currency-codes.html), in lowercase. Must be a [supported currency](https://stripe.com/docs/currencies).
+                        source_types:
+                          type: object
+                          description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                      required: *a2
+                  instant_available:
+                    type: array
+                    description: Funds that you can pay out using Instant Payouts.
+                    items:
+                      type: object
+                      properties:
+                        amount:
+                          type: integer
+                          description: Balance amount.
+                        currency:
+                          type: string
+                          format: currency
+                          description: Three-letter [ISO currency code](https://www.iso.org/iso-4217-currency-codes.html), in lowercase. Must be a [supported currency](https://stripe.com/docs/currencies).
+                        net_available:
+                          type: array
+                          description: Breakdown of balance by destination.
+                          items:
+                            type: object
+                            description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                        source_types:
+                          type: object
+                          description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                      required:
+                        - amount
+                        - currency
+                  issuing:
+                    type: object
+                    properties:
+                      available:
+                        type: array
+                        description: Funds that are available for use.
+                        items:
+                          type: object
+                          description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                    required:
+                      - available
+                  livemode:
+                    type: boolean
+                    description: If the object exists in live mode, the value is `true`. If the object exists in test mode, the value is `false`.
+                  object:
+                    type: string
+                    enum:
+                      - balance
+                    description: String representing the object's type. Objects of the same type share the same value.
+                  pending:
+                    type: array
+                    description: Funds that aren't available in the balance yet. You can find the pending balance for each currency and each payment type in the `source_types` property.
+                    items:
+                      type: object
+                      properties:
+                        amount:
+                          type: integer
+                          description: Balance amount.
+                        currency:
+                          type: string
+                          format: currency
+                          description: Three-letter [ISO currency code](https://www.iso.org/iso-4217-currency-codes.html), in lowercase. Must be a [supported currency](https://stripe.com/docs/currencies).
+                        source_types:
+                          type: object
+                          description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                      required: *a2
+                  refund_and_dispute_prefunding:
+                    type: object
+                    properties:
+                      available:
+                        type: array
+                        description: Funds that are available for use.
+                        items:
+                          type: object
+                          description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                      pending:
+                        type: array
+                        description: Funds that are pending
+                        items:
+                          type: object
+                          description: Vendor object (nested object collapsed at trim depth limit); see the vendor API reference for its fields.
+                    required:
+                      - available
+                      - pending
+                required:
+                  - available
+                  - livemode
+                  - object
+                  - pending

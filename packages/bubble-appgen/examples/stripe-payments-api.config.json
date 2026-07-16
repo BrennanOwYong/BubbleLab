@@ -1,0 +1,26 @@
+{
+  "appName": "stripe-payments-api",
+  "className": "StripePaymentsApi",
+  "service": "stripe",
+  "alias": "stripe-pay",
+  "shortDescription": "Stripe Payments API integration generated from the official OpenAPI spec (payment intents, payment links, payouts, refunds, charges, balance)",
+  "credentialType": "STRIPE_CRED",
+  "authHeaders": {
+    "User-Agent": "bubblelab/1.0"
+  },
+  "baseUrlParam": {
+    "name": "baseUrl",
+    "description": "Stripe API base URL",
+    "example": "https://api.stripe.com"
+  },
+  "operations": [
+    "CreatePaymentIntent",
+    "CreatePaymentLink",
+    "CreatePayout",
+    "CreateRefund",
+    "ListCharges",
+    "GetBalance"
+  ],
+  "specName": "stripe-payments.yaml",
+  "docsUrl": "https://docs.stripe.com/api"
+}
