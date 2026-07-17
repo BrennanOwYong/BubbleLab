@@ -25,6 +25,8 @@ import type {
   ScopeDescription,
   CredentialResponse,
   CreateCredentialRequest,
+  CredentialScopeRequirements,
+  DiscoveredScopeRequirement,
 } from '@bubblelab/shared-schemas';
 import {
   useCredentials,
@@ -40,6 +42,39 @@ import {
   getCombinedGoogleScopes,
   GOOGLE_SUITE_TYPES,
 } from '../lib/authMethods';
+import { emitTelemetry } from '../lib/telemetry';
+
+// ── Scope discovery (IR-6/7) helpers ─────────────────────────────────────────
+
+/** Scope comparison key, mirroring the audit's normalization (trailing-slash tolerant). */
+const normalizeScope = (scope: string): string => {
+  const trimmed = scope.trim();
+  return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
+};
+
+/**
+ * Pick the scope to request for one requirement: prefer an alternative already offered by
+ * the picker (in picker order, so the narrower product-curated scope wins over the broad
+ * one), else fall back to the requirement's first declared alternative.
+ */
+const pickScopeForRequirement = (
+  requirement: DiscoveredScopeRequirement,
+  pickerScopes: readonly string[]
+): string => {
+  const alternatives = new Set(requirement.alternatives.map(normalizeScope));
+  const inPicker = pickerScopes.find((scope) =>
+    alternatives.has(normalizeScope(scope))
+  );
+  return inPicker ?? requirement.alternatives[0];
+};
+
+/** The operations needing a requirement, in plain language. */
+const describeScopeRequiredBy = (
+  requirement: DiscoveredScopeRequirement
+): string =>
+  requirement.requiredBy
+    .map((ref) => `${ref.bubbleName}: ${ref.operation}`)
+    .join(', ');
 
 // Helper to extract error message from API error
 const getErrorMessage = (error: unknown): string => {
@@ -146,6 +181,14 @@ interface CreateCredentialModalProps {
   lockedCredentialType?: CredentialType;
   lockType?: boolean;
   onSuccess?: (credential: CredentialResponse) => void;
+  /**
+   * Scope discovery (IR-6/7): per-credential-type scope requirements of the flow this connect
+   * was opened from. When present, the scope picker pre-selects exactly the required scopes
+   * and labels them with the operations that need them.
+   */
+  flowScopeRequirements?: CredentialScopeRequirements[];
+  /** Flow the requirements came from — telemetry attribution only. */
+  flowId?: number;
 }
 
 export function CreateCredentialModal({
@@ -156,6 +199,8 @@ export function CreateCredentialModal({
   lockedCredentialType,
   lockType,
   onSuccess,
+  flowScopeRequirements,
+  flowId,
 }: CreateCredentialModalProps) {
   const queryClient = useQueryClient();
   const [formData, setFormData] = useState<CreateCredentialRequest>({
@@ -191,17 +236,78 @@ export function CreateCredentialModal({
     formData.credentialType as CredentialType
   );
 
+  // Scope discovery (IR-6/7): the flow's requirements relevant to the type being connected
+  // (for Google suite, every selected service's requirements — one consent covers them all).
+  const relevantScopeRequirements = useMemo<DiscoveredScopeRequirement[]>(() => {
+    if (!flowScopeRequirements || flowScopeRequirements.length === 0) return [];
+    const targetTypes = new Set<string>([formData.credentialType]);
+    if (isGoogleSuiteCredential(formData.credentialType as CredentialType)) {
+      for (const type of selectedSuiteTypes) targetTypes.add(type);
+    }
+    const deduped = new Map<string, DiscoveredScopeRequirement>();
+    for (const entry of flowScopeRequirements) {
+      if (!targetTypes.has(entry.credentialType)) continue;
+      for (const requirement of entry.requirements) {
+        const key = requirement.alternatives.map(normalizeScope).join('|');
+        if (!deduped.has(key)) deduped.set(key, requirement);
+      }
+    }
+    return [...deduped.values()];
+  }, [flowScopeRequirements, formData.credentialType, selectedSuiteTypes]);
+
   // Scopes shown in the picker: for Google suite the union across selected
   // services (one consent covers them all), otherwise the type's own scopes.
   const availableScopeDescriptions = useMemo<ScopeDescription[]>(() => {
-    if (isGoogleSuite) {
-      const suite = selectedSuiteTypes.size
-        ? [...selectedSuiteTypes]
-        : [formData.credentialType as CredentialType];
-      return getCombinedGoogleScopes(suite);
+    const base = isGoogleSuite
+      ? getCombinedGoogleScopes(
+          selectedSuiteTypes.size
+            ? [...selectedSuiteTypes]
+            : [formData.credentialType as CredentialType]
+        )
+      : getScopeDescriptions(formData.credentialType as CredentialType);
+    if (relevantScopeRequirements.length === 0) return base;
+    // Inject picker rows for requirements none of the curated scopes satisfy, so the
+    // consent can request exactly what the flow's operations need.
+    const baseScopes = base.map((desc) => desc.scope);
+    const injected: ScopeDescription[] = [];
+    for (const requirement of relevantScopeRequirements) {
+      const picked = pickScopeForRequirement(requirement, baseScopes);
+      const alreadyOffered = baseScopes.some(
+        (scope) => normalizeScope(scope) === normalizeScope(picked)
+      );
+      if (!alreadyOffered) {
+        injected.push({
+          scope: picked,
+          description: `Required by ${describeScopeRequiredBy(requirement)}`,
+          defaultEnabled: false,
+        });
+      }
     }
-    return getScopeDescriptions(formData.credentialType as CredentialType);
-  }, [isGoogleSuite, selectedSuiteTypes, formData.credentialType]);
+    return [...base, ...injected];
+  }, [
+    isGoogleSuite,
+    selectedSuiteTypes,
+    formData.credentialType,
+    relevantScopeRequirements,
+  ]);
+
+  // The exact scopes the flow needs, resolved against the picker rows above.
+  const requiredScopeSet = useMemo<Set<string>>(() => {
+    const pickerScopes = availableScopeDescriptions.map((desc) => desc.scope);
+    return new Set(
+      relevantScopeRequirements.map((requirement) =>
+        normalizeScope(pickScopeForRequirement(requirement, pickerScopes))
+      )
+    );
+  }, [relevantScopeRequirements, availableScopeDescriptions]);
+
+  /** Requirement behind a picker scope row, for the "required by" labelling. */
+  const requirementForScope = (scope: string) =>
+    relevantScopeRequirements.find((requirement) =>
+      requirement.alternatives.some(
+        (alternative) => normalizeScope(alternative) === normalizeScope(scope)
+      )
+    );
 
   // Check if the current credential type is OAuth or Browser Session
   const isOAuthCredentialType = isOAuthCredential(
@@ -222,20 +328,40 @@ export function CreateCredentialModal({
     }
   }, [formData.credentialType, isGoogleSuite]);
 
-  // Initialize selected scopes based on defaultEnabled when credential type
-  // or the Google suite selection changes
+  // Initialize selected scopes when credential type or the Google suite selection changes.
+  // With flow scope requirements present (scope discovery, IR-6/7) the picker pre-selects
+  // EXACTLY the scopes the flow's operations need — the consent asks for what the tool
+  // needs, no more, no guesswork. Without requirements, defaultEnabled behavior stands.
   useEffect(() => {
-    if (isOAuthCredentialType) {
-      const enabledScopes = new Set(
+    if (!isOAuthCredentialType) {
+      setSelectedScopes(new Set());
+      return;
+    }
+    if (requiredScopeSet.size > 0) {
+      const preselected = new Set(
         availableScopeDescriptions
-          .filter((desc) => desc.defaultEnabled)
+          .filter((desc) => requiredScopeSet.has(normalizeScope(desc.scope)))
           .map((desc) => desc.scope)
       );
-      setSelectedScopes(enabledScopes);
-    } else {
-      setSelectedScopes(new Set());
+      setSelectedScopes(preselected);
+      emitTelemetry('connect.scopes_preselected', {
+        flowId,
+        credentialType: formData.credentialType,
+        scopes: [...preselected],
+        requirementCount: relevantScopeRequirements.length,
+      });
+      return;
     }
-  }, [availableScopeDescriptions, isOAuthCredentialType]);
+    const enabledScopes = new Set(
+      availableScopeDescriptions
+        .filter((desc) => desc.defaultEnabled)
+        .map((desc) => desc.scope)
+    );
+    setSelectedScopes(enabledScopes);
+    // formData.credentialType and relevantScopeRequirements are inputs of requiredScopeSet /
+    // availableScopeDescriptions; listing the memoized values is sufficient.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [availableScopeDescriptions, isOAuthCredentialType, requiredScopeSet]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -292,6 +418,13 @@ export function CreateCredentialModal({
       }
 
       // Initiate OAuth flow with selected scopes
+      emitTelemetry('connect.oauth_initiated', {
+        flowId,
+        provider,
+        credentialType: formData.credentialType,
+        scopes: scopesArray,
+        fromScopeDiscovery: requiredScopeSet.size > 0,
+      });
       const { authUrl, state } = await credentialsApi.initiateOAuth(
         provider,
         formData.credentialType,
@@ -768,34 +901,56 @@ export function CreateCredentialModal({
                   {availableScopeDescriptions.length > 0 && (
                     <div className="mt-4 pt-4 border-t border-[#30363d]">
                       <p className="text-xs font-medium text-gray-300 mb-3">
-                        Select permissions to request:
+                        {requiredScopeSet.size > 0
+                          ? 'Permissions this flow needs are pre-selected:'
+                          : 'Select permissions to request:'}
                       </p>
                       <div className="space-y-2">
                         {availableScopeDescriptions.map(
-                          (scopeDesc: ScopeDescription) => (
-                            <label
-                              key={scopeDesc.scope}
-                              className="flex items-start gap-2 text-xs text-gray-400 cursor-pointer hover:text-gray-300 transition-colors"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={selectedScopes.has(scopeDesc.scope)}
-                                onChange={(e) => {
-                                  const newSelected = new Set(selectedScopes);
-                                  if (e.target.checked) {
-                                    newSelected.add(scopeDesc.scope);
-                                  } else {
-                                    newSelected.delete(scopeDesc.scope);
-                                  }
-                                  setSelectedScopes(newSelected);
-                                }}
-                                className="mt-0.5 w-4 h-4 rounded border-[#30363d] bg-[#1a1a1a] text-blue-600 focus:ring-2 focus:ring-blue-500/20 focus:ring-offset-0 cursor-pointer"
-                              />
-                              <span className="flex-1">
-                                {scopeDesc.description}
-                              </span>
-                            </label>
-                          )
+                          (scopeDesc: ScopeDescription) => {
+                            const isFlowRequired = requiredScopeSet.has(
+                              normalizeScope(scopeDesc.scope)
+                            );
+                            const requirement = isFlowRequired
+                              ? requirementForScope(scopeDesc.scope)
+                              : undefined;
+                            return (
+                              <label
+                                key={scopeDesc.scope}
+                                className="flex items-start gap-2 text-xs text-gray-400 cursor-pointer hover:text-gray-300 transition-colors"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={selectedScopes.has(scopeDesc.scope)}
+                                  onChange={(e) => {
+                                    const newSelected = new Set(selectedScopes);
+                                    if (e.target.checked) {
+                                      newSelected.add(scopeDesc.scope);
+                                    } else {
+                                      newSelected.delete(scopeDesc.scope);
+                                    }
+                                    setSelectedScopes(newSelected);
+                                  }}
+                                  className="mt-0.5 w-4 h-4 rounded border-[#30363d] bg-[#1a1a1a] text-blue-600 focus:ring-2 focus:ring-blue-500/20 focus:ring-offset-0 cursor-pointer"
+                                />
+                                <span className="flex-1">
+                                  {scopeDesc.description}
+                                  {isFlowRequired && (
+                                    <span
+                                      title={
+                                        requirement
+                                          ? `Needed by ${describeScopeRequiredBy(requirement)}`
+                                          : 'Needed by this flow'
+                                      }
+                                      className="ml-1.5 px-1.5 py-0.5 text-[9px] font-medium bg-blue-500/20 text-blue-300 rounded border border-blue-500/30"
+                                    >
+                                      Required for this flow
+                                    </span>
+                                  )}
+                                </span>
+                              </label>
+                            );
+                          }
                         )}
                       </div>
                     </div>

@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react';
+import { memo, useEffect, useMemo, useRef } from 'react';
 import { Handle, Position } from '@xyflow/react';
 import { Play, FileInput } from 'lucide-react';
 import InputFieldsRenderer from '@/components/InputFieldsRenderer';
@@ -7,6 +7,10 @@ import { useRunExecution } from '@/hooks/useRunExecution';
 import { filterEmptyInputs } from '@/utils/inputUtils';
 import { BUBBLE_COLORS } from '@/components/flow_visualizer/BubbleColors';
 import { WebhookURLDisplay } from '@/components/WebhookURLDisplay';
+import { useCredentials } from '@/hooks/useCredentials';
+import { API_BASE_URL } from '@/env';
+import { computeAutoPopulatedFields } from '@/lib/autoPopulate';
+import { emitTelemetry } from '@/lib/telemetry';
 
 interface SchemaField {
   name: string;
@@ -70,6 +74,37 @@ function InputSchemaNode({ data }: InputSchemaNodeProps) {
 
   // Get runFlow function with callback
   const { runFlow } = useRunExecution(flowId, { onFocusBubble });
+
+  // Auto-populate: pre-fill account fields from saved credentials (editable, defaulted).
+  // Each field is populated at most once per mounted flow so a user clearing the value is
+  // not fought by the effect; user-entered values are never overwritten (isBlank guard in
+  // computeAutoPopulatedFields).
+  const { data: connectedCredentials = [] } = useCredentials(API_BASE_URL);
+  const autoPopulatedFieldsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (connectedCredentials.length === 0) return;
+    const candidates = computeAutoPopulatedFields(
+      schemaFields,
+      connectedCredentials,
+      executionInputs
+    ).filter((entry) => !autoPopulatedFieldsRef.current.has(entry.field));
+    for (const entry of candidates) {
+      autoPopulatedFieldsRef.current.add(entry.field);
+      setInput(entry.field, entry.value);
+      emitTelemetry('setup.field_autopopulated', {
+        flowId,
+        field: entry.field,
+        value: entry.value,
+        credentialId: entry.credentialId,
+        credentialType: entry.credentialType,
+        credentialName: entry.credentialName,
+        source: entry.source,
+      });
+    }
+    // executionInputs is intentionally read fresh each run but not a dependency driver:
+    // the effect re-fires when credentials or the schema change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectedCredentials, schemaFields, flowId, setInput]);
 
   // Handle input changes
   const handleInputChange = (fieldName: string, value: unknown) => {
