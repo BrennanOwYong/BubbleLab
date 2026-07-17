@@ -18,7 +18,7 @@
             "sha256": "28b780dd056961e975b4e1ccffe72b04d96d713ad3aaf378d5a6dc0316586dce",
             "bytes": 29936,
             "specVersion": "2.0.0",
-            "fetchedAt": "2026-07-17T10:06:25.506Z"
+            "fetchedAt": "2026-07-17T12:21:05.878Z"
           }
         }
       ],
@@ -37,8 +37,8 @@
         "config": "examples/snowflake-sql-api.config.json"
       },
       "generatedFiles": {
-        "snowflake-sql-api.ts": "41c9e03b753dbe973673a96fea2398d534f0cd2e5e9b3720422d50eafe627c4b",
-        "snowflake-sql-api.schema.ts": "a9f3a49c871a788728abb7a5eec516f04a53c0392b14a4d54e0bded3ec0ac3b2",
+        "snowflake-sql-api.ts": "bc0d980298976c67ff78b15e9fa226ce784651a9698d917799feffb0a6470c54",
+        "snowflake-sql-api.schema.ts": "6d64d5169d06a7fe0ccb98953b175796d30f87497a9221f2b3d21ac5d1bb6c31",
         "snowflake-sql-api.metadata.ts": "d2df969cff2196221cef55e3c180fdbef1b51a7bf29c6dd3b721c45d37183bf6",
         "snowflake-sql-api.schema.test.ts": "7a0de80989ae7edcb446372c246c4720e640f7b1b18c83bf2198460c2e35057c",
         "index.ts": "2063145884976595614303f16a646e068e1f9c448427e240125721d9d3c9a5b8"
@@ -333,7 +333,7 @@
       "pendingReview": {
         "detectedAt": "2026-07-17T10:06:33.661Z",
         "sourceSha256": "9d99ea983c3dcf135b6c1e03fc98cd0f8912fca2246e64b550e2bf1fd850eb9a",
-        "summary": "reference source(s) changed: models, endpoints — hand-transcribed fixture must be re-verified",
+        "summary": "reference source(s) changed: models, endpoints \u2014 hand-transcribed fixture must be re-verified",
         "changelog": ""
       }
     }
