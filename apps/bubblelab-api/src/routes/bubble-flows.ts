@@ -24,7 +24,10 @@ import {
   type ParsedBubbleWithInfo,
   type ParsedWorkflow,
 } from '@bubblelab/shared-schemas';
-import { auditFlowScopes } from '../services/scope-audit-service.js';
+import {
+  auditFlowScopes,
+  discoverFlowScopeRequirements,
+} from '../services/scope-audit-service.js';
 import { getUserId, getAppType } from '../middleware/auth.js';
 import { eq, and, count } from 'drizzle-orm';
 import { isValidBubbleTriggerEvent } from '@bubblelab/shared-schemas';
@@ -634,6 +637,11 @@ app.openapi(getBubbleFlowRoute, async (c) => {
       .where(eq(bubbleFlows.id, flow.id));
   }
 
+  // Pre-connect scope discovery (IR-6/7): which scopes the flow's operations need per
+  // credential type, so the Connect UI requests exactly those and can show what needs what.
+  const scopeRequirements =
+    await discoverFlowScopeRequirements(bubbleParameters);
+
   const response = {
     id: flow.id,
     name: flow.name,
@@ -641,6 +649,7 @@ app.openapi(getBubbleFlowRoute, async (c) => {
     prompt: flow.prompt || undefined,
     eventType: flow.eventType,
     requiredCredentials: extractRequiredCredentials(bubbleParameters),
+    scopeRequirements,
     code: flow.originalCode ?? '', // Return empty string if null/undefined, preserve empty string
     generationError: flow.generationError || undefined,
     displayedBubbleParameters:

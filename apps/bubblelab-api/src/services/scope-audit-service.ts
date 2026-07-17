@@ -24,12 +24,18 @@ import { userCredentials } from '../db/schema.js';
 import { and, eq, inArray } from 'drizzle-orm';
 import {
   auditCredentialScopes,
+  collectScopeRequirements,
   type ScopeAuditCallSite,
 } from '@bubblelab/bubble-core';
 import type {
   BubbleOperationMetadata,
   FlowScopeAudit,
+  FlowScopeRequirements,
   ParsedBubbleWithInfo,
+} from '@bubblelab/shared-schemas';
+import {
+  BUBBLE_CREDENTIAL_OPTIONS,
+  SYSTEM_CREDENTIALS,
 } from '@bubblelab/shared-schemas';
 import { getBubbleFactory } from './bubble-factory-instance.js';
 
@@ -203,4 +209,65 @@ export async function auditFlowScopes(
   }
 
   return audit;
+}
+
+// ── Pre-connect scope discovery (Connect UI) ─────────────────────────────────
+
+/**
+ * Discover the scope requirements a flow's operations impose per credential TYPE — before any
+ * credential is assigned or connected. The Connect UI uses this to request exactly the scopes
+ * the flow needs and to show which operation needs which scope.
+ *
+ * Differs from `auditFlowScopes` (above) on two axes: no credential rows are involved (nothing
+ * is connected yet), and grouping is by credential type via `BUBBLE_CREDENTIAL_OPTIONS`
+ * (bubbleName → offered credential types) rather than by assigned credential id. A bubble
+ * offering several credential types (e.g. slack → SLACK_CRED | SLACK_API) lists the same
+ * requirements under each type; the user's method choice decides which one applies.
+ */
+export async function discoverFlowScopeRequirements(
+  bubbleParameters: Record<string | number, ParsedBubbleWithInfo>
+): Promise<FlowScopeRequirements> {
+  const factory = await getBubbleFactory();
+  const byCredentialType = new Map<string, ScopeAuditCallSite[]>();
+
+  for (const bubble of Object.values(bubbleParameters)) {
+    const metadata = factory.getMetadata(bubble.bubbleName);
+    const operationMetadata = metadata?.operationMetadata as
+      | BubbleOperationMetadata
+      | undefined;
+    if (!operationMetadata) continue;
+
+    const callSite: ScopeAuditCallSite = {
+      bubbleName: bubble.bubbleName,
+      variableName: bubble.variableName,
+      operation: resolveStaticOperation(bubble),
+      operationMetadata,
+    };
+
+    const credentialTypes =
+      BUBBLE_CREDENTIAL_OPTIONS[
+        bubble.bubbleName as keyof typeof BUBBLE_CREDENTIAL_OPTIONS
+      ] ?? [];
+    for (const credentialType of credentialTypes) {
+      if (SYSTEM_CREDENTIALS.has(credentialType)) continue;
+      const sites = byCredentialType.get(credentialType) ?? [];
+      sites.push(callSite);
+      byCredentialType.set(credentialType, sites);
+    }
+  }
+
+  const discovered: FlowScopeRequirements = [];
+  for (const [credentialType, callSites] of byCredentialType) {
+    const requirements = collectScopeRequirements(callSites).map(
+      (requirement) => ({
+        scope: requirement.scope,
+        alternatives: requirement.alternatives,
+        requiredBy: requirement.requiredBy,
+      })
+    );
+    if (requirements.length > 0) {
+      discovered.push({ credentialType, requirements });
+    }
+  }
+  return discovered;
 }
