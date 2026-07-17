@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ServiceBubble } from '../../../types/service-bubble-class.js';
+import { NOTION_AUTH_METHODS } from './notion.auth-methods.js';
 import type { BubbleContext } from '../../../types/bubble.js';
 import { CredentialType } from '@bubblelab/shared-schemas';
 
@@ -1169,6 +1170,8 @@ export class NotionBubble<
   static readonly service = 'notion';
   static readonly authType = 'oauth' as const;
   static readonly bubbleName = 'notion';
+  // Doc-derived sign-in methods (IR-3/IR-4), see notion.auth-methods.ts
+  static readonly authMethods = NOTION_AUTH_METHODS;
   static readonly schema = NotionParamsSchema;
   static readonly resultSchema = NotionResultSchema;
   static readonly shortDescription =

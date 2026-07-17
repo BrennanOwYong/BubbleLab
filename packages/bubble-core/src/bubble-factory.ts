@@ -5,6 +5,7 @@ import {
   type BubbleName,
   type BubbleNodeType,
   type BubbleOperationMetadata,
+  type AppAuthMethods,
   BUBBLE_CREDENTIAL_OPTIONS,
   TRIGGER_EVENT_CONFIGS,
 } from '@bubblelab/shared-schemas';
@@ -55,6 +56,8 @@ export type BubbleClassWithMetadata<TResult extends object = object> = {
   readonly bubbleDependencies?: BubbleName[];
   /** Doc-grounded per-operation side-effect classifications (IR-8), keyed by operation literal. */
   readonly operationMetadata?: BubbleOperationMetadata;
+  /** Doc-derived sign-in methods the app offers (IR-3/IR-4), each carrying its citation. */
+  readonly authMethods?: AppAuthMethods;
   toolAgent?: (
     credentials: Partial<Record<CredentialType, string>>,
     config?: Record<string, unknown>,
@@ -709,6 +712,8 @@ export class BubbleFactory {
       bubbleDependencies: BubbleClass.bubbleDependencies,
       // Doc-grounded per-operation side-effect classifications (IR-8)
       operationMetadata: BubbleClass.operationMetadata,
+      // Doc-derived sign-in methods (IR-3/IR-4)
+      authMethods: BubbleClass.authMethods,
       // Provide richer dependency details (ai-agent may include tools)
       schema: BubbleClass.schema,
       resultSchema: BubbleClass.resultSchema,

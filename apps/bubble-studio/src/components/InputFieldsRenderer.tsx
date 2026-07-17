@@ -16,6 +16,12 @@ import {
 } from '../utils/fileUtils';
 import AutoResizeTextarea from './AutoResizeTextarea';
 import { GoogleFilePicker } from './GoogleFilePicker';
+import { useCredentials } from '../hooks/useCredentials';
+import { API_BASE_URL } from '../env';
+import {
+  getAccountCredentialTypesForField,
+  getAccountOptions,
+} from '../lib/authMethods';
 
 interface SchemaField {
   name: string;
@@ -69,6 +75,12 @@ function InputFieldsRenderer({
 }: InputFieldsRendererProps) {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string | null>>(
     {}
+  );
+  // FU-8: connected credentials feed account dropdowns (e.g. gmailAccountEmail)
+  const { data: connectedCredentials = [] } = useCredentials(API_BASE_URL);
+  // Account fields the user switched to manual text entry
+  const [manualAccountFields, setManualAccountFields] = useState<Set<string>>(
+    new Set()
   );
   const [uploadedFileNames, setUploadedFileNames] = useState<
     Record<string, string>
@@ -383,6 +395,17 @@ function InputFieldsRenderer({
         const isNumber = field.type === 'number';
         const isArray = field.type === 'array';
         const isObject = field.type === 'object' && field.properties;
+        // FU-8: fields naming an account render as a dropdown of connected
+        // credentials instead of free text
+        const accountCredentialTypes =
+          field.type === undefined || field.type === 'string'
+            ? getAccountCredentialTypesForField(field.name)
+            : null;
+        const accountOptions = accountCredentialTypes
+          ? getAccountOptions(connectedCredentials, accountCredentialTypes)
+          : [];
+        const showAccountDropdown =
+          accountOptions.length > 0 && !manualAccountFields.has(field.name);
         const currentValue = inputValues[field.name] as
           | string
           | number
@@ -1017,6 +1040,48 @@ function InputFieldsRenderer({
                       }
                     )}
                 </div>
+              </div>
+            ) : showAccountDropdown ? (
+              <div className="space-y-1">
+                <select
+                  title={`Select account for ${field.name}`}
+                  value={
+                    typeof currentValue === 'string' &&
+                    accountOptions.some((o) => o.value === currentValue)
+                      ? currentValue
+                      : ''
+                  }
+                  onChange={(e) => {
+                    if (e.target.value === '__manual__') {
+                      setManualAccountFields((prev) => {
+                        const next = new Set(prev);
+                        next.add(field.name);
+                        return next;
+                      });
+                      return;
+                    }
+                    onInputChange(field.name, e.target.value);
+                  }}
+                  disabled={isExecuting}
+                  className={`w-full px-2 py-1.5 text-xs bg-neutral-900 border ${
+                    isMissing
+                      ? 'border-amber-500 focus:border-amber-400'
+                      : 'border-neutral-600 focus:border-blue-500'
+                  } rounded text-neutral-100 focus:outline-none focus:ring-1 focus:ring-blue-500/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all`}
+                >
+                  <option value="" disabled>
+                    Select a connected account...
+                  </option>
+                  {accountOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                  <option value="__manual__">Type an address manually…</option>
+                </select>
+                <p className="text-[10px] text-neutral-500">
+                  Accounts come from your connected credentials.
+                </p>
               </div>
             ) : isNumber ? (
               <div className="flex items-center">

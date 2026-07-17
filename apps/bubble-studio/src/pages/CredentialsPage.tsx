@@ -34,6 +34,12 @@ import {
 } from '../hooks/useCredentials';
 import { credentialsApi } from '../services/credentialsApi';
 import { resolveLogoByName } from '../lib/integrations';
+import {
+  getConnectUiMethods,
+  isGoogleSuiteCredential,
+  getCombinedGoogleScopes,
+  GOOGLE_SUITE_TYPES,
+} from '../lib/authMethods';
 
 // Helper to extract error message from API error
 const getErrorMessage = (error: unknown): string => {
@@ -54,7 +60,7 @@ const getErrorMessage = (error: unknown): string => {
 };
 
 // Helper function to map credential types to service names for icon resolution
-const getServiceNameForCredentialType = (
+export const getServiceNameForCredentialType = (
   credentialType: CredentialType
 ): string => {
   const typeToServiceMap: Record<CredentialType, string> = {
@@ -170,6 +176,32 @@ export function CreateCredentialModal({
     debugUrl: string;
     state: string;
   } | null>(null);
+  // FU-7: which Google services this single Google sign-in should cover
+  const [selectedSuiteTypes, setSelectedSuiteTypes] = useState<
+    Set<CredentialType>
+  >(new Set());
+
+  // IR-3/IR-4: every auth method the selected app supports, ranked
+  const methodOptions = useMemo(
+    () => getConnectUiMethods(formData.credentialType as CredentialType),
+    [formData.credentialType]
+  );
+
+  const isGoogleSuite = isGoogleSuiteCredential(
+    formData.credentialType as CredentialType
+  );
+
+  // Scopes shown in the picker: for Google suite the union across selected
+  // services (one consent covers them all), otherwise the type's own scopes.
+  const availableScopeDescriptions = useMemo<ScopeDescription[]>(() => {
+    if (isGoogleSuite) {
+      const suite = selectedSuiteTypes.size
+        ? [...selectedSuiteTypes]
+        : [formData.credentialType as CredentialType];
+      return getCombinedGoogleScopes(suite);
+    }
+    return getScopeDescriptions(formData.credentialType as CredentialType);
+  }, [isGoogleSuite, selectedSuiteTypes, formData.credentialType]);
 
   // Check if the current credential type is OAuth or Browser Session
   const isOAuthCredentialType = isOAuthCredential(
@@ -179,14 +211,23 @@ export function CreateCredentialModal({
     formData.credentialType as CredentialType
   );
 
-  // Initialize selected scopes based on defaultEnabled when credential type changes
+  // FU-7: entering a Google type seeds the suite selection with that service
+  useEffect(() => {
+    if (isGoogleSuite) {
+      setSelectedSuiteTypes(
+        new Set([formData.credentialType as CredentialType])
+      );
+    } else {
+      setSelectedSuiteTypes(new Set());
+    }
+  }, [formData.credentialType, isGoogleSuite]);
+
+  // Initialize selected scopes based on defaultEnabled when credential type
+  // or the Google suite selection changes
   useEffect(() => {
     if (isOAuthCredentialType) {
-      const scopeDescriptions = getScopeDescriptions(
-        formData.credentialType as CredentialType
-      );
       const enabledScopes = new Set(
-        scopeDescriptions
+        availableScopeDescriptions
           .filter((desc) => desc.defaultEnabled)
           .map((desc) => desc.scope)
       );
@@ -194,7 +235,7 @@ export function CreateCredentialModal({
     } else {
       setSelectedScopes(new Set());
     }
-  }, [formData.credentialType, isOAuthCredentialType]);
+  }, [availableScopeDescriptions, isOAuthCredentialType]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -237,13 +278,11 @@ export function CreateCredentialModal({
         );
       }
 
-      // Get selected scopes as array
+      // Get selected scopes as array (for Google suite this is the union
+      // across every selected Google service — one consent covers them all)
       const scopesArray = Array.from(selectedScopes);
 
-      // Get available scopes for this credential type
-      const availableScopes = getScopeDescriptions(
-        formData.credentialType as CredentialType
-      );
+      const availableScopes = availableScopeDescriptions;
 
       // Validate at least one scope is selected (only if scopes are available)
       if (availableScopes.length > 0 && scopesArray.length === 0) {
@@ -265,6 +304,12 @@ export function CreateCredentialModal({
         name: formData.name,
         credentialType: formData.credentialType,
         state,
+        // FU-7: the sibling Google services this consent covers. The backend
+        // does not yet materialize sibling credential rows; the combined
+        // scopes are on the token, so a future backend pass can create them.
+        suiteCredentialTypes: isGoogleSuite
+          ? Array.from(selectedSuiteTypes)
+          : undefined,
       };
       sessionStorage.setItem(
         'pendingOAuthCredential',
@@ -574,6 +619,96 @@ export function CreateCredentialModal({
               </p>
             </div>
 
+            {/* IR-3/IR-4: offer every auth method the app supports, ranked */}
+            {methodOptions.length > 1 && (
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  How do you want to connect?
+                </label>
+                <div className="space-y-2">
+                  {methodOptions.map((option) => {
+                    const isSelected =
+                      option.credentialType === formData.credentialType;
+                    return (
+                      <button
+                        key={option.credentialType}
+                        type="button"
+                        onClick={() => {
+                          setFormData((prev) => ({
+                            ...prev,
+                            credentialType: option.credentialType,
+                            credentialConfigurations:
+                              CREDENTIAL_TYPE_CONFIG[option.credentialType]
+                                .credentialConfigurations,
+                          }));
+                          setError(null);
+                        }}
+                        className={`w-full text-left rounded-lg border p-3 transition-all duration-200 ${
+                          isSelected
+                            ? 'border-blue-500 bg-blue-500/10'
+                            : 'border-[#30363d] bg-[#1a1a1a] hover:border-[#444c56]'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-gray-100">
+                            {option.displayName}
+                          </span>
+                          {option.recommended && (
+                            <span className="text-[10px] px-2 py-0.5 bg-green-500/20 text-green-300 rounded-full border border-green-500/30">
+                              Recommended
+                            </span>
+                          )}
+                        </div>
+                        {option.description && (
+                          <p className="text-xs text-gray-500 mt-1">
+                            {option.description}
+                          </p>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* FU-7: one Google sign-in covers every selected Google service */}
+            {isGoogleSuite && (
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Google services to include
+                </label>
+                <div className="bg-[#1a1a1a] rounded-lg p-4 border border-[#30363d] space-y-2">
+                  <p className="text-xs text-gray-400 mb-2">
+                    Google uses one sign-in for all its services. Pick the
+                    services this connection should cover; you approve them in a
+                    single consent screen.
+                  </p>
+                  {GOOGLE_SUITE_TYPES.map((suiteType) => (
+                    <label
+                      key={suiteType}
+                      className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer hover:text-gray-100 transition-colors"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedSuiteTypes.has(suiteType)}
+                        onChange={(e) => {
+                          const next = new Set(selectedSuiteTypes);
+                          if (e.target.checked) {
+                            next.add(suiteType);
+                          } else if (next.size > 1) {
+                            next.delete(suiteType);
+                          }
+                          setSelectedSuiteTypes(next);
+                        }}
+                        className="w-4 h-4 rounded border-[#30363d] bg-[#1a1a1a] text-blue-600 focus:ring-2 focus:ring-blue-500/20 focus:ring-offset-0 cursor-pointer"
+                      />
+                      <span>{CREDENTIAL_TYPE_CONFIG[suiteType].label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {!isOAuthCredentialType && !isBrowserSessionCredentialType && (
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
@@ -630,40 +765,38 @@ export function CreateCredentialModal({
                   </p>
 
                   {/* Scope Descriptions with Checkboxes - only show if scopes are available */}
-                  {getScopeDescriptions(
-                    formData.credentialType as CredentialType
-                  ).length > 0 && (
+                  {availableScopeDescriptions.length > 0 && (
                     <div className="mt-4 pt-4 border-t border-[#30363d]">
                       <p className="text-xs font-medium text-gray-300 mb-3">
                         Select permissions to request:
                       </p>
                       <div className="space-y-2">
-                        {getScopeDescriptions(
-                          formData.credentialType as CredentialType
-                        ).map((scopeDesc: ScopeDescription) => (
-                          <label
-                            key={scopeDesc.scope}
-                            className="flex items-start gap-2 text-xs text-gray-400 cursor-pointer hover:text-gray-300 transition-colors"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={selectedScopes.has(scopeDesc.scope)}
-                              onChange={(e) => {
-                                const newSelected = new Set(selectedScopes);
-                                if (e.target.checked) {
-                                  newSelected.add(scopeDesc.scope);
-                                } else {
-                                  newSelected.delete(scopeDesc.scope);
-                                }
-                                setSelectedScopes(newSelected);
-                              }}
-                              className="mt-0.5 w-4 h-4 rounded border-[#30363d] bg-[#1a1a1a] text-blue-600 focus:ring-2 focus:ring-blue-500/20 focus:ring-offset-0 cursor-pointer"
-                            />
-                            <span className="flex-1">
-                              {scopeDesc.description}
-                            </span>
-                          </label>
-                        ))}
+                        {availableScopeDescriptions.map(
+                          (scopeDesc: ScopeDescription) => (
+                            <label
+                              key={scopeDesc.scope}
+                              className="flex items-start gap-2 text-xs text-gray-400 cursor-pointer hover:text-gray-300 transition-colors"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selectedScopes.has(scopeDesc.scope)}
+                                onChange={(e) => {
+                                  const newSelected = new Set(selectedScopes);
+                                  if (e.target.checked) {
+                                    newSelected.add(scopeDesc.scope);
+                                  } else {
+                                    newSelected.delete(scopeDesc.scope);
+                                  }
+                                  setSelectedScopes(newSelected);
+                                }}
+                                className="mt-0.5 w-4 h-4 rounded border-[#30363d] bg-[#1a1a1a] text-blue-600 focus:ring-2 focus:ring-blue-500/20 focus:ring-offset-0 cursor-pointer"
+                              />
+                              <span className="flex-1">
+                                {scopeDesc.description}
+                              </span>
+                            </label>
+                          )
+                        )}
                       </div>
                     </div>
                   )}
