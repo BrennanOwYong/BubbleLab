@@ -80,6 +80,9 @@ export enum CredentialType {
   // Stripe Credentials
   STRIPE_CRED = 'STRIPE_CRED',
 
+  // Kraken API key (generated kraken-spot-api bubble; public market data)
+  KRAKEN_API_KEY = 'KRAKEN_API_KEY',
+
   // Confluence Credentials
   CONFLUENCE_CRED = 'CONFLUENCE_CRED',
 
@@ -118,6 +121,8 @@ export enum CredentialType {
 
   // Snowflake Credentials
   SNOWFLAKE_CRED = 'SNOWFLAKE_CRED',
+  // Snowflake SQL API v2 Programmatic Access Token (generated snowflake-sql-api bubble)
+  SNOWFLAKE_PAT = 'SNOWFLAKE_PAT',
 
   // Salesforce Credentials
   SALESFORCE_CRED = 'SALESFORCE_CRED',
@@ -213,6 +218,8 @@ export type BubbleName =
   | 'linkedin-received-invitations-tool'
   | 'linkedin-accept-invitations-tool'
   | 'stripe'
+  | 'stripe-payments-api'
+  | 'kraken-spot-api'
   | 'confluence'
   | 'sendsafely'
   | 'yc-scraper-tool'
@@ -226,6 +233,7 @@ export type BubbleName =
   | 'zendesk'
   | 'slab'
   | 'snowflake'
+  | 'snowflake-sql-api'
   | 'salesforce'
   | 'asana'
   | 'discord'

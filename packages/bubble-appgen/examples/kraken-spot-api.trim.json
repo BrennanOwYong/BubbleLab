@@ -1,0 +1,60 @@
+{
+  "output": "kraken-spot.yaml",
+  "sourceUrl": "https://docs.kraken.com/openapi/spot-rest.yaml",
+  "references": [
+    "https://docs.kraken.com/openapi/spot-rest.yaml",
+    "https://docs.kraken.com/api/docs/guides/spot-rest-intro/",
+    "https://docs.kraken.com/api/docs/rest-api/get-ticker-information",
+    "https://docs.kraken.com/api/docs/rest-api/get-ohlc-data",
+    "https://docs.kraken.com/api/docs/rest-api/get-order-book",
+    "https://docs.kraken.com/api/docs/rest-api/get-recent-trades",
+    "https://docs.kraken.com/api/docs/guides/spot-rest-auth/"
+  ],
+  "title": "Kraken Spot REST API (BubbleLab trimmed subset: public market data)",
+  "description": "Public market-data endpoints only. Private endpoints (Balance, AddOrder, TradesHistory) require API-Key + API-Sign HMAC-SHA512 request signing per https://docs.kraken.com/api/docs/guides/spot-rest-auth/, which the raw-fetch bearer pattern does not support. The vendor envelope `error: string[]` field is dropped from responses because it collides with the generator-owned `error: string` result field; API-level failures surface via HTTP status only.",
+  "maxDepth": 3,
+  "maxDescriptionLength": 200,
+  "operations": [
+    {
+      "path": "/public/Ticker",
+      "method": "get",
+      "operationId": "getTickerInformation",
+      "queryProps": ["pair"],
+      "responseProps": ["result"]
+    },
+    {
+      "path": "/public/OHLC",
+      "method": "get",
+      "operationId": "getOhlcData",
+      "sourceOperationId": "getOHLCData",
+      "queryProps": ["pair", "interval", "since"],
+      "responseProps": ["result"]
+    },
+    {
+      "path": "/public/Depth",
+      "method": "get",
+      "operationId": "getOrderBook",
+      "queryProps": ["pair", "count"],
+      "responseProps": ["result"]
+    },
+    {
+      "path": "/public/Trades",
+      "method": "get",
+      "operationId": "getRecentTrades",
+      "queryProps": ["pair", "since", "count"],
+      "responseProps": ["result"]
+    },
+    {
+      "path": "/public/SystemStatus",
+      "method": "get",
+      "operationId": "getSystemStatus",
+      "responseProps": ["result"]
+    },
+    {
+      "path": "/public/Time",
+      "method": "get",
+      "operationId": "getServerTime",
+      "responseProps": ["result"]
+    }
+  ]
+}

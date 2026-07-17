@@ -1,0 +1,103 @@
+{
+  "output": "stripe-payments.yaml",
+  "sourceUrl": "https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.json",
+  "references": [
+    "https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.json",
+    "https://docs.stripe.com/api/payment_intents/create",
+    "https://docs.stripe.com/api/payment-link/create",
+    "https://docs.stripe.com/api/payouts/create",
+    "https://docs.stripe.com/api/refunds/create",
+    "https://docs.stripe.com/api/charges/list",
+    "https://docs.stripe.com/api/balance/balance_retrieve",
+    "https://docs.stripe.com/api/requests"
+  ],
+  "title": "Stripe API (BubbleLab trimmed subset: payments, payouts, refunds, charges, balance)",
+  "description": "Request bodies are application/x-www-form-urlencoded with deepObject bracket encoding per https://docs.stripe.com/api/requests.",
+  "maxDepth": 2,
+  "maxDescriptionLength": 200,
+  "operations": [
+    {
+      "path": "/v1/payment_intents",
+      "method": "post",
+      "operationId": "CreatePaymentIntent",
+      "sourceOperationId": "PostPaymentIntents",
+      "bodyProps": [
+        "amount",
+        "currency",
+        "automatic_payment_methods",
+        "confirm",
+        "customer",
+        "description",
+        "metadata",
+        "payment_method",
+        "receipt_email",
+        "statement_descriptor"
+      ]
+    },
+    {
+      "path": "/v1/payment_links",
+      "method": "post",
+      "operationId": "CreatePaymentLink",
+      "sourceOperationId": "PostPaymentLinks",
+      "bodyProps": [
+        "line_items",
+        "currency",
+        "allow_promotion_codes",
+        "after_completion",
+        "metadata"
+      ]
+    },
+    {
+      "path": "/v1/payouts",
+      "method": "post",
+      "operationId": "CreatePayout",
+      "sourceOperationId": "PostPayouts",
+      "bodyProps": [
+        "amount",
+        "currency",
+        "description",
+        "destination",
+        "metadata",
+        "method",
+        "source_type",
+        "statement_descriptor"
+      ]
+    },
+    {
+      "path": "/v1/refunds",
+      "method": "post",
+      "operationId": "CreateRefund",
+      "sourceOperationId": "PostRefunds",
+      "bodyProps": [
+        "amount",
+        "charge",
+        "payment_intent",
+        "currency",
+        "customer",
+        "metadata",
+        "reason",
+        "instructions_email"
+      ]
+    },
+    {
+      "path": "/v1/charges",
+      "method": "get",
+      "operationId": "ListCharges",
+      "sourceOperationId": "GetCharges",
+      "queryProps": [
+        "customer",
+        "payment_intent",
+        "limit",
+        "starting_after",
+        "ending_before",
+        "transfer_group"
+      ]
+    },
+    {
+      "path": "/v1/balance",
+      "method": "get",
+      "operationId": "GetBalance",
+      "sourceOperationId": "GetBalance"
+    }
+  ]
+}

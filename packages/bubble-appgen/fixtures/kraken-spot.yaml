@@ -1,0 +1,277 @@
+openapi: 3.0.0
+info:
+  title: 'Kraken Spot REST API (BubbleLab trimmed subset: public market data)'
+  version: 1.1.0
+  description: 'Public market-data endpoints only. Private endpoints (Balance, AddOrder, TradesHistory) require API-Key + API-Sign HMAC-SHA512 request signing per https://docs.kraken.com/api/docs/guides/spot-rest-auth/, which the raw-fetch bearer pattern does not support. The vendor envelope `error: string[]` field is dropped from responses because it collides with the generator-owned `error: string` result field; API-level failures surface via HTTP status only. Trimmed subset of https://docs.kraken.com/openapi/spot-rest.yaml (source version 1.1.0); regenerate with scripts/trim-openapi.ts.'
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+paths:
+  /public/Ticker:
+    get:
+      operationId: getTickerInformation
+      summary: Get Ticker Information
+      description: Get ticker information for all or requested markets. To clarify usage, note that * Today's prices start at midnight UTC * Leaving the pair parameter blank will return tickers for all tradeable assets…
+      parameters:
+        - name: pair
+          in: query
+          required: false
+          description: 'Asset pair to get data for (optional, default: all tradeable exchange pairs)'
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Ticker info retrieved.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      description: Asset Ticker Info
+                      properties:
+                        a:
+                          type: array
+                          description: Ask `[<price>, <whole lot volume>, <lot volume>]`
+                          items:
+                            type: string
+                        b:
+                          type: array
+                          description: Bid `[<price>, <whole lot volume>, <lot volume>]`
+                          items:
+                            type: string
+                        c:
+                          type: array
+                          description: Last trade closed `[<price>, <lot volume>]`
+                          items:
+                            type: string
+                        v:
+                          type: array
+                          description: Volume `[<today>, <last 24 hours>]`
+                          items:
+                            type: string
+                        p:
+                          type: array
+                          description: Volume weighted average price `[<today>, <last 24 hours>]`
+                          items:
+                            type: string
+                        t:
+                          type: array
+                          description: Number of trades `[<today>, <last 24 hours>]`
+                          items:
+                            type: integer
+                        l:
+                          type: array
+                          description: Low `[<today>, <last 24 hours>]`
+                          items:
+                            type: string
+                        h:
+                          type: array
+                          description: High `[<today>, <last 24 hours>]`
+                          items:
+                            type: string
+                        o:
+                          type: string
+                          description: Today's opening price
+  /public/OHLC:
+    get:
+      operationId: getOhlcData
+      summary: Get OHLC Data
+      description: Retrieve OHLC market data. The last entry in the OHLC array is for the current, not-yet-committed timeframe, and will always be present, regardless of the value of `since`. Returns up to 720 of the m…
+      parameters:
+        - name: pair
+          in: query
+          required: true
+          description: Asset pair to get data for
+          schema:
+            type: string
+        - name: interval
+          in: query
+          required: false
+          description: Time frame interval in minutes
+          schema:
+            type: integer
+            enum:
+              - 1
+              - 5
+              - 15
+              - 30
+              - 60
+              - 240
+              - 1440
+              - 10080
+              - 21600
+            default: 1
+        - name: since
+          in: query
+          required: false
+          description: Return OHLC entries since the given timestamp (intended for incremental updates)
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: OHLC data retrieved.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: object
+                    properties:
+                      last:
+                        type: integer
+                        description: ID to be used as since when polling for new, committed OHLC data
+  /public/Depth:
+    get:
+      operationId: getOrderBook
+      summary: Get Order Book
+      description: Returns level 2 (L2) order book, which describes the individual price levels in the book with aggregated order quantities at each level.
+      parameters:
+        - name: pair
+          in: query
+          required: true
+          description: Asset pair to get data for
+          schema:
+            type: string
+        - name: count
+          in: query
+          required: false
+          description: Maximum number of asks/bids
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        '200':
+          description: Order book entries retrieved.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      description: Asset Pair Order Book Entries
+                      properties:
+                        asks:
+                          type: array
+                          description: Ask side array of entries `[<price>, <volume>, <timestamp>]`
+                          items:
+                            type: array
+                            minItems: 3
+                            items:
+                              oneOf:
+                                - type: string
+                                - type: integer
+                        bids:
+                          type: array
+                          description: Bid side array of entries `[<price>, <volume>, <timestamp>]`
+                          items:
+                            type: array
+                            minItems: 3
+                            items:
+                              oneOf:
+                                - type: string
+                                - type: integer
+  /public/Trades:
+    get:
+      operationId: getRecentTrades
+      summary: Get Recent Trades
+      description: Returns the last 1000 trades by default
+      parameters:
+        - name: pair
+          in: query
+          required: true
+          description: Asset pair to get data for
+          schema:
+            type: string
+        - name: since
+          in: query
+          required: false
+          description: Return trade data since given timestamp
+          schema:
+            type: string
+        - name: count
+          in: query
+          required: false
+          description: Return specific number of trades, up to 1000
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 1000
+      responses:
+        '200':
+          description: Trade data retrieved.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: object
+                    properties:
+                      last:
+                        type: string
+                        description: ID to be used as since when polling for new trade data
+  /public/SystemStatus:
+    get:
+      operationId: getSystemStatus
+      summary: Get System Status
+      description: Get the current system status or trading mode.
+      responses:
+        '200':
+          description: Success response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: object
+                    properties:
+                      status:
+                        type: string
+                        enum:
+                          - online
+                          - maintenance
+                          - cancel_only
+                          - post_only
+                        description: 'Current system status: * `online` Kraken is operating normally. All order types may be submitted and trades can occur. * `maintenance` The exchange is offline. No new orders or cancellations may be s…'
+                      timestamp:
+                        type: string
+                        description: Current timestamp (RFC3339)
+  /public/Time:
+    get:
+      operationId: getServerTime
+      summary: Get Server Time
+      description: Get the server's time.
+      responses:
+        '200':
+          description: Success response
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Success response
+                properties:
+                  result:
+                    type: object
+                    properties:
+                      unixtime:
+                        type: integer
+                        description: Unix timestamp
+                      rfc1123:
+                        type: string
+                        description: RFC 1123 time format

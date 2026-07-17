@@ -67,6 +67,7 @@ export const CREDENTIAL_CONFIGURATION_MAP: Record<
   [CredentialType.ASHBY_CRED]: {},
   [CredentialType.FULLENRICH_API_KEY]: {},
   [CredentialType.STRIPE_CRED]: {},
+  [CredentialType.KRAKEN_API_KEY]: {},
   [CredentialType.CONFLUENCE_CRED]: {},
   [CredentialType.POSTHOG_API_KEY]: {},
   [CredentialType.SENDSAFELY_CRED]: {},
@@ -81,6 +82,9 @@ export const CREDENTIAL_CONFIGURATION_MAP: Record<
   [CredentialType.ZENDESK_CRED]: {},
   [CredentialType.SLAB_CRED]: {},
   [CredentialType.SNOWFLAKE_CRED]: {},
+  [CredentialType.SNOWFLAKE_PAT]: {
+    accountUrl: BubbleParameterType.STRING,
+  },
   [CredentialType.SALESFORCE_CRED]: {},
   [CredentialType.ASANA_CRED]: {},
   [CredentialType.DISCORD_CRED]: {},

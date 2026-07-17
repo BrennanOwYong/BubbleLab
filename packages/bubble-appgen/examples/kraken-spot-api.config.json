@@ -1,0 +1,26 @@
+{
+  "appName": "kraken-spot-api",
+  "className": "KrakenSpotApi",
+  "service": "kraken",
+  "alias": "kraken-md",
+  "shortDescription": "Kraken Spot REST API public market-data integration generated from the official OpenAPI spec (ticker, OHLC candles, order book, recent trades, system status, server time)",
+  "credentialType": "KRAKEN_API_KEY",
+  "authHeaders": {
+    "User-Agent": "bubblelab/1.0"
+  },
+  "baseUrlParam": {
+    "name": "baseUrl",
+    "description": "Kraken REST API base URL including the version prefix",
+    "example": "https://api.kraken.com/0"
+  },
+  "operations": [
+    "getTickerInformation",
+    "getOhlcData",
+    "getOrderBook",
+    "getRecentTrades",
+    "getSystemStatus",
+    "getServerTime"
+  ],
+  "specName": "kraken-spot.yaml",
+  "docsUrl": "https://docs.kraken.com/api/docs/guides/spot-rest-intro/"
+}

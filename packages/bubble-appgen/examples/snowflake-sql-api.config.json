@@ -1,0 +1,21 @@
+{
+  "appName": "snowflake-sql-api",
+  "className": "SnowflakeSqlApi",
+  "service": "snowflake",
+  "alias": "sf-sql",
+  "shortDescription": "Snowflake SQL API v2 integration generated from the official OpenAPI spec (submit, poll, cancel SQL statements)",
+  "credentialType": "SNOWFLAKE_PAT",
+  "authHeaders": {
+    "User-Agent": "bubblelab/1.0",
+    "X-Snowflake-Authorization-Token-Type": "PROGRAMMATIC_ACCESS_TOKEN"
+  },
+  "baseUrlParam": {
+    "name": "accountUrl",
+    "description": "Per-account Snowflake base URL",
+    "example": "https://org-account.snowflakecomputing.com"
+  },
+  "operations": ["SubmitStatement", "GetStatementStatus", "CancelStatement"],
+  "specName": "sqlapi.yaml",
+  "docsUrl": "https://docs.snowflake.com/en/developer-guide/sql-api/intro",
+  "carrierFields": ["statement", "sql", "query", "code", "command"]
+}

@@ -422,6 +422,14 @@ export const CREDENTIAL_TYPE_CONFIG: Record<CredentialType, CredentialConfig> =
       namePlaceholder: 'My Stripe API Key',
       credentialConfigurations: {},
     },
+    [CredentialType.KRAKEN_API_KEY]: {
+      label: 'Kraken API Key',
+      description:
+        'Kraken Spot REST API key (generated kraken-spot-api bubble). Public market-data operations work with any placeholder value; private endpoints additionally require API-Sign request signing, which this bubble does not implement.',
+      placeholder: 'Your Kraken API key',
+      namePlaceholder: 'My Kraken API Key',
+      credentialConfigurations: {},
+    },
     [CredentialType.CONFLUENCE_CRED]: {
       label: 'Confluence',
       description:
@@ -683,6 +691,14 @@ export const CREDENTIAL_TYPE_CONFIG: Record<CredentialType, CredentialConfig> =
         },
       ],
     },
+    [CredentialType.SNOWFLAKE_PAT]: {
+      label: 'Snowflake Programmatic Access Token',
+      description:
+        'Programmatic access token for the Snowflake SQL API v2 (generated snowflake-sql-api bubble); the per-account URL is a bubble parameter',
+      placeholder: 'Your Snowflake programmatic access token',
+      namePlaceholder: 'My Snowflake PAT',
+      credentialConfigurations: {},
+    },
     [CredentialType.DOCUSIGN_CRED]: {
       label: 'DocuSign',
       description: 'OAuth connection to DocuSign for eSignature operations',
@@ -808,6 +824,7 @@ export const CREDENTIAL_ENV_MAP: Record<CredentialType, string> = {
   [CredentialType.ASHBY_CRED]: 'ASHBY_API_KEY',
   [CredentialType.FULLENRICH_API_KEY]: 'FULLENRICH_API_KEY',
   [CredentialType.STRIPE_CRED]: 'STRIPE_SECRET_KEY',
+  [CredentialType.KRAKEN_API_KEY]: 'KRAKEN_API_KEY',
   [CredentialType.CONFLUENCE_CRED]: '', // OAuth credential, no env var
   [CredentialType.POSTHOG_API_KEY]: 'POSTHOG_API_KEY',
   [CredentialType.SENDSAFELY_CRED]: '', // Multi-field credential (host + apiKey + apiSecret), no single env var
@@ -822,6 +839,7 @@ export const CREDENTIAL_ENV_MAP: Record<CredentialType, string> = {
   [CredentialType.ZENDESK_CRED]: '', // OAuth credential, no env var
   [CredentialType.SLAB_CRED]: 'SLAB_API_TOKEN',
   [CredentialType.SNOWFLAKE_CRED]: '', // Multi-field credential (account + username + privateKey + optional fields), no single env var
+  [CredentialType.SNOWFLAKE_PAT]: 'SNOWFLAKE_PAT',
   [CredentialType.SALESFORCE_CRED]: '', // OAuth credential, no env var
   [CredentialType.ASANA_CRED]: '', // OAuth credential, no env var
   [CredentialType.DISCORD_CRED]: '', // OAuth credential, no env var
@@ -3064,6 +3082,8 @@ export const BUBBLE_CREDENTIAL_OPTIONS: Record<
     ...BROWSERBASE_OPTIONAL_CREDENTIALS,
   ],
   stripe: [CredentialType.STRIPE_CRED],
+  'stripe-payments-api': [CredentialType.STRIPE_CRED],
+  'kraken-spot-api': [CredentialType.KRAKEN_API_KEY],
   confluence: [CredentialType.CONFLUENCE_CRED],
   sendsafely: [CredentialType.SENDSAFELY_CRED],
   's3-storage': [CredentialType.S3_CRED],
@@ -3078,6 +3098,7 @@ export const BUBBLE_CREDENTIAL_OPTIONS: Record<
   zendesk: [CredentialType.ZENDESK_CRED],
   slab: [CredentialType.SLAB_CRED],
   snowflake: [CredentialType.SNOWFLAKE_CRED],
+  'snowflake-sql-api': [CredentialType.SNOWFLAKE_PAT],
   salesforce: [CredentialType.SALESFORCE_CRED],
   asana: [CredentialType.ASANA_CRED],
   discord: [CredentialType.DISCORD_CRED],

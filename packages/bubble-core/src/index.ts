@@ -173,6 +173,8 @@ export { SlabBubble } from './bubbles/service-bubble/slab/index.js';
 export type { SlabParamsInput } from './bubbles/service-bubble/slab/index.js';
 export { SnowflakeBubble } from './bubbles/service-bubble/snowflake/index.js';
 export type { SnowflakeParamsInput } from './bubbles/service-bubble/snowflake/index.js';
+export { SnowflakeSqlApiBubble } from './bubbles/service-bubble/snowflake-sql-api/index.js';
+export type { SnowflakeSqlApiParamsInput } from './bubbles/service-bubble/snowflake-sql-api/index.js';
 export { SalesforceBubble } from './bubbles/service-bubble/salesforce/index.js';
 export type { SalesforceParamsInput } from './bubbles/service-bubble/salesforce/index.js';
 export { AsanaBubble } from './bubbles/service-bubble/asana/index.js';
@@ -243,6 +245,10 @@ export {
   type StripeParamsInput,
   type StripeResult,
 } from './bubbles/service-bubble/stripe/index.js';
+export { StripePaymentsApiBubble } from './bubbles/service-bubble/stripe-payments-api/index.js';
+export type { StripePaymentsApiParamsInput } from './bubbles/service-bubble/stripe-payments-api/index.js';
+export { KrakenSpotApiBubble } from './bubbles/service-bubble/kraken-spot-api/index.js';
+export type { KrakenSpotApiParamsInput } from './bubbles/service-bubble/kraken-spot-api/index.js';
 export {
   SendSafelyBubble,
   SendSafelyParamsSchema,
