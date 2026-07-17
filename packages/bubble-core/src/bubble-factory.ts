@@ -193,6 +193,9 @@ export class BubbleFactory {
       'slab',
       'snowflake',
       'snowflake-sql-api',
+      'bigquery',
+      'redshift-data',
+      'databricks-sql',
       'salesforce',
       'asana',
       'discord',
@@ -463,6 +466,15 @@ export class BubbleFactory {
     const { SnowflakeSqlApiBubble } = await import(
       './bubbles/service-bubble/snowflake-sql-api/index.js'
     );
+    const { BigQueryBubble } = await import(
+      './bubbles/service-bubble/bigquery/index.js'
+    );
+    const { RedshiftDataBubble } = await import(
+      './bubbles/service-bubble/redshift-data/index.js'
+    );
+    const { DatabricksSqlBubble } = await import(
+      './bubbles/service-bubble/databricks-sql/index.js'
+    );
     const { SalesforceBubble } = await import(
       './bubbles/service-bubble/salesforce/index.js'
     );
@@ -674,6 +686,15 @@ export class BubbleFactory {
     this.register(
       'snowflake-sql-api',
       SnowflakeSqlApiBubble as BubbleClassWithMetadata
+    );
+    this.register('bigquery', BigQueryBubble as BubbleClassWithMetadata);
+    this.register(
+      'redshift-data',
+      RedshiftDataBubble as BubbleClassWithMetadata
+    );
+    this.register(
+      'databricks-sql',
+      DatabricksSqlBubble as BubbleClassWithMetadata
     );
     this.register('salesforce', SalesforceBubble as BubbleClassWithMetadata);
     this.register('asana', AsanaBubble as BubbleClassWithMetadata);

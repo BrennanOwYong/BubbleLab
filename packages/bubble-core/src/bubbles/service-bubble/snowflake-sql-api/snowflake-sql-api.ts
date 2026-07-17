@@ -82,9 +82,10 @@ export class SnowflakeSqlApiBubble<
       accountUrl: 'https://org-account.snowflakecomputing.com',
       statementHandle: 'e4ce975e-f7ff-4b5e-b15e-bf25f59371ae',
     } as T,
-    context?: BubbleContext
+    context?: BubbleContext,
+    instanceId?: string
   ) {
-    super(params, context);
+    super(params, context, instanceId);
   }
 
   private requestHeaders(
@@ -97,7 +98,7 @@ export class SnowflakeSqlApiBubble<
       'User-Agent': 'bubblelab/1.0',
       'X-Snowflake-Authorization-Token-Type': 'PROGRAMMATIC_ACCESS_TOKEN',
     };
-    if (hasBody) headers['Content-Type'] = 'application/json';
+    if (hasBody) headers['Content-Type'] ??= 'application/json';
     return headers;
   }
 

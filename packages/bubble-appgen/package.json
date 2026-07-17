@@ -10,6 +10,11 @@
     "generate:kraken-spot-api": "bun src/cli.ts --spec fixtures/kraken-spot.yaml --config examples/kraken-spot-api.config.json",
     "trim:stripe-payments-api": "bun scripts/trim-openapi.ts --trim examples/stripe-payments-api.trim.json --source",
     "trim:kraken-spot-api": "bun scripts/trim-openapi.ts --trim examples/kraken-spot-api.trim.json --source",
+    "convert:bigquery": "bun scripts/discovery-to-openapi.ts",
+    "generate:bigquery": "bun scripts/discovery-to-openapi.ts && bun src/cli.ts --spec fixtures/bigquery-v2.openapi.json --config examples/bigquery.config.json",
+    "convert:redshift-data": "bun scripts/smithy-to-openapi.ts",
+    "generate:redshift-data": "bun scripts/smithy-to-openapi.ts && bun src/cli.ts --spec fixtures/redshift-data.openapi.json --config examples/redshift-data.config.json",
+    "generate:databricks-sql": "bun src/cli.ts --spec fixtures/databricks-sql-statements.yaml --config examples/databricks-sql.config.json",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
