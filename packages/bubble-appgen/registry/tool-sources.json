@@ -1,0 +1,341 @@
+{
+  "registryVersion": 1,
+  "tools": [
+    {
+      "name": "snowflake-sql-api",
+      "specType": "openapi",
+      "monitoring": "auto",
+      "sources": [
+        {
+          "key": "spec",
+          "url": "https://raw.githubusercontent.com/snowflakedb/snowflake-rest-api-specs/refs/heads/main/specifications/sqlapi.yaml",
+          "conditional": [
+            "etag"
+          ],
+          "snapshot": {
+            "etag": "W/\"663950fc805e3184ce7094a99727595f7af636bcc2e04d2a1eaf8b9471b488db\"",
+            "lastModified": null,
+            "sha256": "28b780dd056961e975b4e1ccffe72b04d96d713ad3aaf378d5a6dc0316586dce",
+            "bytes": 29936,
+            "specVersion": "2.0.0",
+            "fetchedAt": "2026-07-17T10:06:25.506Z"
+          }
+        }
+      ],
+      "pipeline": {
+        "rawTarget": "fixtures/sqlapi.yaml",
+        "prettierRawTarget": true,
+        "convert": null,
+        "fixture": "fixtures/sqlapi.yaml",
+        "generate": [
+          "src/cli.ts",
+          "--spec",
+          "fixtures/sqlapi.yaml",
+          "--config",
+          "examples/snowflake-sql-api.config.json"
+        ],
+        "config": "examples/snowflake-sql-api.config.json"
+      },
+      "generatedFiles": {
+        "snowflake-sql-api.ts": "41c9e03b753dbe973673a96fea2398d534f0cd2e5e9b3720422d50eafe627c4b",
+        "snowflake-sql-api.schema.ts": "a9f3a49c871a788728abb7a5eec516f04a53c0392b14a4d54e0bded3ec0ac3b2",
+        "snowflake-sql-api.metadata.ts": "d2df969cff2196221cef55e3c180fdbef1b51a7bf29c6dd3b721c45d37183bf6",
+        "snowflake-sql-api.schema.test.ts": "7a0de80989ae7edcb446372c246c4720e640f7b1b18c83bf2198460c2e35057c",
+        "index.ts": "2063145884976595614303f16a646e068e1f9c448427e240125721d9d3c9a5b8"
+      },
+      "outDir": "packages/bubble-core/src/bubbles/service-bubble/snowflake-sql-api",
+      "docsUrl": "https://docs.snowflake.com/en/developer-guide/sql-api/intro",
+      "references": [
+        "https://github.com/snowflakedb/snowflake-rest-api-specs",
+        "https://docs.snowflake.com/en/developer-guide/sql-api/intro"
+      ],
+      "pendingReview": null
+    },
+    {
+      "name": "stripe-payments-api",
+      "specType": "openapi",
+      "monitoring": "auto",
+      "sources": [
+        {
+          "key": "spec",
+          "url": "https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.json",
+          "conditional": [
+            "etag"
+          ],
+          "snapshot": {
+            "etag": "W/\"d757a175d552192a0e2edada77c8319758b4bf6cae9d1a2061f94f737cbdc496\"",
+            "lastModified": null,
+            "sha256": "e24a26de4188fd64dec4c043d5d3726277fdcb07556a493ea481c305b0a223d8",
+            "bytes": 7866866,
+            "specVersion": "2026-06-24.dahlia",
+            "fetchedAt": "2026-07-17T10:06:28.630Z"
+          }
+        }
+      ],
+      "pipeline": {
+        "rawTarget": null,
+        "prettierRawTarget": false,
+        "convert": [
+          "scripts/trim-openapi.ts",
+          "--trim",
+          "examples/stripe-payments-api.trim.json",
+          "--source",
+          "{download:spec}"
+        ],
+        "fixture": "fixtures/stripe-payments.yaml",
+        "generate": [
+          "src/cli.ts",
+          "--spec",
+          "fixtures/stripe-payments.yaml",
+          "--config",
+          "examples/stripe-payments-api.config.json"
+        ],
+        "config": "examples/stripe-payments-api.config.json"
+      },
+      "generatedFiles": {
+        "stripe-payments-api.ts": "9bc5711ac245519f77ad2e8006ceaf04694f5c07971f6344a46c9562127f843c",
+        "stripe-payments-api.schema.ts": "cf79ce691ba40e4d5f1320140737f35beccb1affb9a3bb3770670615dd69d288",
+        "stripe-payments-api.metadata.ts": "8686efa672fb44cab5ed54aad897dc057265945d73327c560e3d15e370e354a7",
+        "stripe-payments-api.schema.test.ts": "1b1a305478cdf336cc668b6608ac96624a5a4067e26765e09a0fa202cf221e71",
+        "index.ts": "9b101f89e5f05464cec4654e61ede85f185d724b9a95ccc19aab1d018131c67e"
+      },
+      "outDir": "packages/bubble-core/src/bubbles/service-bubble/stripe-payments-api",
+      "docsUrl": "https://docs.stripe.com/api",
+      "references": [
+        "https://github.com/stripe/openapi",
+        "https://docs.stripe.com/api/requests"
+      ],
+      "pendingReview": null
+    },
+    {
+      "name": "kraken-spot-api",
+      "specType": "openapi",
+      "monitoring": "auto",
+      "sources": [
+        {
+          "key": "spec",
+          "url": "https://docs.kraken.com/openapi/spot-rest.yaml",
+          "conditional": [
+            "etag",
+            "last-modified"
+          ],
+          "snapshot": {
+            "etag": "\"1ad5cd579be927ff1bd3bf5fd5ecf873\"",
+            "lastModified": "Thu, 16 Jul 2026 18:30:18 GMT",
+            "sha256": "c670c25a2f6564b388d7397d81d13598d87ce37ef275e8c6bfa996c5e5d4f231",
+            "bytes": 307657,
+            "specVersion": "1.1.0",
+            "fetchedAt": "2026-07-17T10:06:30.143Z"
+          }
+        }
+      ],
+      "pipeline": {
+        "rawTarget": null,
+        "prettierRawTarget": false,
+        "convert": [
+          "scripts/trim-openapi.ts",
+          "--trim",
+          "examples/kraken-spot-api.trim.json",
+          "--source",
+          "{download:spec}"
+        ],
+        "fixture": "fixtures/kraken-spot.yaml",
+        "generate": [
+          "src/cli.ts",
+          "--spec",
+          "fixtures/kraken-spot.yaml",
+          "--config",
+          "examples/kraken-spot-api.config.json"
+        ],
+        "config": "examples/kraken-spot-api.config.json"
+      },
+      "generatedFiles": {
+        "kraken-spot-api.ts": "f137ff329a54ddb8b251dc1e4e4915218eec5f556a92b5ac7c52eb3a931820e7",
+        "kraken-spot-api.schema.ts": "3bc231f64735e63ba9816b4cd1108ff86216c667f3d83484d553f5675255b58b",
+        "kraken-spot-api.metadata.ts": "1f346a41f35280a577c9fe0a20161dcdd9c3ae74944d7e119283b09c947152d8",
+        "kraken-spot-api.schema.test.ts": "4ec5619ef92cc36b700ebfd32b3dbe23959a9b12f4fe1dd72f697489170bd8d1",
+        "index.ts": "3645c16f77bba50b881f47993936a6558cac6eb38c27ff085405d7043d18e303"
+      },
+      "outDir": "packages/bubble-core/src/bubbles/service-bubble/kraken-spot-api",
+      "docsUrl": "https://docs.kraken.com/api/docs/rest-api/get-ticker-information",
+      "references": [
+        "https://docs.kraken.com/openapi/spot-rest.yaml",
+        "https://docs.kraken.com/api/docs/guides/spot-rest-intro/"
+      ],
+      "pendingReview": null
+    },
+    {
+      "name": "bigquery",
+      "specType": "google-discovery",
+      "monitoring": "auto",
+      "sources": [
+        {
+          "key": "discovery",
+          "url": "https://bigquery.googleapis.com/discovery/v1/apis/bigquery/v2/rest",
+          "conditional": [],
+          "snapshot": {
+            "etag": null,
+            "lastModified": null,
+            "sha256": "d55b87497ea04bfc5b8e830aded85f58f73486b03ade805ac812d6478f93acd6",
+            "bytes": 569785,
+            "specVersion": "20260707",
+            "fetchedAt": "2026-07-17T10:06:52.730Z"
+          }
+        }
+      ],
+      "pipeline": {
+        "rawTarget": "fixtures/bigquery-v2.discovery.json",
+        "prettierRawTarget": true,
+        "convert": [
+          "scripts/discovery-to-openapi.ts"
+        ],
+        "fixture": "fixtures/bigquery-v2.openapi.json",
+        "generate": [
+          "src/cli.ts",
+          "--spec",
+          "fixtures/bigquery-v2.openapi.json",
+          "--config",
+          "examples/bigquery.config.json"
+        ],
+        "config": "examples/bigquery.config.json"
+      },
+      "generatedFiles": {
+        "bigquery.ts": "3b638a9de6db6a11ddda156034a12e0099519f2e103e21a6fffd15696f6d84e2",
+        "bigquery.schema.ts": "8cd0fb69d55fb7c3243d8ddb30ef4e6804efc4b6f44fd7439979a4e1c8017bfd",
+        "bigquery.metadata.ts": "b615e8acaa82ff575eb504bca9628c752ad781e01365a0b10bcbcf1a5ea00799",
+        "bigquery.schema.test.ts": "2936d4cc660f02efbf1b54dec582d2bd33611eac047f1c4809f37c460ec1bc56",
+        "index.ts": "5d5a997bcb34db923f0a6850cd5de1178d5c424d2a70094a5cbb6a650a8484f3"
+      },
+      "outDir": "packages/bubble-core/src/bubbles/service-bubble/bigquery",
+      "docsUrl": "https://cloud.google.com/bigquery/docs/reference/rest",
+      "references": [
+        "https://developers.google.com/discovery/v1/reference/apis",
+        "https://cloud.google.com/bigquery/docs/reference/rest"
+      ],
+      "pendingReview": null
+    },
+    {
+      "name": "redshift-data",
+      "specType": "aws-smithy",
+      "monitoring": "auto",
+      "sources": [
+        {
+          "key": "model",
+          "url": "https://raw.githubusercontent.com/aws/aws-sdk-js-v3/main/codegen/sdk-codegen/aws-models/redshift-data.json",
+          "conditional": [
+            "etag"
+          ],
+          "snapshot": {
+            "etag": "W/\"b01fdbf5e17a68a19c8dee308144a769605a417707b37a6ed8f5b1b46e5227f0\"",
+            "lastModified": null,
+            "sha256": "d98ef1ed2e0ae0e228bb67997aec8d902b66619a68e451e206a0713cf07c5af3",
+            "bytes": 133670,
+            "specVersion": null,
+            "fetchedAt": "2026-07-17T10:06:33.572Z"
+          }
+        }
+      ],
+      "pipeline": {
+        "rawTarget": "fixtures/redshift-data.smithy.json",
+        "prettierRawTarget": true,
+        "convert": [
+          "scripts/smithy-to-openapi.ts"
+        ],
+        "fixture": "fixtures/redshift-data.openapi.json",
+        "generate": [
+          "src/cli.ts",
+          "--spec",
+          "fixtures/redshift-data.openapi.json",
+          "--config",
+          "examples/redshift-data.config.json"
+        ],
+        "config": "examples/redshift-data.config.json"
+      },
+      "generatedFiles": {
+        "redshift-data.ts": "56d0457b4ddb8adf7f045c740cf9ead484074517eca9508115b31dfc55e63b64",
+        "redshift-data.schema.ts": "214e0758e703d5a2b676550197f63a6d46c1df364c14afdad41fc5ec29ca3613",
+        "redshift-data.metadata.ts": "42ea931110001e3a6cc841eba91c616ba100cd5bce4eb99c8a52e9daaf237175",
+        "redshift-data.schema.test.ts": "f06e2e41a8d98edfb45aab3cfeb3ce1865be647e129ed795ee6fefb8282cae04",
+        "index.ts": "73ca915f254b416159f54421cd281ded738ed9b66a1a47928d57a457de6cd12e"
+      },
+      "outDir": "packages/bubble-core/src/bubbles/service-bubble/redshift-data",
+      "docsUrl": "https://docs.aws.amazon.com/redshift-data/latest/APIReference/Welcome.html",
+      "references": [
+        "https://raw.githubusercontent.com/aws/aws-sdk-js-v3/main/codegen/sdk-codegen/aws-models/redshift-data.json",
+        "https://smithy.io/2.0/aws/protocols/aws-json-1_1-protocol.html"
+      ],
+      "pendingReview": null
+    },
+    {
+      "name": "databricks-sql",
+      "specType": "hand-transcribed",
+      "monitoring": "manual",
+      "sources": [
+        {
+          "key": "models",
+          "url": "https://raw.githubusercontent.com/databricks/databricks-sdk-go/main/service/sql/model.go",
+          "conditional": [
+            "etag"
+          ],
+          "snapshot": {
+            "etag": "W/\"b799c16390a7009131691950df473c4a1e4491c6e519fe36bf654c43fdeaa07b\"",
+            "lastModified": null,
+            "sha256": "9d99ea983c3dcf135b6c1e03fc98cd0f8912fca2246e64b550e2bf1fd850eb9a",
+            "bytes": 254326,
+            "specVersion": null,
+            "fetchedAt": "2026-07-17T10:06:33.661Z"
+          }
+        },
+        {
+          "key": "endpoints",
+          "url": "https://raw.githubusercontent.com/databricks/databricks-sdk-go/main/service/sql/impl.go",
+          "conditional": [
+            "etag"
+          ],
+          "snapshot": {
+            "etag": "W/\"ed13ccad80546b3e0bdb71e74a4cea582cb094583848174473bc18a6b72a99ca\"",
+            "lastModified": null,
+            "sha256": "94cd5f87c80ec1ccf68adb0c51005d1cdc7d82c85f4e2d16c42b7c47d705db5f",
+            "bytes": 52817,
+            "specVersion": null,
+            "fetchedAt": "2026-07-17T10:06:33.661Z"
+          }
+        }
+      ],
+      "pipeline": {
+        "rawTarget": null,
+        "prettierRawTarget": false,
+        "convert": null,
+        "fixture": "fixtures/databricks-sql-statements.yaml",
+        "generate": [
+          "src/cli.ts",
+          "--spec",
+          "fixtures/databricks-sql-statements.yaml",
+          "--config",
+          "examples/databricks-sql.config.json"
+        ],
+        "config": "examples/databricks-sql.config.json"
+      },
+      "generatedFiles": {
+        "databricks-sql.ts": "244bd1b31f36cccb02245728cb9230fbc089c623c0e5588c7c2f04c6182cdc00",
+        "databricks-sql.schema.ts": "3f97430fc2e676646613bb85b2e80250c32e7ef8b8b15ac468462cdf97c172c7",
+        "databricks-sql.metadata.ts": "c3f619f9f67cdda52d3981c9ecca0806c37e39a5602e1e120e41576a05c48319",
+        "databricks-sql.schema.test.ts": "0450bb2e5805894de247915446315d2b5e0ec3d432c2f2e4ba64c3b62187b4a0",
+        "index.ts": "c7e0f7f48552db2d5f34ae2e3451bc2f4ed6634e4eacfb9bf683edd48b1c6220"
+      },
+      "outDir": "packages/bubble-core/src/bubbles/service-bubble/databricks-sql",
+      "docsUrl": "https://docs.databricks.com/api/workspace/statementexecution",
+      "references": [
+        "https://docs.databricks.com/api/workspace/statementexecution",
+        "https://github.com/databricks/databricks-sdk-go/blob/main/service/sql/model.go",
+        "https://github.com/databricks/databricks-sdk-go/blob/main/service/sql/impl.go"
+      ],
+      "pendingReview": {
+        "detectedAt": "2026-07-17T10:06:33.661Z",
+        "sourceSha256": "9d99ea983c3dcf135b6c1e03fc98cd0f8912fca2246e64b550e2bf1fd850eb9a",
+        "summary": "reference source(s) changed: models, endpoints — hand-transcribed fixture must be re-verified",
+        "changelog": ""
+      }
+    }
+  ]
+}

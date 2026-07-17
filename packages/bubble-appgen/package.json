@@ -15,6 +15,10 @@
     "convert:redshift-data": "bun scripts/smithy-to-openapi.ts",
     "generate:redshift-data": "bun scripts/smithy-to-openapi.ts && bun src/cli.ts --spec fixtures/redshift-data.openapi.json --config examples/redshift-data.config.json",
     "generate:databricks-sql": "bun src/cli.ts --spec fixtures/databricks-sql-statements.yaml --config examples/databricks-sql.config.json",
+    "watchdog:check": "bun scripts/watchdog-check.ts",
+    "watchdog:register": "bun scripts/watchdog-register.ts",
+    "watchdog:apply": "bun scripts/watchdog-apply.ts",
+    "test": "bun test src/watchdog",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

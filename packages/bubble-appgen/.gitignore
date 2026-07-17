@@ -1,0 +1,4 @@
+# Watchdog runtime scratch: downloaded source bodies + staged diffs live in
+# data/tmp; the registry, changelogs, and pending/ review fixtures are
+# committed on purpose.
+data/

@@ -34,3 +34,5 @@ export * from './capability-schema.js';
 export * from './execution-meta.js';
 export * from './operation-metadata-schema.js';
 export * from './contract-observation.js';
+export * from './tool-source-registry.js';
+export * from './tool-watchdog-events.js';
