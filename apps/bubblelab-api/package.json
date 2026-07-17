@@ -30,6 +30,7 @@
   "dependencies": {
     "@badgateway/oauth2-client": "^3.3.0",
     "@browserbasehq/sdk": "^2.6.0",
+    "@bubblelab/bubble-appgen": "workspace:*",
     "@bubblelab/bubble-core": "workspace:*",
     "@bubblelab/bubble-runtime": "workspace:*",
     "@bubblelab/shared-schemas": "workspace:*",

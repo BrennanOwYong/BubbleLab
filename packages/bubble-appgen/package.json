@@ -4,7 +4,16 @@
   "private": true,
   "type": "module",
   "description": "Contract-first bubble generator: OpenAPI spec in, type-enforced ServiceBubble out (ADD-ANY-APP stages S1-S6)",
+  "main": "./dist/bubble-appgen/src/index.js",
+  "types": "./dist/bubble-appgen/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/bubble-appgen/src/index.d.ts",
+      "default": "./dist/bubble-appgen/src/index.js"
+    }
+  },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
     "generate:snowflake-sql-api": "bun src/cli.ts --spec fixtures/sqlapi.yaml --config examples/snowflake-sql-api.config.json",
     "generate:stripe-payments-api": "bun src/cli.ts --spec fixtures/stripe-payments.yaml --config examples/stripe-payments-api.config.json",
     "generate:kraken-spot-api": "bun src/cli.ts --spec fixtures/kraken-spot.yaml --config examples/kraken-spot-api.config.json",

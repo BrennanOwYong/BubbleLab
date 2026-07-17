@@ -168,3 +168,6 @@ dist/
 
 **/private_apps/**
 .claude/
+
+# Add-a-Tool runtime registry (per-environment state)
+apps/bubblelab-api/data/

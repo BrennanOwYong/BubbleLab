@@ -3,6 +3,7 @@
   "className": "BigQuery",
   "service": "bigquery",
   "alias": "bq",
+  "displayName": "Google BigQuery",
   "shortDescription": "Google BigQuery REST API v2 integration generated from the official API Discovery document (run SQL queries, stream row inserts, list datasets and tables)",
   "credentialType": "BIGQUERY_TOKEN",
   "authHeaders": {

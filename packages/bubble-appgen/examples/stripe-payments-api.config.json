@@ -3,6 +3,7 @@
   "className": "StripePaymentsApi",
   "service": "stripe",
   "alias": "stripe-pay",
+  "displayName": "Stripe Payments",
   "shortDescription": "Stripe Payments API integration generated from the official OpenAPI spec (payment intents, payment links, payouts, refunds, charges, balance)",
   "credentialType": "STRIPE_CRED",
   "authHeaders": {

@@ -86,6 +86,8 @@ export interface AppGenConfig {
   className: string;
   service: string;
   alias?: string;
+  /** Human-facing catalog name, e.g. `Stripe Payments`. */
+  displayName?: string;
   shortDescription: string;
   /** CredentialType enum KEY the bubble reads, e.g. `SNOWFLAKE_PAT`. */
   credentialType: string;

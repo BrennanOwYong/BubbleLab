@@ -39,6 +39,7 @@ import { startCronScheduler } from './services/cron-scheduler.js';
 import aiRoutes from './routes/ai.js';
 import templateSubmissionRoutes from './routes/template-submission.js';
 import browserbaseRoutes from './routes/browserbase.js';
+import toolsRoutes from './routes/tools.js';
 import { getBubbleFactory } from './services/bubble-factory-instance.js';
 
 const app = new OpenAPIHono({
@@ -89,6 +90,7 @@ app.route('/join-waitlist', joinWaitlistRoutes);
 app.route('/ai', aiRoutes);
 app.route('/template-submission', templateSubmissionRoutes);
 app.route('/browserbase', browserbaseRoutes);
+app.route('/tools', toolsRoutes);
 
 // OpenAPI documentation endpoint
 app.doc('/doc', {

@@ -108,10 +108,18 @@ function deref(root: unknown, node: unknown, stack: string[]): unknown {
 
 /** Load an OpenAPI YAML file and inline all local $refs. */
 export function loadOpenApi(specPath: string): OpenApiDocument {
-  const raw = readFileSync(specPath, 'utf8');
+  return parseOpenApiText(readFileSync(specPath, 'utf8'), specPath);
+}
+
+/**
+ * Parse OpenAPI YAML/JSON text and inline all local $refs. Same pipeline as
+ * loadOpenApi with an in-memory source (uploaded spec, fetched URL body);
+ * `label` names the source in parse errors.
+ */
+export function parseOpenApiText(raw: string, label: string): OpenApiDocument {
   const doc = parseYaml(raw) as unknown;
   if (doc === null || typeof doc !== 'object') {
-    throw new Error(`Spec did not parse to an object: ${specPath}`);
+    throw new Error(`Spec did not parse to an object: ${label}`);
   }
   return deref(doc, doc, []) as OpenApiDocument;
 }
