@@ -4,6 +4,7 @@ import {
   OAUTH_PROVIDERS,
   type OAuthProvider,
   type JiraOAuthMetadata,
+  type GoogleOAuthMetadata,
 } from '@bubblelab/shared-schemas';
 import { db } from '../db/index.js';
 import { userCredentials } from '../db/schema.js';
@@ -158,7 +159,20 @@ export class OAuthService {
 
     const redirectUri = `${env.NODEX_API_URL || 'http://localhost:3001'}/oauth/${provider}/callback`;
     const defaultScopes = this.getDefaultScopes(provider, credentialType);
-    const requestedScopes = scopes || defaultScopes;
+    let requestedScopes = scopes || defaultScopes;
+
+    // Google: always add the OIDC identity scopes so the callback can resolve WHICH account
+    // was connected (email) via the UserInfo endpoint. That identity feeds the account
+    // dropdowns and setup-field auto-population in the studio. Google documents combining
+    // OIDC scopes with API scopes in one authorization request:
+    // https://developers.google.com/identity/openid-connect/openid-connect ("your scope
+    // argument can also include other scope values", example: "openid profile email
+    // https://www.googleapis.com/auth/drive.file").
+    if (provider === 'google') {
+      requestedScopes = [
+        ...new Set([...requestedScopes, 'openid', 'email']),
+      ];
+    }
 
     console.log(
       '[OAuthService] Requested redirect URI, default scopes, and requested scopes:',
@@ -317,8 +331,16 @@ export class OAuthService {
         jiraMetadata = await this.fetchJiraCloudId(token.accessToken);
       }
 
+      // For Google, resolve WHICH account was connected (the 'openid email' scopes are
+      // always appended in initiateOAuth). The email feeds account dropdowns and
+      // setup-field auto-population in the studio.
+      let googleMetadata: GoogleOAuthMetadata | undefined;
+      if (provider === 'google') {
+        googleMetadata = await this.fetchGoogleUserInfo(token.accessToken);
+      }
+
       // Determine which provider metadata to pass
-      const providerMetadata = jiraMetadata;
+      const providerMetadata = jiraMetadata ?? googleMetadata;
 
       // Store token in database
       const credentialId = await this.storeOAuthToken(
@@ -480,6 +502,59 @@ export class OAuthService {
   }
 
   /**
+   * Resolve the connected Google account's identity via the OIDC UserInfo endpoint.
+   * Requires the 'openid email' scopes, which initiateOAuth always appends for google.
+   *
+   * Endpoint and response shape per Google's OpenID Connect reference (the userinfo
+   * response carries `email` when the email scope was granted):
+   * https://developers.google.com/identity/openid-connect/openid-connect
+   *
+   * Non-fatal by design: an identity lookup failure must not break the OAuth connect —
+   * the credential still works; only auto-population degrades (returns undefined).
+   */
+  private async fetchGoogleUserInfo(
+    accessToken: string
+  ): Promise<GoogleOAuthMetadata | undefined> {
+    try {
+      const response = await fetch(
+        'https://openidconnect.googleapis.com/v1/userinfo',
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            Accept: 'application/json',
+          },
+        }
+      );
+      if (!response.ok) {
+        console.warn(
+          `[Google OAuth] UserInfo lookup failed: ${response.status} — credential stored without account identity`
+        );
+        return undefined;
+      }
+      const userInfo = (await response.json()) as {
+        email?: string;
+        name?: string;
+      };
+      if (!userInfo.email) {
+        console.warn(
+          '[Google OAuth] UserInfo response carried no email (email scope withheld?) — credential stored without account identity'
+        );
+        return undefined;
+      }
+      return {
+        email: userInfo.email,
+        displayName: userInfo.email,
+      };
+    } catch (error) {
+      console.warn(
+        '[Google OAuth] UserInfo lookup errored — credential stored without account identity:',
+        error
+      );
+      return undefined;
+    }
+  }
+
+  /**
    * Store OAuth token in database
    */
   private async storeOAuthToken(
@@ -489,7 +564,7 @@ export class OAuthService {
     token: OAuth2Token,
     requestedScopes?: string[],
     credentialName?: string,
-    providerMetadata?: JiraOAuthMetadata
+    providerMetadata?: JiraOAuthMetadata | GoogleOAuthMetadata
   ): Promise<number> {
     // Encrypt tokens
     const encryptedAccessToken = await CredentialEncryption.encrypt(
