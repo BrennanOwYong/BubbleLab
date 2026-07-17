@@ -71,6 +71,11 @@ export const CRITICAL_INSTRUCTIONS = `CRITICAL INSTRUCTIONS:
     - When you MUST annotate: Use the specific type (e.g., \`BubbleResult<GmailReadEmailData>\`), generic parameters, or \`unknown\` if truly unknown.
     - WRONG: \`const result: any = await bubble.action()\` or \`function transform(data: any)\`
     - RIGHT: \`const result = await bubble.action()\` (let TypeScript infer) or \`function transform(data: EmailData)\` (use specific type)
+23. RESOURCE PROVISIONING (create-if-not-exists): When the user asks for a "dedicated", "new", or unspecified destination resource (a spreadsheet to store leads, a folder for reports, a database table), the flow PROVISIONS it - never ask the user to create it manually and paste back an ID.
+    - Pattern: take a human-readable resource NAME as an optional input with a sensible default (e.g. resourceName = 'Reddit Leads'), look the resource up by that name, and create it only when the lookup finds nothing. Reuse the found or created ID for the rest of the run.
+    - Google Sheets example: search Drive with google-drive list_files using query "name = '<name>' and mimeType = 'application/vnd.google-apps.spreadsheet'"; if no match, call google-sheets create_spreadsheet with that title; use the resulting spreadsheet ID downstream. Same shape applies to Drive folders (create_folder) and other services with create + search operations.
+    - Put the lookup-or-create logic in its own private method (e.g. ensureLeadsSpreadsheet) that returns the resource ID, so repeated runs converge on the same resource instead of creating duplicates.
+    - Only require an existing-resource ID input when the user says they already have the resource (e.g. "my spreadsheet", "this folder: <link>") - then use the ID input with @canBeGoogleFile per the input schema rules.
 
 CRITICAL: You MUST use get-bubble-details-tool for every bubble before using it in your code!`;
 
@@ -371,6 +376,9 @@ REQUIRED vs OPTIONAL FIELD DECISION:
 3. Nice-to-have configuration → OPTIONAL
    (e.g., output format preferences, depth settings)
 
+USER-SPECIFIC VALUES ARE INPUTS, NOT QUESTIONS:
+Values that identify the user's own accounts, destinations, or targets - chat IDs, recipient email addresses, channel IDs, folder IDs, spreadsheet IDs, usernames, phone numbers - belong in the payload interface as flow INPUTS the user fills at setup time in the flow editor. Never treat them as clarification questions during planning, and never hardcode them as constants. Exception: when the user asked for a dedicated/new resource, provision it inside the flow (create-if-not-exists by name) instead of exposing an ID input.
+
 The goal is to minimize required fields. If the user already told you what they want, don't make them type it again - use their value as the default.
 When setting schedule, you must take into account of the timezone of the user (don't worry about daylight time, just whatever the current timezone currently) and convert it to UTC offset! The cron expression is in UTC timezone.
 If no particular trigger is specified, use the webhook/http trigger.
@@ -444,13 +452,13 @@ GOOD EXAMPLE:
 \`\`\`typescript
 // Searches for academic papers related to the topic variable and summarizes each one's key findings.
 // The search behavior is controlled by the task prompt - modify it to focus on specific aspects,
-// add date ranges, or filter by publication type. Currently using gemini-3-pro-preview for thorough
-// multi-step research; switch to gemini-2.5-flash if you need faster results with less depth.
+// add date ranges, or filter by publication type. Currently using ${RECOMMENDED_MODELS.OPENAI_BEST} for thorough
+// multi-step research; switch to ${RECOMMENDED_MODELS.OPENAI_FAST} if you need faster results with less depth.
 // Returns an array of papers (each with title, url, authors, publicationDate, summary, and
 // relevance explanation) plus an overallSummary that synthesizes all findings for downstream use.
 const researchTool = new ResearchAgentTool({
   task: \`Find research papers about \${topic}...\`,
-  model: 'google/gemini-3-pro-preview',
+  model: '${RECOMMENDED_MODELS.OPENAI_BEST}',
   expectedResultSchema: z.object({...})
 });
 
@@ -528,36 +536,37 @@ DO NOT use research-agent-tool when:
 MODEL SELECTION
 ═══════════════════════════════════════════════════════════════════
 
-TIER 1 - BEST (${RECOMMENDED_MODELS.BEST}):
+DEFAULT PROVIDER: openai/* models. Generated flows run on the platform's OpenAI key out of the box; google/* and anthropic/* models require the user to add their own provider key. Pick a google/* or anthropic/* model ONLY when the user explicitly requests that provider or a capability demands it (e.g. image generation).
+
+TIER 1 - BEST (${RECOMMENDED_MODELS.OPENAI_BEST}):
 Use for: Complex reasoning, tool-calling agents, research-agent-tool, code generation,
 high-iteration tasks (50+), critical accuracy requirements
 
-TIER 2 - PRO (${RECOMMENDED_MODELS.PRO}, ${RECOMMENDED_MODELS.PRO_ALT}):
+TIER 2 - PRO (${RECOMMENDED_MODELS.OPENAI_FLAGSHIP}):
 Use for: Multi-step reasoning, strategic planning, complex data analysis
 
-TIER 3 - FAST (${RECOMMENDED_MODELS.FAST}, ${RECOMMENDED_MODELS.FAST_ALT}):
+TIER 3 - FAST (${RECOMMENDED_MODELS.OPENAI_FAST}):
 Use for: Summarization, creative writing, document processing, general AI agents,
-data formatting, moderate iterations (10-30), image understanding
-
-TIER 4 - LITE (${RECOMMENDED_MODELS.LITE}):
-Use for: Simple text generation, quick formatting, high-volume low-complexity tasks
+data formatting, moderate iterations (10-30), image understanding, classification,
+simple text generation, high-volume low-complexity tasks
 
 SPECIALIZED:
-- ${RECOMMENDED_MODELS.IMAGE}: Image generation
-- openai/gpt-5, openai/gpt-5-mini: When user explicitly requests OpenAI
+- ${RECOMMENDED_MODELS.IMAGE}: Image generation (requires a Google key)
+- google/* (e.g. ${RECOMMENDED_MODELS.GOOGLE_BEST}), anthropic/* (e.g. ${RECOMMENDED_MODELS.ANTHROPIC_BEST}): ONLY when the user explicitly requests that provider
 - openrouter models: Experimental/specialized use cases
+
+OPENAI MODEL CONFIG: openai/gpt-5* models reject non-default temperature values. When using an openai/* model, either omit temperature or set it to 1 - never set a custom temperature like 0.2 or 0.7.
 
 ═══════════════════════════════════════════════════════════════════
 DECISION FLOWCHART
 ═══════════════════════════════════════════════════════════════════
 
-1. User specified model? → Use their choice
-2. Web research needed? → research-agent-tool + ${RECOMMENDED_MODELS.BEST}
-3. AI agent with tools? → ${RECOMMENDED_MODELS.BEST}
-4. Complex reasoning/code gen? → ${RECOMMENDED_MODELS.BEST}
-5. Summary/creative/docs? → ${RECOMMENDED_MODELS.FAST}
-6. Simple text? → ${RECOMMENDED_MODELS.LITE}
-7. Default → ${RECOMMENDED_MODELS.FAST}
+1. User specified model or provider? → Use their choice
+2. Web research needed? → research-agent-tool + ${RECOMMENDED_MODELS.OPENAI_BEST}
+3. AI agent with tools? → ${RECOMMENDED_MODELS.OPENAI_BEST}
+4. Complex reasoning/code gen? → ${RECOMMENDED_MODELS.OPENAI_BEST}
+5. Summary/creative/docs/classification? → ${RECOMMENDED_MODELS.OPENAI_FAST}
+6. Default → ${RECOMMENDED_MODELS.OPENAI_FAST}
 
 CRITICAL: User preference ALWAYS overrides these recommendations.
 `;

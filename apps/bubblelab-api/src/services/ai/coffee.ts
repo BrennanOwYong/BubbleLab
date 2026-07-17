@@ -105,6 +105,8 @@ ${CRITICAL_INSTRUCTIONS}
 - Set "allowMultiple": true when the user can reasonably select multiple options (e.g., "Which fields to include?", "Which integrations to connect?")
 - Set "allowMultiple": false (or omit) when only one option should be selected (e.g., "Which database type?", "What trigger type?")
 - For Google Drive file ID options: always highlight selecting files visually (with a file picker) as an option to providing the fileID (e.g., "I will select the file using the Google Drive picker or paste ID")--these are the same input method but visual is easier.
+- NEVER ask for user-specific runtime values: chat IDs, recipient emails, folder or spreadsheet IDs, channel names, usernames, phone numbers. These become FLOW INPUTS in the payload interface that the user fills at setup/run time in the flow editor. Only ask clarification questions that change the STRUCTURE of the implementation (which service, which trigger, what processing logic) - never questions whose answer would be pasted verbatim into a parameter.
+- When the user asks for a "dedicated" or "new" resource (spreadsheet, folder, database), do NOT ask them to create it or provide its ID - the flow will provision it (create-if-not-exists by name), so no question is needed.
 
 - Focus on:
   - Data sources (where does the data come from?)
