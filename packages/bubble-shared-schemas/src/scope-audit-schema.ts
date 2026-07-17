@@ -129,3 +129,55 @@ export const FlowScopeAuditSchema = z.object({
 });
 
 export type FlowScopeAudit = z.infer<typeof FlowScopeAuditSchema>;
+
+// ── Pre-connect scope discovery (Connect UI) ─────────────────────────────────
+//
+// The audit above runs at validate time against an ASSIGNED credential's grants. Discovery
+// runs earlier — before any credential exists — answering "which scopes will this flow's
+// operations need per credential type", so the Connect UI can request exactly those scopes
+// and display what each tool operation needs. Same requirement encoding as the audit
+// (all entries must hold; '|'-separated alternatives within an entry, any one satisfies).
+
+/** One discovered requirement: no `satisfied` flag — nothing is connected yet. */
+export const DiscoveredScopeRequirementSchema = z.object({
+  scope: z
+    .string()
+    .describe(
+      "The requirement as declared (alternatives joined with '|'); satisfied by any one alternative"
+    ),
+  alternatives: z
+    .array(z.string())
+    .min(1)
+    .describe('The individual scopes that each satisfy this requirement'),
+  requiredBy: z
+    .array(ScopeAuditOperationRefSchema)
+    .min(1)
+    .describe('The operations in the flow that need this scope'),
+});
+
+export type DiscoveredScopeRequirement = z.infer<
+  typeof DiscoveredScopeRequirementSchema
+>;
+
+/** Scope requirements one credential type must cover for this flow. */
+export const CredentialScopeRequirementsSchema = z.object({
+  credentialType: z
+    .string()
+    .describe(
+      "Credential type the requirements apply to (e.g. 'GMAIL_CRED'); a bubble offering several credential types lists the same requirements under each"
+    ),
+  requirements: z.array(DiscoveredScopeRequirementSchema).min(1),
+});
+
+export type CredentialScopeRequirements = z.infer<
+  typeof CredentialScopeRequirementsSchema
+>;
+
+/** Whole-flow discovery: one entry per credential type with at least one scope requirement. */
+export const FlowScopeRequirementsSchema = z.array(
+  CredentialScopeRequirementsSchema
+);
+
+export type FlowScopeRequirements = z.infer<
+  typeof FlowScopeRequirementsSchema
+>;

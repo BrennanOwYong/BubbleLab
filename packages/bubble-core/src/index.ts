@@ -68,6 +68,7 @@ export type {
 } from './auth/infer-auth-methods.js';
 export {
   IMPLEMENTED_AUTH_KINDS,
+  applyScopeRequirementsToConnectUiSpec,
   bindInferredAuthMethods,
   buildConnectUiSpec,
   resolveAuthChoice,

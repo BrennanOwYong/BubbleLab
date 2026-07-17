@@ -10,10 +10,12 @@
  */
 import type {
   AppAuthMethods,
+  AuthCollectScope,
   AuthMethodDescriptor,
   AuthMethodKind,
   ConnectUiMethodOption,
   ConnectUiSpec,
+  DiscoveredScopeRequirement,
 } from '@bubblelab/shared-schemas';
 import {
   AppAuthMethodsSchema,
@@ -225,4 +227,77 @@ export function bindInferredAuthMethods(
     };
   });
   return AppAuthMethodsSchema.parse(descriptors);
+}
+
+// ── Scope discovery threading (IR-6/7) ───────────────────────────────────────
+
+/** Scope comparison key, mirroring the scope audit's normalization. */
+function normalizeScope(scope: string): string {
+  const trimmed = scope.trim();
+  return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
+}
+
+/**
+ * Thread a flow's discovered scope requirements (per-operation `requiredScopes`, IR-8
+ * metadata) into a Connect UI spec: every oauth2 method's scope picker enables EXACTLY the
+ * scopes that satisfy the requirements — the consent asks for what the flow's operations
+ * need, no more, no guesswork — and requirements no curated scope satisfies get an appended
+ * picker entry naming the operations that need them.
+ *
+ * Requirement resolution per entry (all entries must hold; '|'-alternatives, any one
+ * satisfies): prefer an alternative the picker already offers (picker order — the curated,
+ * narrower product scope beats the broad one), else append the requirement's first declared
+ * alternative as a new scope option.
+ *
+ * Pure and non-destructive: returns a new spec; non-oauth2 methods and specs with no
+ * requirements pass through unchanged.
+ */
+export function applyScopeRequirementsToConnectUiSpec(
+  spec: ConnectUiSpec,
+  requirements: readonly DiscoveredScopeRequirement[]
+): ConnectUiSpec {
+  if (requirements.length === 0) return spec;
+  return {
+    ...spec,
+    methods: spec.methods.map((method) => {
+      if (method.collect.kind !== 'oauth2') return method;
+      const baseScopes: AuthCollectScope[] = method.collect.scopes ?? [];
+      const baseByKey = new Map(
+        baseScopes.map((entry) => [normalizeScope(entry.scope), entry])
+      );
+
+      const requiredKeys = new Set<string>();
+      const appended: AuthCollectScope[] = [];
+      for (const requirement of requirements) {
+        const satisfying = requirement.alternatives.find((alternative) =>
+          baseByKey.has(normalizeScope(alternative))
+        );
+        if (satisfying !== undefined) {
+          requiredKeys.add(normalizeScope(satisfying));
+        } else {
+          const fallback = requirement.alternatives[0];
+          const key = normalizeScope(fallback);
+          if (!requiredKeys.has(key)) {
+            requiredKeys.add(key);
+            appended.push({
+              scope: fallback,
+              description: `Required by ${requirement.requiredBy
+                .map((ref) => `${ref.bubbleName}.${ref.operation}`)
+                .join(', ')}`,
+              defaultEnabled: true,
+            });
+          }
+        }
+      }
+
+      const scopes: AuthCollectScope[] = [
+        ...baseScopes.map((entry) => ({
+          ...entry,
+          defaultEnabled: requiredKeys.has(normalizeScope(entry.scope)),
+        })),
+        ...appended,
+      ];
+      return { ...method, collect: { ...method.collect, scopes } };
+    }),
+  };
 }
