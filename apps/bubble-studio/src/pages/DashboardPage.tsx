@@ -10,7 +10,9 @@ import {
   INTEGRATIONS,
   SCRAPING_SERVICES,
   AI_MODELS,
+  resolveLogoByName,
 } from '../lib/integrations';
+import { useRegisteredTools } from '../hooks/useRegisteredTools';
 import { SignInModal } from '../components/SignInModal';
 import { OnboardingQuestionnaire } from '../components/OnboardingQuestionnaire';
 import {
@@ -60,6 +62,7 @@ export function DashboardPage({
   const { user, isLoaded: isUserLoaded } = useUser();
   const navigate = useNavigate();
   const createBubbleFlowMutation = useCreateBubbleFlow();
+  const { data: registeredTools } = useRegisteredTools();
   const { startStreaming, stopStreaming } = useGenerationStore();
   const { setOutput, clearOutput } = useOutputStore();
   const [showSignInModal, setShowSignInModal] = useState(autoShowSignIn);
@@ -842,6 +845,34 @@ export class UntitledFlow extends BubbleFlow<'webhook/http'> {
                     </div>
                   </div>
                 ))}
+                {/* Tools added through Add a Tool (live registry) */}
+                {(registeredTools ?? []).map((tool) => {
+                  const logo =
+                    resolveLogoByName(tool.displayName) ??
+                    resolveLogoByName(tool.service);
+                  return (
+                    <div key={tool.name} className="relative group">
+                      <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/5 border border-white/10 hover:border-white/20 hover:bg-white/10 transition-all duration-200">
+                        {logo ? (
+                          <img
+                            src={logo.file}
+                            alt={`${tool.displayName} logo`}
+                            className="h-5 w-5"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <span className="text-xs font-bold text-gray-200">
+                            {tool.displayName.charAt(0).toUpperCase()}
+                          </span>
+                        )}
+                      </div>
+                      {/* Tooltip */}
+                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 text-white text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-200 z-10">
+                        {tool.displayName} — {tool.operations.length} operations
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 

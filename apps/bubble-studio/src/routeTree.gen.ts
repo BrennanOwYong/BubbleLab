@@ -14,6 +14,7 @@ import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as HomeRouteImport } from './routes/home'
 import { Route as FlowsRouteImport } from './routes/flows'
 import { Route as CredentialsRouteImport } from './routes/credentials'
+import { Route as AddToolRouteImport } from './routes/add-tool'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as FlowFlowIdRouteImport } from './routes/flow.$flowId'
 
@@ -42,6 +43,11 @@ const CredentialsRoute = CredentialsRouteImport.update({
   path: '/credentials',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AddToolRoute = AddToolRouteImport.update({
+  id: '/add-tool',
+  path: '/add-tool',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -55,6 +61,7 @@ const FlowFlowIdRoute = FlowFlowIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/add-tool': typeof AddToolRoute
   '/credentials': typeof CredentialsRoute
   '/flows': typeof FlowsRoute
   '/home': typeof HomeRoute
@@ -64,6 +71,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/add-tool': typeof AddToolRoute
   '/credentials': typeof CredentialsRoute
   '/flows': typeof FlowsRoute
   '/home': typeof HomeRoute
@@ -74,6 +82,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/add-tool': typeof AddToolRoute
   '/credentials': typeof CredentialsRoute
   '/flows': typeof FlowsRoute
   '/home': typeof HomeRoute
@@ -85,6 +94,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/add-tool'
     | '/credentials'
     | '/flows'
     | '/home'
@@ -94,6 +104,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/add-tool'
     | '/credentials'
     | '/flows'
     | '/home'
@@ -103,6 +114,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/add-tool'
     | '/credentials'
     | '/flows'
     | '/home'
@@ -113,6 +125,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AddToolRoute: typeof AddToolRoute
   CredentialsRoute: typeof CredentialsRoute
   FlowsRoute: typeof FlowsRoute
   HomeRoute: typeof HomeRoute
@@ -158,6 +171,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CredentialsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/add-tool': {
+      id: '/add-tool'
+      path: '/add-tool'
+      fullPath: '/add-tool'
+      preLoaderRoute: typeof AddToolRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -177,6 +197,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AddToolRoute: AddToolRoute,
   CredentialsRoute: CredentialsRoute,
   FlowsRoute: FlowsRoute,
   HomeRoute: HomeRoute,

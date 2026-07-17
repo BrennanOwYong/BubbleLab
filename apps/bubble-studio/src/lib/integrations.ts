@@ -38,6 +38,7 @@ export const SERVICE_LOGOS: Readonly<Record<string, string>> = Object.freeze({
   Ashby: '/integrations/ashby.png',
   FullEnrich: '/integrations/fullenrich.png',
   Stripe: '/integrations/stripe.svg',
+  BigQuery: '/integrations/google.svg',
 
   // AI models (also used as fallbacks for vendor names)
   GPT: '/integrations/gpt.svg',

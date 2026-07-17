@@ -1,6 +1,6 @@
 openapi: 3.0.0
 info:
-  title: 'Stripe API (BubbleLab trimmed subset: payments, payouts, refunds, charges, balance)'
+  title: 'Stripe API (payments, payouts, refunds, charges, balance subset)'
   version: 2026-06-24.dahlia
   description: Request bodies are application/x-www-form-urlencoded with deepObject bracket encoding per https://docs.stripe.com/api/requests. Trimmed subset of https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.json (source version 2026-06-24.dahlia); regenerate with scripts/trim-openapi.ts.
 security:

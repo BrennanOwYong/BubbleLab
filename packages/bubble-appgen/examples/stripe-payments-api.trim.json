@@ -11,7 +11,7 @@
     "https://docs.stripe.com/api/balance/balance_retrieve",
     "https://docs.stripe.com/api/requests"
   ],
-  "title": "Stripe API (BubbleLab trimmed subset: payments, payouts, refunds, charges, balance)",
+  "title": "Stripe API (payments, payouts, refunds, charges, balance subset)",
   "description": "Request bodies are application/x-www-form-urlencoded with deepObject bracket encoding per https://docs.stripe.com/api/requests.",
   "maxDepth": 2,
   "maxDescriptionLength": 200,
