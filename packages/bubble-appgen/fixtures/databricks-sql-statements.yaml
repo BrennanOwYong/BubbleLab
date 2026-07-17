@@ -1,0 +1,452 @@
+# HAND-TRANSCRIBED OpenAPI snippet — Databricks publishes no public OpenAPI
+# document for the SQL Statement Execution API (the docs site is a JS app with
+# the spec embedded in its bundle). This file was transcribed on 2026-07-17
+# from the official sources below and is labeled as such per the add-a-tool
+# fallback policy; it is NOT vendor-generated.
+#
+# Sources (verified 2026-07-17):
+# - API reference (human docs):
+#   https://docs.databricks.com/api/workspace/statementexecution
+# - Official Databricks Go SDK models, generated from Databricks' internal
+#   OpenAPI spec (field names, types, required flags, enum values):
+#   https://github.com/databricks/databricks-sdk-go/blob/main/service/sql/model.go
+# - Endpoint paths from the same SDK:
+#   https://github.com/databricks/databricks-sdk-go/blob/main/service/sql/impl.go
+#   (POST /api/2.0/sql/statements, GET /api/2.0/sql/statements/{statement_id})
+#
+# Transcription scope: ExecuteStatement + GetStatement only. The request field
+# `query_tags` and the chunk-by-index / cancel endpoints are intentionally
+# omitted from this subset. Examples are hand-authored and schema-conformant,
+# illustrative of the documented JSON_ARRAY/INLINE shape.
+openapi: 3.0.3
+info:
+  title: Databricks SQL Statement Execution API
+  version: '2.0'
+  description: >-
+    Hand-transcribed OpenAPI subset of the Databricks SQL Statement Execution
+    API (execute SQL statements on a SQL warehouse, poll status, fetch
+    results). Transcribed from
+    https://docs.databricks.com/api/workspace/statementexecution and the
+    official databricks-sdk-go generated models.
+externalDocs:
+  url: https://docs.databricks.com/api/workspace/statementexecution
+servers:
+  - url: https://dbc-a1b2c3d4-e5f6.cloud.databricks.com
+    description: Per-workspace Databricks URL
+security:
+  - bearerAuth: []
+paths:
+  /api/2.0/sql/statements:
+    post:
+      operationId: ExecuteStatement
+      summary: Executes a SQL statement on a SQL warehouse.
+      description: >-
+        Execute a SQL statement and optionally await its results for a
+        specified time. The statement runs on the given SQL warehouse. When
+        wait_timeout is 0s the call is asynchronous and returns a statement ID
+        for polling; when set between 5s and 50s the call waits up to that
+        long for the result.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              statement: SELECT * FROM range(10)
+              warehouse_id: abcdef0123456789
+              wait_timeout: 10s
+              on_wait_timeout: CONTINUE
+              disposition: INLINE
+              format: JSON_ARRAY
+            schema:
+              type: object
+              required:
+                - statement
+                - warehouse_id
+              properties:
+                statement:
+                  type: string
+                  description: >-
+                    The SQL statement to execute. The statement can optionally
+                    be parameterized, see parameters. The maximum query text
+                    size is 16 MiB.
+                warehouse_id:
+                  type: string
+                  description: Warehouse upon which to execute a statement.
+                catalog:
+                  type: string
+                  description: >-
+                    Sets default catalog for statement execution, similar to
+                    USE CATALOG in SQL.
+                schema:
+                  type: string
+                  description: >-
+                    Sets default schema for statement execution, similar to
+                    USE SCHEMA in SQL.
+                parameters:
+                  type: array
+                  description: >-
+                    A list of parameters to pass into a SQL statement
+                    containing parameter markers. A parameter consists of a
+                    name, a value, and optionally a type. To represent a NULL
+                    value, the value field may be omitted or set to null
+                    explicitly. If the type field is omitted, the value is
+                    interpreted as a string.
+                  items:
+                    $ref: '#/components/schemas/StatementParameterListItem'
+                byte_limit:
+                  type: integer
+                  description: >-
+                    Applies the given byte limit to the statement's result
+                    size. Byte counts are based on internal data
+                    representations and might not match the final size in the
+                    requested format.
+                row_limit:
+                  type: integer
+                  description: >-
+                    Applies the given row limit to the statement's result set,
+                    but unlike the LIMIT clause in SQL, it also sets the
+                    truncated field in the response to indicate whether the
+                    result was trimmed due to the limit or not.
+                disposition:
+                  type: string
+                  enum: [INLINE, EXTERNAL_LINKS]
+                  description: >-
+                    The fetch disposition provides two modes of fetching
+                    results, INLINE and EXTERNAL_LINKS. INLINE results are
+                    limited to 25 MiB; EXTERNAL_LINKS returns URLs pointing to
+                    cloud storage for result sets up to 100 GiB.
+                format:
+                  type: string
+                  enum: [JSON_ARRAY, ARROW_STREAM, CSV]
+                  description: >-
+                    Statement execution supports three result formats,
+                    JSON_ARRAY (default), ARROW_STREAM, and CSV. ARROW_STREAM
+                    and CSV are supported only with EXTERNAL_LINKS
+                    disposition.
+                wait_timeout:
+                  type: string
+                  description: >-
+                    The time in seconds the call will wait for the statement's
+                    result set as Ns, where N can be set to 0 or to a value
+                    between 5 and 50. When set to 0s, the statement executes
+                    in asynchronous mode.
+                on_wait_timeout:
+                  type: string
+                  enum: [CONTINUE, CANCEL]
+                  description: >-
+                    When wait_timeout > 0s, determines what happens when the
+                    timeout is reached. CONTINUE keeps executing
+                    asynchronously and returns a statement ID for polling;
+                    CANCEL cancels the execution and returns with a CANCELED
+                    state.
+      responses:
+        '200':
+          description: Statement accepted or executed.
+          content:
+            application/json:
+              example:
+                statement_id: 01f06a2b-0000-1abc-9def-0123456789ab
+                status:
+                  state: SUCCEEDED
+                manifest:
+                  format: JSON_ARRAY
+                  schema:
+                    column_count: 1
+                    columns:
+                      - name: id
+                        position: 0
+                        type_name: LONG
+                        type_text: BIGINT
+                  total_chunk_count: 1
+                  total_row_count: 10
+                  truncated: false
+                result:
+                  chunk_index: 0
+                  row_count: 10
+                  row_offset: 0
+                  data_array:
+                    - - '0'
+                    - - '1'
+              schema:
+                $ref: '#/components/schemas/StatementResponse'
+  /api/2.0/sql/statements/{statement_id}:
+    get:
+      operationId: GetStatement
+      summary: Gets status, manifest, and result data for an executed statement.
+      description: >-
+        This request can be used to poll for the statement's status. When the
+        status.state field is SUCCEEDED it can also fetch the result data and
+        metadata in the manifest and result fields.
+      parameters:
+        - name: statement_id
+          in: path
+          required: true
+          description: >-
+            The statement ID is returned upon successfully submitting a SQL
+            statement, and is a required reference for all subsequent calls.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Current statement status (and result when available).
+          content:
+            application/json:
+              example:
+                statement_id: 01f06a2b-0000-1abc-9def-0123456789ab
+                status:
+                  state: RUNNING
+              schema:
+                $ref: '#/components/schemas/StatementResponse'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Databricks personal access token.
+  schemas:
+    StatementParameterListItem:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          description: >-
+            The name of a parameter marker to be substituted in the
+            statement.
+        type:
+          type: string
+          description: >-
+            The data type, given as a string. For example INT, STRING,
+            DECIMAL(10,2). If no type is given the type is assumed to be
+            STRING. Complex types, such as ARRAY, MAP, and STRUCT are not
+            supported.
+        value:
+          type: string
+          description: >-
+            The value to substitute, represented as a string. If omitted, the
+            value is interpreted as NULL.
+    StatementResponse:
+      type: object
+      properties:
+        statement_id:
+          type: string
+          description: >-
+            The statement ID is returned upon successfully submitting a SQL
+            statement, and is a required reference for all subsequent calls.
+        status:
+          type: object
+          description: >-
+            The status response includes execution state and if relevant,
+            error information.
+          properties:
+            state:
+              type: string
+              enum: [PENDING, RUNNING, SUCCEEDED, FAILED, CANCELED, CLOSED]
+              description: >-
+                Statement execution state. PENDING waiting for warehouse;
+                RUNNING running; SUCCEEDED execution was successful, result
+                data available for fetch; FAILED execution failed, reason for
+                failure described in the accompanying error message; CANCELED
+                user canceled; CLOSED execution successful, and statement
+                closed, result no longer available for fetch.
+            error:
+              type: object
+              description: Error details when the statement status is FAILED.
+              properties:
+                error_code:
+                  type: string
+                  description: Error code, e.g. BAD_REQUEST or INTERNAL_ERROR.
+                message:
+                  type: string
+                  description: A brief summary of the error condition.
+            sql_state:
+              type: string
+              description: >-
+                SQLSTATE error code returned when the statement execution
+                fails. Only populated when the statement status is FAILED.
+        manifest:
+          type: object
+          description: >-
+            The result manifest provides schema and metadata for the result
+            set.
+          properties:
+            format:
+              type: string
+              enum: [JSON_ARRAY, ARROW_STREAM, CSV]
+              description: The result format.
+            schema:
+              type: object
+              description: The schema is an ordered list of column descriptions.
+              properties:
+                column_count:
+                  type: integer
+                  description: The number of columns in the result set.
+                columns:
+                  type: array
+                  description: Ordered column descriptions.
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                        description: The name of the column.
+                      position:
+                        type: integer
+                        description: >-
+                          The ordinal position of the column (starting at
+                          position 0).
+                      type_name:
+                        type: string
+                        description: >-
+                          The name of the base data type. This doesn't include
+                          details for complex types such as STRUCT, MAP or
+                          ARRAY.
+                      type_text:
+                        type: string
+                        description: The full SQL type specification.
+                      type_precision:
+                        type: integer
+                        description: >-
+                          Specifies the number of digits in a number. This
+                          applies to the DECIMAL type.
+                      type_scale:
+                        type: integer
+                        description: >-
+                          Specifies the number of digits to the right of the
+                          decimal point in a number. This applies to the
+                          DECIMAL type.
+                      type_interval_type:
+                        type: string
+                        description: The format of the interval type.
+            chunks:
+              type: array
+              description: Array of result set chunk metadata.
+              items:
+                type: object
+                properties:
+                  byte_count:
+                    type: integer
+                    description: >-
+                      The number of bytes in the result chunk. This field is
+                      not available when using INLINE disposition.
+                  chunk_index:
+                    type: integer
+                    description: >-
+                      The position within the sequence of result set chunks.
+                  row_count:
+                    type: integer
+                    description: The number of rows within the result chunk.
+                  row_offset:
+                    type: integer
+                    description: >-
+                      The starting row offset within the result set.
+            total_byte_count:
+              type: integer
+              description: >-
+                The total number of bytes in the result set. This field is
+                not available when using INLINE disposition.
+            total_chunk_count:
+              type: integer
+              description: >-
+                The total number of chunks that the result set has been
+                divided into.
+            total_row_count:
+              type: integer
+              description: The total number of rows in the result set.
+            truncated:
+              type: boolean
+              description: >-
+                Indicates whether the result is truncated due to row_limit or
+                byte_limit.
+        result:
+          type: object
+          description: Result data chunk (first chunk when INLINE).
+          properties:
+            byte_count:
+              type: integer
+              description: >-
+                The number of bytes in the result chunk. This field is not
+                available when using INLINE disposition.
+            chunk_index:
+              type: integer
+              description: The position within the sequence of result set chunks.
+            row_count:
+              type: integer
+              description: The number of rows within the result chunk.
+            row_offset:
+              type: integer
+              description: The starting row offset within the result set.
+            data_array:
+              type: array
+              description: >-
+                The JSON_ARRAY format is an array of arrays of values, where
+                each non-null value is formatted as a string. Null values are
+                encoded as JSON null.
+              items:
+                type: array
+                items:
+                  type: string
+                  nullable: true
+            next_chunk_index:
+              type: integer
+              description: >-
+                When fetching, provides the chunk_index for the next chunk.
+                If absent, indicates there are no more chunks.
+            next_chunk_internal_link:
+              type: string
+              description: >-
+                When fetching, provides a link to fetch the next chunk. This
+                link is an absolute path to be joined with your workspace
+                URL, and should be treated as an opaque link.
+            external_links:
+              type: array
+              description: >-
+                External links pointing to chunks of result data on cloud
+                storage (EXTERNAL_LINKS disposition only). These URLs contain
+                temporary credentials and should be treated as sensitive.
+              items:
+                type: object
+                properties:
+                  byte_count:
+                    type: integer
+                    description: The number of bytes in the result chunk.
+                  chunk_index:
+                    type: integer
+                    description: >-
+                      The position within the sequence of result set chunks.
+                  expiration:
+                    type: string
+                    description: >-
+                      Indicates the date-time that the given external link
+                      will expire and becomes invalid, after which point a new
+                      external_link must be requested.
+                  external_link:
+                    type: string
+                    description: >-
+                      A URL pointing to a chunk of result data, hosted by an
+                      external service, with a short expiration time (<= 15
+                      minutes).
+                  http_headers:
+                    type: object
+                    description: >-
+                      HTTP headers that must be included with a GET request to
+                      the external_link.
+                    additionalProperties:
+                      type: string
+                  next_chunk_index:
+                    type: integer
+                    description: >-
+                      When fetching, provides the chunk_index for the next
+                      chunk.
+                  next_chunk_internal_link:
+                    type: string
+                    description: >-
+                      When fetching, provides a link to fetch the next chunk.
+                  row_count:
+                    type: integer
+                    description: The number of rows within the result chunk.
+                  row_offset:
+                    type: integer
+                    description: >-
+                      The starting row offset within the result set.

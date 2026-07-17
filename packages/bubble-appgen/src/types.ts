@@ -102,6 +102,18 @@ export interface AppGenConfig {
   };
   /** operationIds to generate (the S2 selection step). */
   operations: string[];
+  /**
+   * Static headers stamped only on ONE operation's requests, keyed by
+   * operationId. RPC-style APIs (e.g. AWS JSON 1.1) select the operation via
+   * a per-operation header such as X-Amz-Target instead of the URL path.
+   */
+  operationHeaders?: Record<string, Record<string, string>>;
+  /**
+   * operationId used as the testCredential() probe when the API exposes no
+   * GET operation (RPC-style APIs where every call is a POST). Must classify
+   * as `read`; a write-shaped probe is refused at generation time.
+   */
+  probeOperation?: string;
   /** Spec file name used in citations, e.g. `sqlapi.yaml`. */
   specName: string;
   /** Vendor docs URL recorded in the generated header. */

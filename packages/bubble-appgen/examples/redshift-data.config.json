@@ -1,0 +1,27 @@
+{
+  "appName": "redshift-data",
+  "className": "RedshiftData",
+  "service": "redshift",
+  "alias": "rs-data",
+  "shortDescription": "Amazon Redshift Data API integration generated from the official AWS Smithy model (execute SQL, poll statement status, fetch results). NOTE: live calls additionally require AWS SigV4 request signing, which the generated raw-fetch bearer pattern does not implement yet",
+  "credentialType": "REDSHIFT_DATA_CRED",
+  "authHeaders": {
+    "User-Agent": "bubblelab/1.0",
+    "Content-Type": "application/x-amz-json-1.1"
+  },
+  "baseUrlParam": {
+    "name": "endpointUrl",
+    "description": "Regional Redshift Data API endpoint",
+    "example": "https://redshift-data.us-east-1.amazonaws.com"
+  },
+  "operations": ["ExecuteStatement", "DescribeStatement", "GetStatementResult"],
+  "operationHeaders": {
+    "ExecuteStatement": { "X-Amz-Target": "RedshiftData.ExecuteStatement" },
+    "DescribeStatement": { "X-Amz-Target": "RedshiftData.DescribeStatement" },
+    "GetStatementResult": { "X-Amz-Target": "RedshiftData.GetStatementResult" }
+  },
+  "probeOperation": "DescribeStatement",
+  "specName": "redshift-data.openapi.json",
+  "docsUrl": "https://docs.aws.amazon.com/redshift-data/latest/APIReference/Welcome.html",
+  "carrierFields": ["Sql", "Sqls", "statement", "sql", "query"]
+}
