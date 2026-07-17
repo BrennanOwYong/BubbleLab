@@ -2,6 +2,11 @@
  * Custom error classes for bubble operations
  * These errors carry metadata like variableId to enable better error tracking and logging
  */
+import {
+  OUTPUT_CONTRACT_VIOLATION,
+  type ContractDriftFinding,
+  type OutputContractViolationCode,
+} from '@bubblelab/shared-schemas';
 
 /**
  * Base error class for all bubble-related errors
@@ -55,6 +60,60 @@ export class BubbleValidationError extends BubbleError {
     super(message, options);
     this.name = 'BubbleValidationError';
     this.validationErrors = options?.validationErrors;
+  }
+}
+
+/**
+ * Thrown when a REAL performAction response violates the bubble's declared
+ * resultSchema — contract drift (IR-11/12). Distinct and identifiable by its
+ * stable `code` (OUTPUT_CONTRACT_VIOLATION) so the signal survives every
+ * wrapper boundary instead of collapsing into a generic validation failure
+ * (the reference-build bug this class exists to fix: the drift code was
+ * thrown by the adapter but nothing downstream could tell it apart from any
+ * other failure, so nothing consumed it).
+ *
+ * Extends BubbleValidationError so every existing
+ * `instanceof BubbleValidationError` branch keeps working; consumers that
+ * care about drift check `instanceof BubbleOutputContractViolationError`
+ * (or the `code`) FIRST.
+ */
+export class BubbleOutputContractViolationError extends BubbleValidationError {
+  public readonly code: OutputContractViolationCode =
+    OUTPUT_CONTRACT_VIOLATION;
+  /** Structural mismatches between the observed value and the declared schema. */
+  public readonly driftFindings: ContractDriftFinding[];
+  /** The raw performAction result that violated the contract. */
+  public readonly observedOutput: unknown;
+  /** The `operation` discriminator of the invocation, when present. */
+  public readonly operation?: string;
+  /** Per-call-site identity (invocationCallSiteKey ?? currentUniqueId). */
+  public readonly callSiteKey?: string;
+
+  constructor(
+    message: string,
+    options: {
+      driftFindings: ContractDriftFinding[];
+      observedOutput: unknown;
+      operation?: string;
+      callSiteKey?: string;
+      variableId?: number;
+      bubbleName?: string;
+      cause?: Error;
+    }
+  ) {
+    super(message, {
+      variableId: options.variableId,
+      bubbleName: options.bubbleName,
+      validationErrors: options.driftFindings.map(
+        (finding) => `${finding.path}: ${finding.message}`
+      ),
+      cause: options.cause,
+    });
+    this.name = 'BubbleOutputContractViolationError';
+    this.driftFindings = options.driftFindings;
+    this.observedOutput = options.observedOutput;
+    this.operation = options.operation;
+    this.callSiteKey = options.callSiteKey;
   }
 }
 

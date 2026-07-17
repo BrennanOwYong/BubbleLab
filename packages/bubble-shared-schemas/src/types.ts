@@ -256,4 +256,5 @@ export type BubbleName =
   | 'zoom'
   | 'bigquery'
   | 'redshift-data'
-  | 'databricks-sql';
+  | 'databricks-sql'
+  | 'contract-drift-probe';

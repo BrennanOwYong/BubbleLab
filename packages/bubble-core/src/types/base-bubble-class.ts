@@ -8,12 +8,19 @@ import type {
   BubbleOperationMetadata,
   OperationSideEffectMetadata,
   SideEffect,
+  ContractDriftFinding,
+  ContractObservation,
+  ContractObservationSink,
 } from '@bubblelab/shared-schemas';
-import { MockDataGenerator } from '@bubblelab/shared-schemas';
+import {
+  MockDataGenerator,
+  OUTPUT_CONTRACT_VIOLATION,
+} from '@bubblelab/shared-schemas';
 import type { DependencyGraphNode } from '@bubblelab/shared-schemas';
 import {
   BubbleValidationError,
   BubbleExecutionError,
+  BubbleOutputContractViolationError,
 } from './bubble-errors.js';
 import { sanitizeParams } from '@bubblelab/shared-schemas';
 import { formatSchemaExpectedVsActual } from '../utils/schema-comparison.js';
@@ -302,6 +309,16 @@ export abstract class BaseBubble<
       const mockResult =
         (await this.getRecordedMock()) ?? this.generateTestModeMockResult();
 
+      // Ungrounded observation: a mock is derived from the declared contract
+      // and can never teach the KB anything about reality. Emitting it with
+      // grounded: false makes the KB's refusal explicit and auditable.
+      await this.emitContractObservation({
+        grounded: false,
+        mocked: true,
+        success: true,
+        output: mockResult.data,
+      });
+
       logger?.logBubbleExecutionComplete(
         this.context?.variableId ?? -999,
         this.name,
@@ -355,6 +372,20 @@ export abstract class BaseBubble<
           timestamp: new Date(),
         };
 
+        // Contract KB feed (IR-11/12): a schema-conforming REAL response is a
+        // grounded observation — evidence that confirms (or converges) the
+        // recorded contract. Failed operations (success: false) are skipped:
+        // their shape is the error shape, not contract ground truth, so a
+        // persistent provider outage can never heal a contract toward its
+        // error payload.
+        if (result.success) {
+          await this.emitContractObservation({
+            grounded: true,
+            success: true,
+            output: result,
+          });
+        }
+
         // Log bubble execution completion
         logger?.logBubbleExecutionComplete(
           this.context?.variableId ?? -999,
@@ -371,11 +402,48 @@ export abstract class BaseBubble<
 
         return finalResult;
       } catch (validationError) {
-        // Validation error for result validation failures
+        // CONTRACT DRIFT (IR-11/12): a REAL response violated the declared
+        // resultSchema. This is the distinct, identifiable drift signal the
+        // reference build lost at the wrapper boundary. Two carriers, both
+        // originating HERE, before any error propagation:
+        //   1. The observation sink — survives every wrapper boundary and
+        //      any user try/catch in generated flow code; the API execution
+        //      service consumes it and feeds the Contract KB.
+        //   2. BubbleOutputContractViolationError — a typed error with the
+        //      stable OUTPUT_CONTRACT_VIOLATION code, mapped by BubbleRunner
+        //      into ExecutionResult.errorCode/drift instead of collapsing
+        //      into a prose string.
+        const driftFindings: ContractDriftFinding[] =
+          validationError instanceof z.ZodError
+            ? validationError.errors.map((issue) => ({
+                path: issue.path.join('.'),
+                message: issue.message,
+              }))
+            : [
+                {
+                  path: '',
+                  message:
+                    validationError instanceof Error
+                      ? validationError.message
+                      : 'Unknown validation error',
+                },
+              ];
         const errorMessage =
           validationError instanceof z.ZodError
             ? `Result schema validation failed: ${validationError.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join(', ')}`
             : `Result validation failed: ${validationError instanceof Error ? validationError.message : 'Unknown validation error'}`;
+
+        // The drifted response is still a GROUNDED observation — it is what
+        // the API actually returned. The KB's anti-poison gate decides
+        // whether it is a one-off anomaly or consistent drift worth healing
+        // toward; a single anomalous response can never mutate a contract.
+        await this.emitContractObservation({
+          grounded: true,
+          success: result.success,
+          output: result,
+          driftFindings,
+          errorCode: OUTPUT_CONTRACT_VIOLATION,
+        });
 
         // Generate schema comparison for detailed debugging
         const diffReport = formatSchemaExpectedVsActual(
@@ -398,7 +466,11 @@ export abstract class BaseBubble<
         );
         logger?.error(`[${this.name}] ${detailedError}`);
 
-        throw new BubbleValidationError(errorMessage, {
+        throw new BubbleOutputContractViolationError(errorMessage, {
+          driftFindings,
+          observedOutput: result,
+          operation: this.getOperationName(),
+          callSiteKey: this.getContractCallSiteKey(),
           variableId: this.context?.variableId,
           bubbleName: this.name,
           cause: validationError instanceof Error ? validationError : undefined,
@@ -421,6 +493,14 @@ export abstract class BaseBubble<
       logger?.error(
         `[${this.name}] Execution error when performing action: ${result.error}`
       );
+    } else {
+      // Grounded observation for schema-less bubbles: still real traffic the
+      // Contract KB can converge on (seeded from the loose contract).
+      await this.emitContractObservation({
+        grounded: true,
+        success: true,
+        output: finalResult.data,
+      });
     }
 
     // Log bubble execution completion
@@ -464,6 +544,59 @@ export abstract class BaseBubble<
       (key): key is string => typeof key === 'string' && key.length > 0
     );
     return keys.some((key) => approved.includes(key));
+  }
+
+  /**
+   * Per-call-site identity for contract records — the SAME identity the
+   * credential/logging systems already use (invocationCallSiteKey, falling
+   * back to the dependency-graph currentUniqueId). No new identity layer.
+   */
+  protected getContractCallSiteKey(): string | undefined {
+    const ctx = this.context;
+    const key = ctx?.invocationCallSiteKey ?? ctx?.currentUniqueId;
+    return typeof key === 'string' && key.length > 0 ? key : undefined;
+  }
+
+  /**
+   * Emit one ContractObservation to the sink installed on the context or on
+   * executionMeta (the channel generated flows thread). Never throws: a
+   * broken consumer must not break execution — but a missing consumer is
+   * exactly the reference-build bug, so the API execution service is
+   * expected to install one for every run.
+   */
+  protected async emitContractObservation(
+    partial: Pick<
+      ContractObservation,
+      | 'grounded'
+      | 'success'
+      | 'output'
+      | 'mocked'
+      | 'driftFindings'
+      | 'errorCode'
+    >
+  ): Promise<void> {
+    const ctx = this.context;
+    const sink: ContractObservationSink | undefined =
+      ctx?.contractObservationSink ??
+      ctx?.executionMeta?.contractObservationSink;
+    if (typeof sink !== 'function') return;
+    try {
+      await sink({
+        bubbleName: this.name,
+        operation: this.getOperationName(),
+        callSiteKey: this.getContractCallSiteKey(),
+        variableId: ctx?.variableId,
+        input: sanitizeParams(this.params as Record<string, unknown>),
+        observedAt: new Date().toISOString(),
+        ...partial,
+      });
+    } catch (error) {
+      ctx?.logger?.warn(
+        `[${this.name}] contractObservationSink failed (non-blocking): ${
+          error instanceof Error ? error.message : 'Unknown error'
+        }`
+      );
+    }
   }
 
   /**

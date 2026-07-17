@@ -7,6 +7,7 @@ import type {
   BubbleResult,
   ExecutionMeta,
   RecordedMockProvider,
+  ContractObservationSink,
 } from '@bubblelab/shared-schemas';
 import type { BubbleLogger } from '../logging/BubbleLogger';
 
@@ -117,6 +118,14 @@ export interface BubbleContext {
    * preference to schema-derived generated mocks. See RecordedMockProvider.
    */
   recordedMockProvider?: RecordedMockProvider;
+  /**
+   * Contract KB seam (IR-11/12): receives one ContractObservation per fresh
+   * bubble result at the result-validation site in BaseBubble.action().
+   * Fires BEFORE any error propagation, so the drift signal survives wrapper
+   * boundaries and user try/catch. Also honored via executionMeta (the path
+   * generated flows use).
+   */
+  contractObservationSink?: ContractObservationSink;
   [key: string]: unknown;
 }
 

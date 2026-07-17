@@ -2987,6 +2987,7 @@ export const BUBBLE_CREDENTIAL_OPTIONS: Record<
     CredentialType.ANTHROPIC_CRED,
   ],
   'hello-world': [],
+  'contract-drift-probe': [],
   http: [CredentialType.CREDENTIAL_WILDCARD], // Accepts any credential type for flexible API integrations
   'get-bubble-details-tool': [],
   'get-trigger-detail-tool': [],

@@ -77,6 +77,7 @@ export const fixtures = {
   'agent-with-capability': '',
   'ai-snack-club-backfill': '',
   'single-key-object-with-variable': '',
+  'contract-drift-probe-flow': '',
 } as const;
 
 export type FixtureName = keyof typeof fixtures;

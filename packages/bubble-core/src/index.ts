@@ -33,7 +33,11 @@ export {
   BubbleError,
   BubbleValidationError,
   BubbleExecutionError,
+  BubbleOutputContractViolationError,
 } from './types/bubble-errors.js';
+
+// Export the Contract Knowledge Base (IR-11/12)
+export * from './contract-kb/index.js';
 
 // Export base classes
 export { BaseBubble } from './types/base-bubble-class.js';
@@ -45,6 +49,7 @@ export { BubbleFlow } from './bubble-flow/bubble-flow-class.js';
 // Export bubbles
 export type { BubbleTriggerEvent } from '@bubblelab/shared-schemas';
 export { HelloWorldBubble } from './bubbles/service-bubble/hello-world.js';
+export { ContractDriftProbeBubble } from './bubbles/service-bubble/contract-drift-probe.js';
 export {
   AIAgentBubble,
   type StreamingCallback,
