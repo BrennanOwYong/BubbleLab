@@ -422,7 +422,9 @@ export function AddToolPage() {
                   <p className="text-xs text-gray-500">Specification</p>
                   <p className="text-sm text-gray-200">
                     {run.spec.title}
-                    {run.spec.version ? ` · v${run.spec.version}` : ''}
+                    {run.spec.version
+                      ? ` · ${run.spec.version.startsWith('v') ? '' : 'v'}${run.spec.version}`
+                      : ''}
                   </p>
                 </div>
                 <div>
