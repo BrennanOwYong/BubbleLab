@@ -44,8 +44,7 @@ export class PaymentLinkAndNotifyFlow extends BubbleFlow<'webhook/http'> {
       throw new Error(`create_payment_link failed: ${link.error}`);
     }
 
-    const paymentLinkUrl =
-      (link.data?.payload?.url as string | undefined) ?? '';
+    const paymentLinkUrl = link.data?.url ?? '';
 
     // Step 2: read the account balance (read op, idempotent)
     const balance = await new StripePaymentsApiBubble({
@@ -53,9 +52,7 @@ export class PaymentLinkAndNotifyFlow extends BubbleFlow<'webhook/http'> {
       baseUrl: 'https://api.stripe.com',
     }).action();
 
-    const availableBalance =
-      ((balance.data?.payload?.available as Array<{ amount: number }>) ?? [])[0]
-        ?.amount ?? 0;
+    const availableBalance = (balance.data?.available ?? [])[0]?.amount ?? 0;
 
     // Step 3: notify the team
     const notify = await new SlackBubble({
