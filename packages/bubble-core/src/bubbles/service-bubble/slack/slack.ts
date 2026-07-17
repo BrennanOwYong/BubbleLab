@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ServiceBubble } from '../../../types/service-bubble-class.js';
+import { SLACK_AUTH_METHODS } from './slack.auth-methods.js';
 import type { BubbleContext } from '../../../types/bubble.js';
 import {
   CredentialType,
@@ -1626,6 +1627,8 @@ export class SlackBubble<
   static readonly service = 'slack';
   static readonly authType = 'apikey' as const;
   static readonly bubbleName = 'slack';
+  // Doc-derived sign-in methods (IR-3/IR-4), see slack.auth-methods.ts
+  static readonly authMethods = SLACK_AUTH_METHODS;
   static readonly schema = SlackParamsSchema;
   static readonly resultSchema = SlackResultSchema;
   static readonly shortDescription =

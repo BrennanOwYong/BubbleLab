@@ -25,6 +25,56 @@ export type {
   DocSignals,
 } from './utils/side-effect-classifier.js';
 
+// Export the AuthMethod strategy model (IR-3/IR-4)
+export {
+  ApiKeyAuthMethod,
+  BasicAuthMethod,
+  ConnectionStringAuthMethod,
+  MultiFieldAuthMethod,
+  PatAuthMethod,
+  buildAuthUrl,
+  emptyAuthRequest,
+  fetchAuthTransport,
+  placeAuthSecret,
+  probeAuth,
+} from './auth/auth-method-strategy.js';
+export type {
+  AuthHttpResponse,
+  AuthHttpTransport,
+  AuthMethodStrategy,
+  BasicAuthConfig,
+  ConnectionStringConfig,
+  MultiFieldAuthConfig,
+  MultiFieldAuthSpec,
+  OutboundAuthRequest,
+  ResolvedAuthCredential,
+  SingleSecretConfig,
+} from './auth/auth-method-strategy.js';
+export { OAuth2AuthMethod, refreshTokenOf } from './auth/oauth2-strategy.js';
+export type { OAuth2StrategyConfig } from './auth/oauth2-strategy.js';
+export {
+  AuthInferenceError,
+  inferAuthMethods,
+} from './auth/infer-auth-methods.js';
+export type {
+  AuthEvidence,
+  AuthInferenceResult,
+  AuthInferenceUncertainty,
+  InferredAuthMethod,
+  ManualAuthEvidence,
+  OpenApiAuthEvidence,
+  OpenApiSecurityScheme,
+  ProseAuthEvidence,
+} from './auth/infer-auth-methods.js';
+export {
+  IMPLEMENTED_AUTH_KINDS,
+  bindInferredAuthMethods,
+  buildConnectUiSpec,
+  resolveAuthChoice,
+  strategyForDescriptor,
+} from './auth/connect-ui-spec.js';
+export type { AuthMethodBinding } from './auth/connect-ui-spec.js';
+
 // Export capabilities framework
 export * from './capabilities/index.js';
 

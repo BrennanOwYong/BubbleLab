@@ -1,5 +1,6 @@
-import { Code, Activity, Clock } from 'lucide-react';
+import { Code, Activity, Clock, KeyRound } from 'lucide-react';
 import { PearlChat } from './ai/PearlChat';
+import { FlowSetupPanel } from './FlowSetupPanel';
 import { MonacoEditor } from './MonacoEditor';
 import LiveOutput from './execution_logs/LiveOutput';
 import { ExecutionHistory } from './execution_logs/ExecutionHistory';
@@ -55,6 +56,12 @@ export function ConsolidatedSidePanel() {
       label: 'History',
       icon: Clock,
       badge: executionTotal ?? null,
+    },
+    {
+      id: 'setup' as const,
+      label: 'Setup',
+      icon: KeyRound,
+      badge: null,
     },
   ];
 
@@ -143,6 +150,13 @@ export function ConsolidatedSidePanel() {
         {activeTab === 'history' && (
           <div className="absolute inset-0">
             <ExecutionHistory flowId={flowId} />
+          </div>
+        )}
+
+        {/* Setup Tab (FU-9) - credential -> step manifest */}
+        {activeTab === 'setup' && (
+          <div className="absolute inset-0">
+            <FlowSetupPanel />
           </div>
         )}
       </div>

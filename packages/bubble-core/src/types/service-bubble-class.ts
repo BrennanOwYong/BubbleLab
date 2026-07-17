@@ -7,6 +7,7 @@ import { BaseBubble } from './base-bubble-class.js';
 import type {
   DatabaseMetadata,
   BubbleOperationMetadata,
+  AppAuthMethods,
 } from '@bubblelab/shared-schemas';
 
 export abstract class ServiceBubble<
@@ -22,6 +23,15 @@ export abstract class ServiceBubble<
    * (see BaseBubble.sideEffect).
    */
   static readonly operationMetadata?: BubbleOperationMetadata;
+
+  /**
+   * Doc-derived sign-in methods the app offers (IR-3/IR-4), most convenient
+   * first once ranked. Declared from a colocated `<bubble>.auth-methods.ts`
+   * file so every offered method travels with its citation. One app may offer
+   * several methods (e.g. Slack: OAuth or a pasted bot token) and the user's
+   * pick selects the bound CredentialType.
+   */
+  static readonly authMethods?: AppAuthMethods;
 
   public readonly type = 'service' as const;
   public authType?: 'oauth' | 'apikey' | 'none' | 'connection-string';
