@@ -76,9 +76,10 @@ export class KrakenSpotApiBubble<
       operation: 'get_ticker_information',
       baseUrl: 'https://api.kraken.com/0',
     } as T,
-    context?: BubbleContext
+    context?: BubbleContext,
+    instanceId?: string
   ) {
-    super(params, context);
+    super(params, context, instanceId);
   }
 
   private requestHeaders(
@@ -90,7 +91,7 @@ export class KrakenSpotApiBubble<
       Accept: 'application/json',
       'User-Agent': 'bubblelab/1.0',
     };
-    if (hasBody) headers['Content-Type'] = 'application/json';
+    if (hasBody) headers['Content-Type'] ??= 'application/json';
     return headers;
   }
 

@@ -109,9 +109,10 @@ export class StripePaymentsApiBubble<
       operation: 'list_charges',
       baseUrl: 'https://api.stripe.com',
     } as T,
-    context?: BubbleContext
+    context?: BubbleContext,
+    instanceId?: string
   ) {
-    super(params, context);
+    super(params, context, instanceId);
   }
 
   private requestHeaders(
