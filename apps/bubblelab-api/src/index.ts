@@ -36,6 +36,8 @@ import authRoutes from './routes/auth.js';
 import subscriptionRoutes from './routes/subscription.js';
 import joinWaitlistRoutes from './routes/join-waitlist.js';
 import { startCronScheduler } from './services/cron-scheduler.js';
+import { startToolSourceWatchdog } from './services/tool-source-watchdog.js';
+import toolWatchdogRoutes from './routes/tool-watchdog.js';
 import aiRoutes from './routes/ai.js';
 import templateSubmissionRoutes from './routes/template-submission.js';
 import browserbaseRoutes from './routes/browserbase.js';
@@ -89,6 +91,7 @@ app.route('/join-waitlist', joinWaitlistRoutes);
 app.route('/ai', aiRoutes);
 app.route('/template-submission', templateSubmissionRoutes);
 app.route('/browserbase', browserbaseRoutes);
+app.route('/tool-watchdog', toolWatchdogRoutes);
 
 // OpenAPI documentation endpoint
 app.doc('/doc', {
@@ -144,6 +147,9 @@ posthog.init({
 
 // Start cron scheduler (in-process)
 startCronScheduler();
+
+// Start the tool source-of-truth watchdog (spec-drift monitoring)
+startToolSourceWatchdog();
 
 export default {
   port,
