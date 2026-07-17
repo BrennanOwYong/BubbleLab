@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Add a Tool — Live Run</title>
+<style>
+  :root{
+    --bg:#0b0e14; --panel:#11151f; --panel2:#161b28; --line:#232a3b;
+    --txt:#d7dce6; --dim:#7d8699; --acc:#5eead4; --acc2:#818cf8;
+    --ok:#4ade80; --warn:#fbbf24; --bad:#f87171; --write:#f0abfc; --read:#7dd3fc;
+    font-size:15px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans-serif;height:100vh;overflow:hidden;display:flex;flex-direction:column}
+  header{padding:14px 26px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:16px}
+  header h1{font-size:1.05rem;font-weight:600;letter-spacing:.02em}
+  header .sub{color:var(--dim);font-size:.8rem}
+  .rail{display:flex;gap:8px;padding:12px 26px;border-bottom:1px solid var(--line)}
+  .railstep{flex:1;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--dim);font-size:.74rem;transition:all .5s;display:flex;gap:8px;align-items:center}
+  .railstep .n{width:20px;height:20px;border-radius:50%;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:.68rem;flex:none}
+  .railstep.active{border-color:var(--acc);color:var(--txt);background:var(--panel2);box-shadow:0 0 14px rgba(94,234,212,.12)}
+  .railstep.active .n{border-color:var(--acc);color:var(--acc)}
+  .railstep.done{color:var(--ok)}
+  .railstep.done .n{border-color:var(--ok);color:var(--ok)}
+  main{flex:1;position:relative;overflow:hidden}
+  .stage{position:absolute;inset:0;padding:18px 26px;opacity:0;transform:translateY(14px);transition:opacity .6s,transform .6s;pointer-events:none;display:flex;flex-direction:column;gap:12px}
+  .stage.show{opacity:1;transform:none;pointer-events:auto}
+  .stage h2{font-size:.95rem;color:var(--acc);font-weight:600}
+  .cols{display:flex;gap:14px;flex:1;min-height:0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;overflow:hidden}
+  .card h3{font-size:.72rem;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px}
+  .console{font-family:'Cascadia Code','Consolas',monospace;font-size:.76rem;line-height:1.65;white-space:pre-wrap;color:#b8c1d1}
+  .console .p{color:var(--acc)} .console .g{color:var(--ok)} .console .y{color:var(--warn)} .console .r{color:var(--bad)} .console .d{color:var(--dim)}
+  .cline{opacity:0;transform:translateX(-6px);transition:opacity .4s,transform .4s;display:block}
+  .cline.on{opacity:1;transform:none}
+  .codebox{font-family:'Cascadia Code','Consolas',monospace;font-size:.7rem;line-height:1.5;color:#c9d4e6;white-space:pre;overflow:hidden;flex:1}
+  .codebox .k{color:var(--acc2)} .codebox .s{color:#a5d6a7} .codebox .f{color:#82aaff} .codebox .c{color:var(--dim)} .codebox .t{color:var(--acc)}
+  .grid{display:grid;grid-template-columns:repeat(6,1fr);gap:7px;align-content:start}
+  .chip{border:1px solid var(--line);border-radius:7px;padding:7px 9px;font-size:.7rem;color:var(--txt);background:var(--panel2);opacity:0;transform:scale(.92);transition:all .35s}
+  .chip.on{opacity:1;transform:none}
+  .chip.hi{border-color:var(--acc);color:var(--acc);box-shadow:0 0 12px rgba(94,234,212,.25)}
+  .chip.ghost{border-style:dashed;border-color:var(--bad);color:var(--bad)}
+  .tag{display:inline-block;padding:1px 7px;border-radius:99px;font-size:.62rem;margin-left:6px}
+  .tag.w{background:rgba(240,171,252,.14);color:var(--write)} .tag.rd{background:rgba(125,211,252,.14);color:var(--read)}
+  .oprow{display:flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:7px;font-size:.76rem;background:var(--panel2);opacity:0;transform:translateX(-8px);transition:all .4s}
+  .oprow.on{opacity:1;transform:none}
+  .oprow .nm{font-family:'Consolas',monospace;color:var(--acc)}
+  .oprow .ds{color:var(--dim);font-size:.7rem;margin-left:auto}
+  .flow{display:flex;align-items:center;justify-content:center;gap:0;flex:1}
+  .node{border:1px solid var(--line);border-radius:10px;padding:14px 16px;background:var(--panel2);min-width:150px;text-align:center;opacity:0;transform:translateY(10px);transition:all .5s}
+  .node.on{opacity:1;transform:none;border-color:var(--acc2);box-shadow:0 0 16px rgba(129,140,248,.18)}
+  .node .ttl{font-size:.72rem;color:var(--dim);text-transform:uppercase;letter-spacing:.06em}
+  .node .op{font-family:'Consolas',monospace;font-size:.8rem;color:var(--acc);margin-top:5px}
+  .node .meta{font-size:.64rem;color:var(--dim);margin-top:5px}
+  .arrow{width:44px;height:2px;background:var(--line);position:relative;opacity:0;transition:opacity .5s;flex:none}
+  .arrow.on{opacity:1;background:var(--acc2)}
+  .arrow.on::after{content:'';position:absolute;right:-1px;top:-4px;border:5px solid transparent;border-left-color:var(--acc2)}
+  .searchbar{border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-family:'Consolas',monospace;font-size:.78rem;color:var(--warn);background:var(--panel2);margin-bottom:10px}
+  .verdict{margin-top:10px;padding:9px 12px;border-radius:8px;font-size:.78rem;opacity:0;transition:opacity .5s}
+  .verdict.on{opacity:1}
+  .verdict.miss{border:1px solid rgba(248,113,113,.4);color:var(--bad);background:rgba(248,113,113,.07)}
+  .verdict.hit{border:1px solid rgba(74,222,128,.4);color:var(--ok);background:rgba(74,222,128,.07)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Adding a new tool: Stripe Payments</h1>
+  <span class="sub">live run — spec in, typed operations out, wired into a workflow</span>
+</header>
+<div class="rail">
+  <div class="railstep" id="r0"><span class="n">1</span>Not in the suite</div>
+  <div class="railstep" id="r1"><span class="n">2</span>Typed contracts built</div>
+  <div class="railstep" id="r2"><span class="n">3</span>Auth wired</div>
+  <div class="railstep" id="r3"><span class="n">4</span>Tool usable</div>
+  <div class="railstep" id="r4"><span class="n">5</span>Workflow assembled</div>
+</div>
+<main>
+
+<!-- STEP 1 -->
+<section class="stage" id="s0">
+  <h2>Step 1 — Stripe Payments is not in the suite yet</h2>
+  <div class="cols">
+    <div class="card" style="flex:2.2;display:flex;flex-direction:column">
+      <h3>Current tool catalogue (46 integrations)</h3>
+      <div class="searchbar">search: <b>stripe-payments-api</b></div>
+      <div class="grid" id="cat0"></div>
+      <div class="verdict miss" id="v0">✗ 'stripe-payments-api' — NOT FOUND. Payment links, payouts, refunds, balance: unavailable.</div>
+    </div>
+    <div class="card" style="flex:1">
+      <h3>Console</h3>
+      <div class="console" id="con0"></div>
+    </div>
+  </div>
+</section>
+
+<!-- STEP 2 -->
+<section class="stage" id="s1">
+  <h2>Step 2 — Run the tool builder on the Stripe spec: typed contracts appear</h2>
+  <div class="cols">
+    <div class="card" style="flex:1;display:flex;flex-direction:column">
+      <h3>Console</h3>
+      <div class="console" id="con1"></div>
+      <h3 style="margin-top:12px">Operations extracted (6)</h3>
+      <div id="ops1"></div>
+    </div>
+    <div class="card" style="flex:1.35;display:flex;flex-direction:column">
+      <h3>Typed input contract — create_payment_link (as emitted)</h3>
+      <div class="codebox" id="code1"></div>
+    </div>
+  </div>
+</section>
+
+<!-- STEP 3 -->
+<section class="stage" id="s2">
+  <h2>Step 3 — Auth structure integrated: bearer credential wiring</h2>
+  <div class="cols">
+    <div class="card" style="flex:1.3;display:flex;flex-direction:column">
+      <h3>Credential wiring (as emitted)</h3>
+      <div class="codebox" id="code2"></div>
+    </div>
+    <div class="card" style="flex:1">
+      <h3>Console</h3>
+      <div class="console" id="con2"></div>
+    </div>
+  </div>
+</section>
+
+<!-- STEP 4 -->
+<section class="stage" id="s3">
+  <h2>Step 4 — The tool is live: six usable operations in the catalogue</h2>
+  <div class="cols">
+    <div class="card" style="flex:1.4;display:flex;flex-direction:column">
+      <h3>Catalogue (47 integrations)</h3>
+      <div class="searchbar">search: <b>stripe-payments-api</b></div>
+      <div class="grid" id="cat3"></div>
+      <div class="verdict hit" id="v3">✓ 'stripe-payments-api' — FOUND. alias: stripe-pay · auth: apikey · 6 operations.</div>
+    </div>
+    <div class="card" style="flex:1">
+      <h3>Usable pieces</h3>
+      <div id="ops3"></div>
+    </div>
+  </div>
+</section>
+
+<!-- STEP 5 -->
+<section class="stage" id="s4">
+  <h2>Step 5 — A workflow built on the new tool: payment link → balance → notify</h2>
+  <div class="card" style="height:150px;display:flex;flex-direction:column">
+    <h3>PaymentLinkAndNotifyFlow</h3>
+    <div class="flow">
+      <div class="node" id="n0"><div class="ttl">trigger</div><div class="op">webhook/http</div><div class="meta">priceId, quantity, channel</div></div>
+      <div class="arrow" id="a0"></div>
+      <div class="node" id="n1"><div class="ttl">stripe-payments-api</div><div class="op">create_payment_link</div><div class="meta">write · line_items[price, qty]</div></div>
+      <div class="arrow" id="a1"></div>
+      <div class="node" id="n2"><div class="ttl">stripe-payments-api</div><div class="op">get_balance</div><div class="meta">read · idempotent</div></div>
+      <div class="arrow" id="a2"></div>
+      <div class="node" id="n3"><div class="ttl">slack</div><div class="op">send_message</div><div class="meta">#payments · link + balance</div></div>
+    </div>
+  </div>
+  <div class="cols">
+    <div class="card" style="flex:1;display:flex;flex-direction:column">
+      <h3>Workflow source (excerpt)</h3>
+      <div class="codebox" id="code4"></div>
+    </div>
+    <div class="card" style="flex:.8">
+      <h3>Console</h3>
+      <div class="console" id="con4"></div>
+    </div>
+  </div>
+</section>
+
+</main>
+<script>
+const TOOLS = ["airtable","apify","asana","ashby","attio","browserbase","clerk","confluence","crustdata","discord","docusign","eleven-labs","firecrawl","followupboss","fullenrich","github","gmail","google-calendar","google-drive","google-sheets","granola","hubspot","jira","kraken-spot-api","linear","luma","memberful","metabase","notion","postgresql","posthog","ramp","resend","s3","salesforce","sendsafely","slab","slack","snowflake","snowflake-sql-api","sortly","storage","telegram","xero","zendesk","zoom"];
+const OPS = [
+  ["create_payment_intent","w","Create a PaymentIntent"],
+  ["create_payment_link","w","Create a payment link"],
+  ["create_payout","w","Create a payout"],
+  ["create_refund","w","Create customer balance refund"],
+  ["list_charges","rd","List all charges"],
+  ["get_balance","rd","Retrieve balance"]
+];
+const $=id=>document.getElementById(id);
+function el(tag,cls,html){const e=document.createElement(tag);if(cls)e.className=cls;if(html!=null)e.innerHTML=html;return e}
+function chips(host,names,hiName,ghost){names.forEach(n=>{const c=el('div','chip'+(n===hiName?' hi':''),n);host.appendChild(c)});if(ghost){const g=el('div','chip ghost','stripe-payments-api?');host.appendChild(g)}return[...host.children]}
+function stagger(nodes,base,step){nodes.forEach((n,i)=>setTimeout(()=>n.classList.add('on'),base+i*step))}
+function lines(host,arr,base,step){arr.forEach((t,i)=>{const l=el('span','cline',t);host.appendChild(l);setTimeout(()=>l.classList.add('on'),base+i*step)})}
+function oprows(host,base,step){OPS.forEach((o,i)=>{const r=el('div','oprow',`<span class="nm">${o[0]}</span><span class="tag ${o[1]}">${o[1]==='w'?'write':'read'}</span><span class="ds">${o[2]}</span>`);host.appendChild(r);setTimeout(()=>r.classList.add('on'),base+i*step)})}
+
+// ---- static code panels: real emitted contracts, abridged ----
+$('code1').innerHTML =
+`<span class="c">// contract for the 'stripe-payments-api' tool — emitted from stripe-payments.yaml</span>
+<span class="c">// vendor docs: https://docs.stripe.com/api</span>
+
+<span class="k">export const</span> <span class="t">StripePaymentsApiParamsSchema</span> = z.<span class="f">discriminatedUnion</span>(<span class="s">'operation'</span>, [
+  z.<span class="f">object</span>({
+    operation: z.<span class="f">literal</span>(<span class="s">'create_payment_link'</span>).describe(<span class="s">'Create a payment link'</span>),
+    baseUrl: z.<span class="f">string</span>().url()
+      .describe(<span class="s">'Stripe API base URL (e.g. https://api.stripe.com)'</span>),
+    line_items: z.<span class="f">array</span>(z.<span class="f">object</span>({
+        price: z.<span class="f">string</span>().max(<span class="t">5000</span>).optional(),
+        quantity: z.<span class="f">number</span>().int(),
+        price_data: z.<span class="f">record</span>(…).optional(),
+      }))
+      .describe(<span class="s">'The line items representing what is being sold. Up to 20 …'</span>),
+    currency: z.<span class="f">string</span>()
+      .describe(<span class="s">'Three-letter ISO currency code, in lowercase. …'</span>).optional(),
+    allow_promotion_codes: z.<span class="f">boolean</span>()
+      .describe(<span class="s">'Enables user redeemable promotion codes.'</span>).optional(),
+    after_completion: z.<span class="f">object</span>({
+        type: z.<span class="f">enum</span>([<span class="s">'hosted_confirmation'</span>, <span class="s">'redirect'</span>]), …
+      }).describe(<span class="s">'Behavior after the purchase is complete.'</span>).optional(),
+    metadata: z.<span class="f">record</span>(z.<span class="f">string</span>(), z.<span class="f">string</span>()).optional(),
+    credentials: <span class="t">BaseCredentialsSchema</span>,
+  }),
+  <span class="c">… 5 more operation branches …</span>
+]);
+
+<span class="k">export const</span> <span class="t">StripePaymentsApiResultSchema</span> = z.<span class="f">discriminatedUnion</span>(<span class="s">'operation'</span>, [
+  z.<span class="f">object</span>({
+    operation: z.<span class="f">literal</span>(<span class="s">'create_payment_link'</span>),
+    success: z.<span class="f">boolean</span>().describe(<span class="s">'Whether the operation succeeded'</span>),
+    error: z.<span class="f">string</span>().describe(<span class="s">'Error message if operation failed'</span>), …
+  }), …
+]);`;
+
+$('code2').innerHTML =
+`<span class="k">static readonly</span> service   = <span class="s">'stripe'</span>;
+<span class="k">static readonly</span> authType  = <span class="s">'apikey'</span>;
+<span class="k">static readonly</span> alias     = <span class="s">'stripe-pay'</span>;
+<span class="c">// Credential: STRIPE_CRED (bearer token) + per-account baseUrl.</span>
+
+<span class="k">private</span> <span class="f">requestHeaders</span>(token: <span class="t">string</span>, contentType?) {
+  <span class="k">const</span> headers = {
+    Authorization: <span class="s">\`Bearer \${token}\`</span>,
+    Accept: <span class="s">'application/json'</span>,
+  };
+  <span class="k">if</span> (contentType === <span class="s">'form'</span>)
+    headers[<span class="s">'Content-Type'</span>] = <span class="s">'application/x-www-form-urlencoded'</span>;
+  <span class="k">return</span> headers;
+}
+
+<span class="k">protected</span> <span class="f">chooseCredential</span>(): <span class="t">string</span> | <span class="t">undefined</span> {
+  <span class="k">const</span> credentials = <span class="k">this</span>.params.credentials;
+  <span class="k">return</span> credentials?.[CredentialType.<span class="t">STRIPE_CRED</span>];
+}
+
+<span class="k">public async</span> <span class="f">testCredential</span>(): <span class="t">Promise</span>&lt;<span class="t">boolean</span>&gt; {
+  <span class="c">// Probe: GET /v1/charges with the supplied token.</span>
+  <span class="c">// 401/403 mean the credential was rejected.</span>
+  <span class="k">const</span> response = <span class="k">await</span> <span class="f">fetch</span>(<span class="s">\`\${baseUrl}/v1/charges\`</span>, {
+    headers: <span class="k">this</span>.<span class="f">requestHeaders</span>(token),
+  });
+  <span class="k">return</span> response.status !== <span class="t">401</span> &amp;&amp; response.status !== <span class="t">403</span>;
+}`;
+
+$('code4').innerHTML =
+`<span class="k">export class</span> <span class="t">PaymentLinkAndNotifyFlow</span> <span class="k">extends</span> <span class="t">Workflow</span>&lt;<span class="s">'webhook/http'</span>&gt; {
+  <span class="k">async</span> <span class="f">handle</span>(payload): <span class="t">Promise</span>&lt;<span class="t">Output</span>&gt; {
+    <span class="c">// 1. mint a hosted checkout link (write op)</span>
+    <span class="k">const</span> link = <span class="k">await new</span> <span class="t">StripePaymentsApi</span>({
+      operation: <span class="s">'create_payment_link'</span>,
+      baseUrl: <span class="s">'https://api.stripe.com'</span>,
+      line_items: [{ price: payload.priceId, quantity: payload.quantity ?? <span class="t">1</span> }],
+    }).<span class="f">action</span>();
+
+    <span class="c">// 2. read the account's available balance (read op)</span>
+    <span class="k">const</span> balance = <span class="k">await new</span> <span class="t">StripePaymentsApi</span>({
+      operation: <span class="s">'get_balance'</span>,
+      baseUrl: <span class="s">'https://api.stripe.com'</span>,
+    }).<span class="f">action</span>();
+
+    <span class="c">// 3. notify the team</span>
+    <span class="k">await new</span> <span class="t">Slack</span>({
+      operation: <span class="s">'send_message'</span>,
+      channel: payload.channel ?? <span class="s">'#payments'</span>,
+      text: <span class="s">\`New payment link: \${paymentLinkUrl} …\`</span>,
+    }).<span class="f">action</span>();
+
+    <span class="k">return</span> { paymentLinkUrl, availableBalance, notified };
+  }
+}`;
+
+// ---- timeline ----
+const STEP_MS = 15000;
+function activate(i){
+  for(let k=0;k<5;k++){
+    $('r'+k).classList.toggle('active',k===i);
+    $('r'+k).classList.toggle('done',k<i);
+    $('s'+k).classList.toggle('show',k===i);
+  }
+}
+function step0(){
+  activate(0);
+  lines($('con0'),[
+    '<span class="p">tools&gt;</span> list --all',
+    '<span class="d">46 integrations registered</span>',
+    '<span class="p">tools&gt;</span> find stripe-payments-api',
+    '<span class="r">no match</span>',
+    '<span class="y">→ Stripe payment links, payouts,</span>',
+    '<span class="y">  refunds &amp; balance: no coverage.</span>'
+  ],600,900);
+  stagger(chips($('cat0'),TOOLS,null,true),400,55);
+  setTimeout(()=>$('v0').classList.add('on'),5200);
+}
+function step1(){
+  activate(1);
+  lines($('con1'),[
+    '<span class="p">tools&gt;</span> add stripe-payments.yaml',
+    '<span class="d">reading vendor spec…</span>',
+    '<span class="g">✓ 6 operations found</span>',
+    '<span class="g">✓ input contracts emitted (typed)</span>',
+    '<span class="g">✓ result contracts emitted (typed)</span>',
+    '<span class="d">2,358 lines of typed contracts</span>'
+  ],500,850);
+  oprows($('ops1'),4200,600);
+}
+function step2(){
+  activate(2);
+  lines($('con2'),[
+    '<span class="p">auth&gt;</span> inspect stripe-payments-api',
+    '<span class="d">scheme: apikey → bearer header</span>',
+    '<span class="d">credential slot: STRIPE_CRED</span>',
+    '<span class="g">✓ header injection wired</span>',
+    '<span class="g">✓ credential probe wired</span>',
+    '<span class="d">  (GET /v1/charges, 401/403 = reject)</span>',
+    '<span class="g">✓ per-account baseUrl supported</span>'
+  ],600,950);
+}
+function step3(){
+  activate(3);
+  const all=[...TOOLS];
+  all.splice(all.indexOf('slack')+1,0,'stripe-payments-api');
+  stagger(chips($('cat3'),all,'stripe-payments-api',false),300,45);
+  setTimeout(()=>$('v3').classList.add('on'),3200);
+  oprows($('ops3'),3800,650);
+}
+function step4(){
+  activate(4);
+  ['n0','a0','n1','a1','n2','a2','n3'].forEach((id,i)=>setTimeout(()=>$(id).classList.add('on'),500+i*650));
+  lines($('con4'),[
+    '<span class="p">flow&gt;</span> check PaymentLinkAndNotifyFlow',
+    '<span class="g">✓ trigger payload typed</span>',
+    '<span class="g">✓ create_payment_link params valid</span>',
+    '<span class="g">✓ get_balance params valid</span>',
+    '<span class="g">✓ notification step valid</span>',
+    '<span class="g">✓ workflow compiles — ready to run</span>'
+  ],5200,900);
+}
+const steps=[step0,step1,step2,step3,step4];
+steps.forEach((fn,i)=>setTimeout(fn,800+i*STEP_MS));
+</script>
+</body>
+</html>
