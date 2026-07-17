@@ -15,30 +15,27 @@ import type { BubbleOperationMetadata } from '@bubblelab/shared-schemas';
 
 export const RESEND_OPERATION_METADATA: BubbleOperationMetadata = {
   send_email: {
-    sideEffect: 'write',
+    sideEffect: "write",
     destructive: false,
     idempotent: false,
     confidence: 0.6,
-    source: 'prose',
-    citation:
-      'https://resend.com/docs/api-reference/emails/send-email — "Start sending emails through the Resend Email API."',
+    source: "prose",
+    citation: "https://resend.com/docs/api-reference/emails/send-email — \"Start sending emails through the Resend Email API.\""
   },
   send_batch_emails: {
-    sideEffect: 'write',
+    sideEffect: "write",
     destructive: false,
     idempotent: false,
     confidence: 0.6,
-    source: 'prose',
-    citation:
-      'packages/bubble-core/src/bubbles/service-bubble/resend.ts#operation:send_batch_emails — "Send up to 100 batch emails in a single API call" (schema prose; vendor doc root: https://resend.com/docs/api-reference/emails)',
+    source: "prose",
+    citation: "packages/bubble-core/src/bubbles/service-bubble/resend.ts#operation:send_batch_emails — \"Send up to 100 batch emails in a single API call\" (schema prose; vendor doc root: https://resend.com/docs/api-reference/emails)"
   },
   get_email_status: {
-    sideEffect: 'read',
+    sideEffect: "read",
     destructive: false,
     idempotent: true,
     confidence: 0.6,
-    source: 'prose',
-    citation:
-      'https://resend.com/docs/api-reference/emails/retrieve-email — "Retrieve a single email."',
-  },
+    source: "prose",
+    citation: "https://resend.com/docs/api-reference/emails/retrieve-email — \"Retrieve a single email.\""
+  }
 };

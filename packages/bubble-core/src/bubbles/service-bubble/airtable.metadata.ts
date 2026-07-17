@@ -15,102 +15,91 @@ import type { BubbleOperationMetadata } from '@bubblelab/shared-schemas';
 
 export const AIRTABLE_OPERATION_METADATA: BubbleOperationMetadata = {
   list_records: {
-    sideEffect: 'read',
+    sideEffect: "read",
     destructive: false,
     idempotent: true,
     confidence: 0.6,
-    source: 'prose',
-    citation:
-      'https://airtable.com/developers/web/api/list-records — "List records in a table."',
+    source: "prose",
+    citation: "https://airtable.com/developers/web/api/list-records — \"List records in a table.\""
   },
   get_record: {
-    sideEffect: 'read',
+    sideEffect: "read",
     destructive: false,
     idempotent: true,
     confidence: 0.6,
-    source: 'prose',
-    citation:
-      'https://airtable.com/developers/web/api/get-record — "Retrieve a single record."',
+    source: "prose",
+    citation: "https://airtable.com/developers/web/api/get-record — \"Retrieve a single record.\""
   },
   create_records: {
-    sideEffect: 'write',
+    sideEffect: "write",
     destructive: false,
     idempotent: false,
     confidence: 0.6,
-    source: 'prose',
-    citation:
-      'https://airtable.com/developers/web/api/create-records — "Creates multiple records."',
+    source: "prose",
+    citation: "https://airtable.com/developers/web/api/create-records — \"Creates multiple records.\""
   },
   update_records: {
-    sideEffect: 'read_with_side_effects',
+    sideEffect: "read_with_side_effects",
     destructive: false,
     idempotent: true,
     confidence: 0.6,
-    source: 'prose',
-    citation:
-      'https://airtable.com/developers/web/api/update-multiple-records — "Updates up to 10 records, or upserts them when performUpsert is set."',
+    source: "prose",
+    citation: "https://airtable.com/developers/web/api/update-multiple-records — \"Updates up to 10 records, or upserts them when performUpsert is set.\""
   },
   delete_records: {
-    sideEffect: 'read_with_side_effects',
+    sideEffect: "read_with_side_effects",
     destructive: true,
     idempotent: true,
     confidence: 0.6,
-    source: 'prose',
-    citation:
-      'https://airtable.com/developers/web/api/delete-multiple-records — "Deletes records given an array of record ids."',
+    source: "prose",
+    citation: "https://airtable.com/developers/web/api/delete-multiple-records — \"Deletes records given an array of record ids.\""
   },
   list_bases: {
-    sideEffect: 'read',
+    sideEffect: "read",
     destructive: false,
     idempotent: true,
     confidence: 0.6,
-    source: 'prose',
-    citation:
-      'https://airtable.com/developers/web/api/list-bases — "Returns the list of bases the token can access."',
+    source: "prose",
+    citation: "https://airtable.com/developers/web/api/list-bases — \"Returns the list of bases the token can access.\""
   },
   get_base_schema: {
-    sideEffect: 'read',
+    sideEffect: "read",
     destructive: false,
     idempotent: true,
     confidence: 0.6,
-    source: 'prose',
-    citation:
-      'https://airtable.com/developers/web/api/get-base-schema — "Returns the schema of the tables in the specified base."',
+    source: "prose",
+    citation: "https://airtable.com/developers/web/api/get-base-schema — \"Returns the schema of the tables in the specified base.\""
   },
   create_table: {
-    sideEffect: 'write',
+    sideEffect: "write",
     destructive: false,
     idempotent: false,
     confidence: 0.6,
-    source: 'prose',
-    citation:
-      'https://airtable.com/developers/web/api/create-table — "Creates a new table and returns the schema for the newly created table."',
+    source: "prose",
+    citation: "https://airtable.com/developers/web/api/create-table — \"Creates a new table and returns the schema for the newly created table.\""
   },
   update_table: {
-    sideEffect: 'read_with_side_effects',
+    sideEffect: "read_with_side_effects",
     destructive: false,
     idempotent: true,
     confidence: 0.6,
-    source: 'prose',
-    citation:
-      'https://airtable.com/developers/web/api/update-table — "Updates the name and/or description of a table."',
+    source: "prose",
+    citation: "https://airtable.com/developers/web/api/update-table — \"Updates the name and/or description of a table.\""
   },
   create_field: {
-    sideEffect: 'write',
+    sideEffect: "write",
     destructive: false,
     idempotent: false,
     confidence: 0.6,
-    source: 'prose',
-    citation:
-      'https://airtable.com/developers/web/api/create-field — "Creates a new column and returns the schema for the newly created column."',
+    source: "prose",
+    citation: "https://airtable.com/developers/web/api/create-field — \"Creates a new column and returns the schema for the newly created column.\""
   },
   update_field: {
-    sideEffect: 'read_with_side_effects',
+    sideEffect: "read_with_side_effects",
     destructive: false,
     idempotent: true,
     confidence: 0.6,
-    source: 'prose',
-    citation:
-      'https://airtable.com/developers/web/api/update-field — "Updates the name and/or description of a field."',
-  },
+    source: "prose",
+    citation: "https://airtable.com/developers/web/api/update-field — \"Updates the name and/or description of a field.\""
+  }
 };
