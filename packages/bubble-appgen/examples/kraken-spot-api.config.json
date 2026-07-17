@@ -22,5 +22,15 @@
     "getServerTime"
   ],
   "specName": "kraken-spot.yaml",
-  "docsUrl": "https://docs.kraken.com/api/docs/guides/spot-rest-intro/"
+  "docsUrl": "https://docs.kraken.com/api/docs/guides/spot-rest-intro/",
+  "registration": {
+    "envVar": "KRAKEN_API_KEY",
+    "label": "Kraken API Key",
+    "description": "Kraken Spot REST API key (generated kraken-spot-api bubble). Public market-data operations work with any placeholder value; private endpoints additionally require API-Sign request signing, which this bubble does not implement.",
+    "placeholder": "Your Kraken API key",
+    "namePlaceholder": "My Kraken API Key",
+    "configurationFields": {},
+    "serviceLabel": "Kraken",
+    "credentialComment": "Kraken API key (generated kraken-spot-api bubble; public market data)"
+  }
 }

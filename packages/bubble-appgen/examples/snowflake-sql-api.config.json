@@ -17,5 +17,17 @@
   "operations": ["SubmitStatement", "GetStatementStatus", "CancelStatement"],
   "specName": "sqlapi.yaml",
   "docsUrl": "https://docs.snowflake.com/en/developer-guide/sql-api/intro",
-  "carrierFields": ["statement", "sql", "query", "code", "command"]
+  "carrierFields": ["statement", "sql", "query", "code", "command"],
+  "registration": {
+    "envVar": "SNOWFLAKE_PAT",
+    "label": "Snowflake Programmatic Access Token",
+    "description": "Programmatic access token for the Snowflake SQL API v2 (generated snowflake-sql-api bubble); the per-account URL is a bubble parameter",
+    "placeholder": "Your Snowflake programmatic access token",
+    "namePlaceholder": "My Snowflake PAT",
+    "configurationFields": {
+      "accountUrl": "STRING"
+    },
+    "serviceLabel": "Snowflake",
+    "credentialComment": "Snowflake SQL API v2 Programmatic Access Token (generated snowflake-sql-api bubble)"
+  }
 }

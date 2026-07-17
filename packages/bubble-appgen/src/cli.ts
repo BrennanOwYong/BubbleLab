@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { loadOpenApi } from './openapi.js';
 import { extractOperations } from './extract.js';
 import { classifyOperation } from './classify.js';
+import { inferAuth } from './auth-infer.js';
 import { emitBubble } from './emit-bubble.js';
 import type { AppGenConfig } from './types.js';
 
@@ -57,8 +58,14 @@ const classified = drafts.map((draft) => {
   return { draft, metadata };
 });
 
+// S5: auth inference (spec securitySchemes first, config fallback when silent)
+const auth = inferAuth(doc, drafts, config);
+console.log(
+  `auth: ${auth.authType} [${auth.placement.kind}${auth.placement.kind === 'header' ? `: ${auth.placement.headerName}` : ''}] via ${auth.source} — ${auth.citation}`
+);
+
 // S3+S6: contracts + code emission
-const files = emitBubble(config, classified);
+const files = emitBubble(config, classified, auth);
 mkdirSync(outDir, { recursive: true });
 for (const file of files) {
   writeFileSync(join(outDir, file.fileName), file.content);

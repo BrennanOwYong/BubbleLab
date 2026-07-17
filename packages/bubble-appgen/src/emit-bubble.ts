@@ -11,6 +11,7 @@
  * Emitted code contains no `as any` and must pass repo typecheck as-is.
  */
 import type { OperationSideEffectMetadata } from '@bubblelab/shared-schemas';
+import type { AuthInference } from './auth-infer.js';
 import type { AppGenConfig, OperationDraft } from './types.js';
 import {
   emitKey,
@@ -356,12 +357,29 @@ function synthesizedParams(
   return out;
 }
 
+/** The `Authorization`/api-key header line stamped inside requestHeaders(). */
+function authHeaderLine(auth: AuthInference): string {
+  if (auth.placement.kind === 'header') {
+    return `      ${emitKey(auth.placement.headerName)}: token,`;
+  }
+  return '      Authorization: `Bearer ${token}`,';
+}
+
+/** Human description of the credential wire format for longDescription. */
+function authDescription(auth: AuthInference): string {
+  if (auth.placement.kind === 'header') {
+    return `API key sent in the ${auth.placement.headerName} header`;
+  }
+  return 'bearer token';
+}
+
 export function emitClassFile(
   config: AppGenConfig,
   classified: Array<{
     draft: OperationDraft;
     metadata: OperationSideEffectMetadata;
-  }>
+  }>,
+  auth: AuthInference
 ): string {
   const cls = config.className;
   const drafts = classified.map((c) => c.draft);
@@ -487,7 +505,8 @@ export function emitClassFile(
   parts.push('> {');
   parts.push("  static readonly type = 'service' as const;");
   parts.push(`  static readonly service = '${config.service}';`);
-  parts.push("  static readonly authType = 'apikey' as const;");
+  parts.push(`  // S5 auth (${auth.source}): ${auth.citation}`);
+  parts.push(`  static readonly authType = '${auth.authType}' as const;`);
   parts.push(`  static readonly bubbleName = '${config.appName}';`);
   parts.push(`  static readonly operationMetadata = ${metadataConst};`);
   parts.push(`  static readonly schema = ${cls}ParamsSchema;`);
@@ -507,7 +526,7 @@ export function emitClassFile(
   }
   parts.push('');
   parts.push(
-    `    Credential: ${config.credentialType} (bearer token) + per-account ${config.baseUrlParam.name}.`
+    `    Credential: ${config.credentialType} (${authDescription(auth)}) + per-account ${config.baseUrlParam.name}.`
   );
   parts.push('  `;');
   if (config.alias) parts.push(`  static readonly alias = '${config.alias}';`);
@@ -528,7 +547,7 @@ export function emitClassFile(
   }
   parts.push('  ): Record<string, string> {');
   parts.push('    const headers: Record<string, string> = {');
-  parts.push('      Authorization: `Bearer ${token}`,');
+  parts.push(authHeaderLine(auth));
   for (const [header, value] of Object.entries({
     Accept: 'application/json',
     ...config.authHeaders,
@@ -792,7 +811,8 @@ export function emitBubble(
   classified: Array<{
     draft: OperationDraft;
     metadata: OperationSideEffectMetadata;
-  }>
+  }>,
+  auth: AuthInference
 ): GeneratedFile[] {
   const drafts = classified.map((c) => c.draft);
   return [
@@ -806,7 +826,7 @@ export function emitBubble(
     },
     {
       fileName: `${config.appName}.ts`,
-      content: emitClassFile(config, classified),
+      content: emitClassFile(config, classified, auth),
     },
     {
       fileName: `${config.appName}.schema.test.ts`,

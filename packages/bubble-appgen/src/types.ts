@@ -111,4 +111,36 @@ export interface AppGenConfig {
    * caller-supplied SQL/code) -> fail-safe `write` classification.
    */
   carrierFields?: string[];
+  /**
+   * FALLBACK ServiceBubble authType, used only when the spec declares no
+   * security requirement for the selected operations (S5 inference reads
+   * draft.securitySchemes + components.securitySchemes first; see
+   * auth-infer.ts). Omitted + silent spec -> 'apikey' with a warning.
+   */
+  authType?: 'oauth' | 'apikey';
+  /**
+   * S8 registration facts consumed by scripts/register-bubble.ts (repo root):
+   * the mechanical 12-location wiring per bubble-core/CREATE_BUBBLE_README.md.
+   */
+  registration?: BubbleRegistration;
+}
+
+/** Inputs for the S8 registration codemod (scripts/register-bubble.ts). */
+export interface BubbleRegistration {
+  /** CREDENTIAL_ENV_MAP env var; '' = no single env var (OAuth/multi-field). */
+  envVar: string;
+  /** CREDENTIAL_TYPE_CONFIG display entry (studio credentials page). */
+  label: string;
+  description: string;
+  placeholder: string;
+  namePlaceholder: string;
+  /**
+   * CREDENTIAL_CONFIGURATION_MAP fields: name -> BubbleParameterType enum KEY
+   * (e.g. { accountUrl: 'STRING' }). Empty object = no credential-side config.
+   */
+  configurationFields: Record<string, string>;
+  /** Studio typeToServiceMap display label (logo/service lookup). */
+  serviceLabel: string;
+  /** Comment line stamped above the CredentialType enum member. */
+  credentialComment: string;
 }

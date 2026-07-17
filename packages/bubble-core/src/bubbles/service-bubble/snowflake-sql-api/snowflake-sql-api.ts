@@ -57,6 +57,7 @@ export class SnowflakeSqlApiBubble<
 > {
   static readonly type = 'service' as const;
   static readonly service = 'snowflake';
+  // S5 auth (openapi): inferred from securityScheme ExternalOAuth (http bearer); alternatives: KeyPair (http bearer), SnowflakeOAuth (oauth2)
   static readonly authType = 'apikey' as const;
   static readonly bubbleName = 'snowflake-sql-api';
   static readonly operationMetadata = SNOWFLAKE_SQL_API_OPERATION_METADATA;

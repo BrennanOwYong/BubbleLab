@@ -22,5 +22,15 @@
     "GetBalance"
   ],
   "specName": "stripe-payments.yaml",
-  "docsUrl": "https://docs.stripe.com/api"
+  "docsUrl": "https://docs.stripe.com/api",
+  "registration": {
+    "envVar": "STRIPE_SECRET_KEY",
+    "label": "Stripe Credentials",
+    "description": "Stripe secret key for the Stripe API (shared with the hand-written stripe bubble)",
+    "placeholder": "sk_live_...",
+    "namePlaceholder": "My Stripe Key",
+    "configurationFields": {},
+    "serviceLabel": "Stripe",
+    "credentialComment": "Stripe Credentials"
+  }
 }

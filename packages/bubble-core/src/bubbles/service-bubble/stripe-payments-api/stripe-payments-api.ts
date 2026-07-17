@@ -82,6 +82,7 @@ export class StripePaymentsApiBubble<
 > {
   static readonly type = 'service' as const;
   static readonly service = 'stripe';
+  // S5 auth (openapi): inferred from securityScheme bearerAuth (http bearer)
   static readonly authType = 'apikey' as const;
   static readonly bubbleName = 'stripe-payments-api';
   static readonly operationMetadata = STRIPE_PAYMENTS_API_OPERATION_METADATA;

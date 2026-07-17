@@ -49,6 +49,7 @@ export class KrakenSpotApiBubble<
 > {
   static readonly type = 'service' as const;
   static readonly service = 'kraken';
+  // S5 auth (openapi): inferred from securityScheme bearerAuth (http bearer)
   static readonly authType = 'apikey' as const;
   static readonly bubbleName = 'kraken-spot-api';
   static readonly operationMetadata = KRAKEN_SPOT_API_OPERATION_METADATA;
