@@ -357,5 +357,10 @@ const openapi = {
   paths,
 };
 
-writeFileSync(OUT_PATH, JSON.stringify(openapi, null, 2) + '\n');
+// Prettier-format so the committed fixture matches regeneration byte-for-byte.
+const { format } = await import('prettier');
+writeFileSync(
+  OUT_PATH,
+  await format(JSON.stringify(openapi, null, 2), { parser: 'json' })
+);
 console.log(`wrote ${OUT_PATH} (${OPERATIONS.length} operations)`);
