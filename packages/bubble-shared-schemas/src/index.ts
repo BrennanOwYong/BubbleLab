@@ -34,3 +34,4 @@ export * from './capability-schema.js';
 export * from './execution-meta.js';
 export * from './operation-metadata-schema.js';
 export * from './auth-method-schema.js';
+export * from './scope-audit-schema.js';

@@ -20,9 +20,11 @@ import {
 import { injectCredentialsIntoBubbleParameters } from '../utils/bubble-parameters.js';
 import {
   CredentialType,
+  type FlowScopeAudit,
   type ParsedBubbleWithInfo,
   type ParsedWorkflow,
 } from '@bubblelab/shared-schemas';
+import { auditFlowScopes } from '../services/scope-audit-service.js';
 import { getUserId, getAppType } from '../middleware/auth.js';
 import { eq, and, count } from 'drizzle-orm';
 import { isValidBubbleTriggerEvent } from '@bubblelab/shared-schemas';
@@ -1191,6 +1193,57 @@ app.openapi(validateBubbleFlowCodeRoute, async (c) => {
     // Create a new BubbleFlowValidationTool instance
     const result = await validateAndExtract(code, bubbleFactory, false);
 
+    // Proactive scope audit (IR-6/7): before accepting the build, diff the scopes the flow's
+    // operations require (per-operation metadata) against the scopes granted on the assigned
+    // credentials. A verifiable missing scope FAILS the build naming the scope and the
+    // operations that need it; unverifiable credentials degrade to explicit warnings.
+    let scopeAudit: FlowScopeAudit | undefined;
+    if (result.valid) {
+      let auditParameters = result.bubbleParameters || {};
+      if (credentials && Object.keys(credentials).length > 0) {
+        auditParameters = mergeCredentialsByBubbleName(
+          auditParameters,
+          existingFlow?.bubbleParameters as Record<
+            string | number,
+            ParsedBubbleWithInfo
+          > | null,
+          credentials
+        );
+      }
+      scopeAudit = await auditFlowScopes({
+        bubbleParameters: auditParameters,
+        requestCredentials: credentials,
+        userId,
+      });
+      if (!scopeAudit.ok) {
+        return c.json(
+          {
+            valid: false,
+            success: false,
+            inputSchema: result.inputSchema || {},
+            eventType: result.trigger?.type || 'webhook/http',
+            webhookPath: getWebhookUrl(
+              userId,
+              existingFlow?.webhooks?.[0]?.path || ''
+            ),
+            cron: result.trigger?.cronSchedule || null,
+            cronActive: existingFlow?.cronActive || false,
+            workflow: result.workflow,
+            error: scopeAudit.errors.join('; '),
+            errors: scopeAudit.errors,
+            scopeAudit,
+            metadata: {
+              validatedAt: new Date().toISOString(),
+              codeLength: code?.length || 0,
+              strictMode: options?.strictMode ?? true,
+              flowUpdated: false,
+            },
+          },
+          200
+        );
+      }
+    }
+
     // If validation is successful and flowId is provided, update the flow as well before returning the result
     if (
       result.valid &&
@@ -1284,6 +1337,7 @@ app.openapi(validateBubbleFlowCodeRoute, async (c) => {
           workflow: result.workflow,
           error: '',
           errors: [],
+          scopeAudit,
           requiredCredentials: extractRequiredCredentials(
             finalBubbleParametersForResponse
           ),
