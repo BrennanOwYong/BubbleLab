@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { emitTelemetry } from '../lib/telemetry';
 
 /**
  * UI Store - Global panel visibility and UI state
@@ -305,6 +306,34 @@ export const useUIStore = create<UIStore>((set) => ({
 
   closeConsolidatedPanel: () => set({ isConsolidatedPanelOpen: false }),
 }));
+
+// Telemetry: emit a `ui.popup` event whenever a popup/panel/modal opens or
+// closes, regardless of which action mutated the flag. State-diff based so
+// every current and future action on these flags is covered.
+useUIStore.subscribe((state, prev) => {
+  const watched: Array<[string, boolean, boolean]> = [
+    ['sidebar', state.isSidebarOpen, prev.isSidebarOpen],
+    ['export_modal', state.showExportModal, prev.showExportModal],
+    ['prompt', state.showPrompt, prev.showPrompt],
+    [
+      'consolidated_panel',
+      state.isConsolidatedPanelOpen,
+      prev.isConsolidatedPanelOpen,
+    ],
+  ];
+  for (const [popup, now, before] of watched) {
+    if (now !== before) {
+      emitTelemetry('ui.popup', { popup, open: now });
+    }
+  }
+  if (state.sidePanelMode !== prev.sidePanelMode) {
+    emitTelemetry('ui.popup', {
+      popup: 'side_panel',
+      open: state.sidePanelMode !== 'closed',
+      mode: state.sidePanelMode,
+    });
+  }
+});
 
 // ============= Derived Selectors =============
 

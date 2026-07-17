@@ -5,6 +5,9 @@ import { BubbleSidePanel } from '@/components/BubbleSidePanel';
 import { ToastContainer } from 'react-toastify';
 import { useUIStore } from '@/stores/uiStore';
 import { useEffect, useRef } from 'react';
+import { installToastTelemetry } from '@/lib/telemetry';
+
+installToastTelemetry();
 
 export const Route = createRootRoute({
   component: RootLayout,

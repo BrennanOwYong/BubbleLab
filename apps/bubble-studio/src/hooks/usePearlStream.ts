@@ -8,6 +8,7 @@ import {
   type StreamingEvent,
 } from '@bubblelab/shared-schemas';
 import { sseToAsyncIterable } from '@/utils/sseStream';
+import { emitTelemetry } from '../lib/telemetry';
 import { getPearlChatStore } from '../stores/pearlChatStore';
 import {
   handleStreamingEvent,
@@ -89,6 +90,9 @@ export function usePearlStream(options?: UsePearlStreamOptions) {
                 }
               } catch (parseError) {
                 console.warn('Failed to parse SSE data:', line, parseError);
+                emitTelemetry('pearl.sse_parse_error', {
+                  error: String(parseError),
+                });
               }
             }
           }
@@ -104,11 +108,19 @@ export function usePearlStream(options?: UsePearlStreamOptions) {
       return finalResult;
     },
     onSuccess: (result) => {
+      emitTelemetry('pearl.chat_stream_complete', {
+        flowId: flowId ?? null,
+        resultType: result.type,
+      });
       onSuccess?.(result);
     },
     onError: (error) => {
       const errorInstance =
         error instanceof Error ? error : new Error(String(error));
+      emitTelemetry('pearl.chat_stream_error', {
+        flowId: flowId ?? null,
+        error: errorInstance.message,
+      });
       onError?.(errorInstance);
     },
   });
@@ -220,6 +232,11 @@ async function startGenerationStream(
       console.log(
         `[startGenerationStream] Stream completed successfully for flow ${flowId}`
       );
+      emitTelemetry('pearl.stream_finished', {
+        phase: 'planning',
+        flowId,
+        attempt: attempt + 1,
+      });
       pearlStore.getState().setIsCoffeeLoading(false);
       return;
     } catch (error) {
@@ -235,6 +252,12 @@ async function startGenerationStream(
         `[startGenerationStream] Stream attempt ${attempt + 1} failed:`,
         lastError.message
       );
+      emitTelemetry('pearl.stream_error', {
+        phase: 'planning',
+        flowId,
+        attempt: attempt + 1,
+        error: lastError.message,
+      });
 
       // Non-recoverable errors
       if (
@@ -348,9 +371,15 @@ export async function startBuildingPhase(
     console.log(
       `[startBuildingPhase] Stream completed successfully for flow ${flowId}`
     );
+    emitTelemetry('pearl.stream_finished', { phase: 'building', flowId });
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : 'Build failed';
     console.error(`[startBuildingPhase] Error:`, errorMsg);
+    emitTelemetry('pearl.stream_error', {
+      phase: 'building',
+      flowId,
+      error: errorMsg,
+    });
 
     handleStreamingEvent(
       { type: 'error', data: { error: errorMsg, recoverable: false } },
@@ -449,9 +478,18 @@ export async function submitClarificationAndContinue(
     console.log(
       `[submitClarificationAndContinue] Stream completed successfully for flow ${flowId}`
     );
+    emitTelemetry('pearl.stream_finished', {
+      phase: 'clarification',
+      flowId,
+    });
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : 'Planning failed';
     console.error(`[submitClarificationAndContinue] Error:`, errorMsg);
+    emitTelemetry('pearl.stream_error', {
+      phase: 'clarification',
+      flowId,
+      error: errorMsg,
+    });
 
     handleStreamingEvent(
       { type: 'error', data: { error: errorMsg, recoverable: false } },
@@ -491,6 +529,11 @@ export const useGenerateInitialFlow = (
           onGenerationComplete: params.onGenerationComplete,
         }).catch((err) => {
           console.error('[useGenerateInitialFlow] Stream error:', err);
+          emitTelemetry('pearl.stream_error', {
+            phase: 'initial',
+            flowId,
+            error: err instanceof Error ? err.message : String(err),
+          });
         });
       }
 

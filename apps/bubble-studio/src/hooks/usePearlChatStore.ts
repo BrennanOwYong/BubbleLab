@@ -16,6 +16,7 @@ import type {
   CredentialType,
 } from '@bubblelab/shared-schemas';
 import type { GenerationStreamingEvent } from '../types/generation';
+import { emitTelemetry } from '../lib/telemetry';
 import {
   ParsedBubbleWithInfo,
   cleanUpObjectForDisplayAndStorage,
@@ -373,6 +374,11 @@ export function handleStreamingEvent(
         summary,
         code: generatedCode,
       });
+      emitTelemetry('pearl.generation_complete', {
+        summaryLength: summary.length,
+        codeLength: generatedCode.length,
+        hasBubbleParameters: Boolean(data.bubbleParameters),
+      });
 
       // Add assistant message with the summary
       const assistantMessage: AssistantChatMessage = {
@@ -404,6 +410,11 @@ export function handleStreamingEvent(
         maxRetries: data.maxRetries,
         delay: data.delay,
       });
+      emitTelemetry('pearl.retry_attempt', {
+        attempt: data.attempt,
+        maxRetries: data.maxRetries,
+        delay: data.delay,
+      });
       break;
     }
 
@@ -417,14 +428,35 @@ export function handleStreamingEvent(
         type: 'generation_error',
         message: errorMessage,
       });
+      emitTelemetry('pearl.error_card', { message: errorMessage });
       state.setGenerationCompleted(true);
+      break;
+    }
+
+    case 'stream_complete': {
+      // Previously fully swallowed. stream_complete can carry an error in its
+      // data payload; dropping it hid stream failures from both the UI and
+      // any automated observer. Emit telemetry always, and surface a visible
+      // error card when the payload carries one.
+      const data = (event as { data?: Record<string, unknown> }).data;
+      const streamError =
+        data && typeof data.error === 'string' ? data.error : undefined;
+      emitTelemetry('pearl.stream_complete', {
+        hasError: Boolean(streamError),
+        error: streamError,
+      });
+      if (streamError) {
+        state.addEvent({
+          type: 'generation_error',
+          message: streamError,
+        });
+      }
       break;
     }
 
     case 'complete':
     case 'coffee_complete':
     case 'heartbeat':
-    case 'stream_complete':
       // Ignore these events - they're control signals, not display events
       break;
   }
