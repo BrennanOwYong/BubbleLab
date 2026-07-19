@@ -68,12 +68,24 @@ export type {
 } from './auth/infer-auth-methods.js';
 export {
   IMPLEMENTED_AUTH_KINDS,
+  applyScopeRequirementsToConnectUiSpec,
   bindInferredAuthMethods,
   buildConnectUiSpec,
   resolveAuthChoice,
   strategyForDescriptor,
 } from './auth/connect-ui-spec.js';
 export type { AuthMethodBinding } from './auth/connect-ui-spec.js';
+
+// Export proactive scope audit (IR-6/7)
+export {
+  auditCredentialScopes,
+  collectScopeRequirements,
+  scopeAlternatives,
+} from './utils/scope-audit.js';
+export type {
+  ScopeAuditCallSite,
+  AuditCredentialScopesInput,
+} from './utils/scope-audit.js';
 
 // Export capabilities framework
 export * from './capabilities/index.js';

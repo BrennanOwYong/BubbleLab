@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
+  applyScopeRequirementsToConnectUiSpec,
   buildConnectUiSpec,
   resolveAuthChoice,
   strategyForDescriptor,
 } from './connect-ui-spec.js';
+import type { DiscoveredScopeRequirement } from '@bubblelab/shared-schemas';
 import { SLACK_AUTH_METHODS } from '../bubbles/service-bubble/slack/slack.auth-methods.js';
 import { NOTION_AUTH_METHODS } from '../bubbles/service-bubble/notion/notion.auth-methods.js';
 import { GITHUB_AUTH_METHODS } from '../bubbles/service-bubble/github.auth-methods.js';
@@ -170,6 +172,45 @@ describe('doc-grounding guard — every offered method carries its citation', ()
         confidence: 1,
       })
     ).toThrow('no strategy implementation');
+  });
+
+  it('scope discovery threads into the spec: exactly the required scopes are enabled, unsatisfiable ones appended (IR-6/7)', () => {
+    const spec = buildConnectUiSpec('slack', SLACK_AUTH_METHODS);
+    const requirements: DiscoveredScopeRequirement[] = [
+      {
+        // Satisfied by a scope the picker already offers.
+        scope: 'chat:write',
+        alternatives: ['chat:write'],
+        requiredBy: [
+          { bubbleName: 'slack', variableName: 'notify', operation: 'send_message' },
+        ],
+      },
+      {
+        // No picker scope satisfies it → appended, defaultEnabled, named after its ops.
+        scope: 'workflow.steps:execute',
+        alternatives: ['workflow.steps:execute'],
+        requiredBy: [{ bubbleName: 'slack', operation: 'run_workflow_step' }],
+      },
+    ];
+    const threaded = applyScopeRequirementsToConnectUiSpec(spec, requirements);
+    const oauth = threaded.methods.find((m) => m.kind === 'oauth2');
+    const scopes = oauth?.collect.scopes ?? [];
+    // Exactly the required scopes are enabled; every other curated scope is off.
+    const enabled = scopes.filter((s) => s.defaultEnabled).map((s) => s.scope);
+    expect(enabled.sort()).toEqual(['chat:write', 'workflow.steps:execute']);
+    // The appended entry names the operations that need it.
+    const appended = scopes.find((s) => s.scope === 'workflow.steps:execute');
+    expect(appended?.description).toContain('slack.run_workflow_step');
+    // Non-oauth2 methods and the original spec are untouched.
+    const apiKey = threaded.methods.find((m) => m.kind === 'api_key');
+    expect(apiKey).toEqual(spec.methods.find((m) => m.kind === 'api_key'));
+    expect(
+      spec.methods
+        .find((m) => m.kind === 'oauth2')
+        ?.collect.scopes?.some((s) => s.scope === 'workflow.steps:execute')
+    ).toBe(false);
+    // No requirements → pass-through.
+    expect(applyScopeRequirementsToConnectUiSpec(spec, [])).toBe(spec);
   });
 
   it('postgresql connection-string test enforces the libpq-documented schemes end-to-end', async () => {

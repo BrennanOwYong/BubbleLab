@@ -8,6 +8,7 @@ import {
 import { CredentialType } from './types.js';
 import type { BubbleName } from './types.js';
 import { flowRoleSchema } from './permission-schema.js';
+import { FlowScopeRequirementsSchema } from './scope-audit-schema.js';
 // POST /bubble-flow - Create new BubbleFlow schema (with code)
 export const createBubbleFlowSchema = z
   .object({
@@ -342,6 +343,10 @@ export const bubbleFlowDetailsResponseSchema = z
         description:
           'Optional credentials by bubble (from capability optionalCredentials)',
       }),
+    scopeRequirements: FlowScopeRequirementsSchema.optional().openapi({
+      description:
+        'Per-credential-type OAuth scope requirements discovered from the operations this flow calls (IR-6/7); lets the Connect UI request exactly the scopes the flow needs',
+    }),
     usedCredentials: z.array(usedCredentialSchema).optional().openapi({
       description:
         'Credentials used in this flow with metadata (for shared workflow visibility)',

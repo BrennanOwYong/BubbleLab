@@ -34,6 +34,7 @@ import { useBubbleFlow } from '@/hooks/useBubbleFlow';
 import { useEditor } from '@/hooks/useEditor';
 import { extractParamValue } from '@/utils/bubbleParamEditor';
 import { getAllInlineParamConfigs } from '@/config/bubbleInlineParams';
+import { emitTelemetry } from '@/lib/telemetry';
 
 export interface BubbleNodeData {
   flowId: number;
@@ -448,6 +449,17 @@ function BubbleNode({ data }: BubbleNodeProps) {
   });
 
   const handleCredentialChange = (credType: string, credId: number | null) => {
+    const previousId = selectedBubbleCredentials[credType] ?? null;
+    if (credId !== null && credId !== previousId) {
+      emitTelemetry('setup.credential_switched', {
+        flowId,
+        credentialType: credType,
+        fromCredentialId: previousId,
+        toCredentialId: credId,
+        bubbleKeys: [credentialsKey],
+        source: 'bubble_node',
+      });
+    }
     // Update credential for this bubble
     setCredential(credentialsKey, credType, credId);
 
@@ -905,6 +917,12 @@ function BubbleNode({ data }: BubbleNodeProps) {
                         onChange={(e) => {
                           const val = e.target.value;
                           if (val === '__ADD_NEW__') {
+                            emitTelemetry('setup.add_another_opened', {
+                              flowId,
+                              credentialType: credType,
+                              existingCount: availableForType.length,
+                              source: 'bubble_node',
+                            });
                             setCreateModalForType(credType);
                             return;
                           }

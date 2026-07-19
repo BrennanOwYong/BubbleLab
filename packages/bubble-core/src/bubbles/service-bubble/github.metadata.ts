@@ -15,93 +15,83 @@ import type { BubbleOperationMetadata } from '@bubblelab/shared-schemas';
 
 export const GITHUB_OPERATION_METADATA: BubbleOperationMetadata = {
   get_file: {
-    sideEffect: 'read',
+    sideEffect: "read",
     destructive: false,
     idempotent: true,
     confidence: 0.6,
-    source: 'prose',
-    citation:
-      'https://docs.github.com/en/rest/repos/contents#get-repository-content — "Gets the contents of a file or directory in a repository."',
+    source: "prose",
+    citation: "https://docs.github.com/en/rest/repos/contents#get-repository-content — \"Gets the contents of a file or directory in a repository.\""
   },
   get_directory: {
-    sideEffect: 'read',
+    sideEffect: "read",
     destructive: false,
     idempotent: true,
     confidence: 0.6,
-    source: 'prose',
-    citation:
-      'https://docs.github.com/en/rest/repos/contents#get-repository-content — "Gets the contents of a file or directory in a repository."',
+    source: "prose",
+    citation: "https://docs.github.com/en/rest/repos/contents#get-repository-content — \"Gets the contents of a file or directory in a repository.\""
   },
   list_pull_requests: {
-    sideEffect: 'read',
+    sideEffect: "read",
     destructive: false,
     idempotent: true,
     confidence: 0.6,
-    source: 'prose',
-    citation:
-      'https://docs.github.com/en/rest/pulls/pulls#list-pull-requests — "List pull requests. Lists pull requests in a specified repository."',
+    source: "prose",
+    citation: "https://docs.github.com/en/rest/pulls/pulls#list-pull-requests — \"List pull requests. Lists pull requests in a specified repository.\""
   },
   get_pull_request: {
-    sideEffect: 'read',
+    sideEffect: "read",
     destructive: false,
     idempotent: true,
     confidence: 0.6,
-    source: 'prose',
-    citation:
-      'https://docs.github.com/en/rest/pulls/pulls#get-a-pull-request — "Get a pull request. Lists details of a pull request by providing its number."',
+    source: "prose",
+    citation: "https://docs.github.com/en/rest/pulls/pulls#get-a-pull-request — \"Get a pull request. Lists details of a pull request by providing its number.\""
   },
   create_pr_comment: {
-    sideEffect: 'write',
+    sideEffect: "write",
     destructive: false,
     idempotent: false,
     confidence: 0.6,
-    source: 'prose',
-    citation:
-      'https://docs.github.com/en/rest/issues/comments#create-an-issue-comment — "Create an issue comment. You can use the REST API to create comments on issues and pull requests."',
+    source: "prose",
+    citation: "https://docs.github.com/en/rest/issues/comments#create-an-issue-comment — \"Create an issue comment. You can use the REST API to create comments on issues and pull requests.\""
   },
   list_repositories: {
-    sideEffect: 'read',
+    sideEffect: "read",
     destructive: false,
     idempotent: true,
     confidence: 0.6,
-    source: 'prose',
-    citation:
-      'https://docs.github.com/en/rest/repos/repos#list-repositories-for-the-authenticated-user — "List repositories for the authenticated user. Lists repositories that the authenticated user has explicit permission to access."',
+    source: "prose",
+    citation: "https://docs.github.com/en/rest/repos/repos#list-repositories-for-the-authenticated-user — \"List repositories for the authenticated user. Lists repositories that the authenticated user has explicit permission to access.\""
   },
   get_repository: {
-    sideEffect: 'read',
+    sideEffect: "read",
     destructive: false,
     idempotent: true,
     confidence: 0.6,
-    source: 'prose',
-    citation:
-      'https://docs.github.com/en/rest/repos/repos#get-a-repository — "Get a repository."',
+    source: "prose",
+    citation: "https://docs.github.com/en/rest/repos/repos#get-a-repository — \"Get a repository.\""
   },
   create_issue_comment: {
-    sideEffect: 'write',
+    sideEffect: "write",
     destructive: false,
     idempotent: false,
     confidence: 0.6,
-    source: 'prose',
-    citation:
-      'https://docs.github.com/en/rest/issues/comments#create-an-issue-comment — "Create an issue comment. You can use the REST API to create comments on issues and pull requests."',
+    source: "prose",
+    citation: "https://docs.github.com/en/rest/issues/comments#create-an-issue-comment — \"Create an issue comment. You can use the REST API to create comments on issues and pull requests.\""
   },
   create_issue: {
-    sideEffect: 'write',
+    sideEffect: "write",
     destructive: false,
     idempotent: false,
     confidence: 0.6,
-    source: 'prose',
-    citation:
-      'https://docs.github.com/en/rest/issues/issues#create-an-issue — "Create an issue. Any user with pull access to a repository can create an issue."',
+    source: "prose",
+    citation: "https://docs.github.com/en/rest/issues/issues#create-an-issue — \"Create an issue. Any user with pull access to a repository can create an issue.\""
   },
   list_issues: {
-    sideEffect: 'read',
+    sideEffect: "read",
     destructive: false,
     idempotent: true,
     confidence: 0.6,
-    source: 'prose',
-    citation:
-      'https://docs.github.com/en/rest/issues/issues#list-repository-issues — "List issues in a repository. Only open issues will be listed."',
-  },
+    source: "prose",
+    citation: "https://docs.github.com/en/rest/issues/issues#list-repository-issues — \"List issues in a repository. Only open issues will be listed.\""
+  }
 };
