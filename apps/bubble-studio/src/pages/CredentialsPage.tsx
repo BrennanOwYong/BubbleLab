@@ -664,7 +664,11 @@ export function CreateCredentialModal({
           </h2>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+        <form
+          onSubmit={handleSubmit}
+          autoComplete="off"
+          className="flex flex-col flex-1 min-h-0"
+        >
           <div className="p-6 space-y-4 overflow-y-auto flex-1">
             {error && (
               <div className="bg-red-900/50 border border-red-700 rounded-lg p-3">
@@ -853,8 +857,22 @@ export function CreateCredentialModal({
                   Value *
                 </label>
                 <div className="relative">
+                  {/* Deliberately NOT type="password": a password input inside a
+                      submitted form makes Chrome offer to save the "password".
+                      API keys/tokens must never reach the browser password
+                      manager, so this stays type="text" and masks via CSS
+                      (-webkit-text-security), with explicit opt-outs for the
+                      built-in and extension password managers. */}
                   <input
-                    type={showPassword ? 'text' : 'password'}
+                    type="text"
+                    name="credential-value"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                    data-1p-ignore="true"
+                    data-lpignore="true"
+                    data-bwignore="true"
                     value={formData.value}
                     onChange={(e) =>
                       setFormData((prev) => ({
@@ -867,7 +885,9 @@ export function CreateCredentialModal({
                         formData.credentialType as CredentialType
                       ].placeholder
                     }
-                    className="w-full bg-gray-700 text-gray-100 px-3 py-2 pr-10 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all duration-200"
+                    className={`w-full bg-gray-700 text-gray-100 px-3 py-2 pr-10 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all duration-200${
+                      showPassword ? '' : ' masked-secret'
+                    }`}
                     required
                   />
                   <button
