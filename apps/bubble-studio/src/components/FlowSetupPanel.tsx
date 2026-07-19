@@ -21,9 +21,16 @@ import type {
   DiscoveredScopeRequirement,
 } from '@bubblelab/shared-schemas';
 import { useUIStore } from '../stores/uiStore';
+import { useExecutionStore, getExecutionStore } from '../stores/executionStore';
 import { useBubbleFlow } from '../hooks/useBubbleFlow';
 import { useCredentials, useCreateCredential } from '../hooks/useCredentials';
 import { API_BASE_URL } from '../env';
+import {
+  describeCredentialAccount,
+  getBoundCredentialIdForType,
+  getBubbleKeysRequiringType,
+  getCredentialsOfType,
+} from '../lib/credentialBinding';
 import {
   CreateCredentialModal,
   getServiceNameForCredentialType,
@@ -82,6 +89,12 @@ interface ManifestEntry {
   scopeRequirements: DiscoveredScopeRequirement[];
   /** Granted scopes recorded on the connected credential, when the provider exposes them. */
   grantedScopes?: string[];
+  /** Connected credentials of this exact type (the switchable accounts). */
+  candidates: CredentialResponse[];
+  /** pendingCredentials keys of the steps requiring this type (switch targets). */
+  stepBindingKeys: string[];
+  /** Credential id bound across those steps: id when they agree, null when mixed, undefined when unbound. */
+  boundCredentialId: number | null | undefined;
 }
 
 export function FlowSetupPanel() {
@@ -90,6 +103,10 @@ export function FlowSetupPanel() {
   const { data: credentials = [] } = useCredentials(API_BASE_URL);
   const createCredentialMutation = useCreateCredential();
   const [connectType, setConnectType] = useState<CredentialType | null>(null);
+  const pendingCredentials = useExecutionStore(
+    flowId,
+    (state) => state.pendingCredentials
+  );
 
   const flowScopeRequirements = useMemo<CredentialScopeRequirements[]>(
     () => flow?.scopeRequirements ?? [],
@@ -138,6 +155,20 @@ export function FlowSetupPanel() {
       const scopeEntry = flowScopeRequirements.find((entry) =>
         appTypes.includes(entry.credentialType as CredentialType)
       );
+      // Account binding: exact-type accounts are switchable per flow here
+      // (per step in the bubble node); the binding lives in pendingCredentials
+      // under each step that requires the type.
+      const candidates = getCredentialsOfType(credentials, credentialType);
+      const stepBindingKeys = getBubbleKeysRequiringType(
+        flow?.bubbleParameters ?? {},
+        required,
+        credentialType
+      );
+      const boundCredentialId = getBoundCredentialIdForType(
+        pendingCredentials,
+        stepBindingKeys,
+        credentialType
+      );
       return {
         credentialType,
         steps: [...steps],
@@ -145,9 +176,74 @@ export function FlowSetupPanel() {
         connectedName: match?.name,
         scopeRequirements: scopeEntry?.requirements ?? [],
         grantedScopes: match?.oauthScopes,
+        candidates,
+        stepBindingKeys,
+        boundCredentialId,
       };
     });
-  }, [flow?.requiredCredentials, credentials, flowScopeRequirements]);
+  }, [
+    flow?.requiredCredentials,
+    flow?.bubbleParameters,
+    credentials,
+    flowScopeRequirements,
+    pendingCredentials,
+  ]);
+
+  /** Rebind every step requiring the type to the chosen account. */
+  const switchAccount = (
+    entry: ManifestEntry,
+    toCredential: CredentialResponse,
+    source: 'setup_panel' | 'connect_modal'
+  ) => {
+    if (!flowId || entry.stepBindingKeys.length === 0) return;
+    const store = getExecutionStore(flowId);
+    for (const bubbleKey of entry.stepBindingKeys) {
+      store.setCredential(bubbleKey, entry.credentialType, toCredential.id);
+    }
+    emitTelemetry('setup.credential_switched', {
+      flowId,
+      credentialType: entry.credentialType,
+      fromCredentialId: entry.boundCredentialId ?? null,
+      toCredentialId: toCredential.id,
+      toCredentialName: toCredential.name,
+      bubbleKeys: entry.stepBindingKeys,
+      source,
+    });
+  };
+
+  /** Open the connect flow for one more account of an already-connected type. */
+  const openAddAnother = (entry: ManifestEntry) => {
+    emitTelemetry('setup.add_another_opened', {
+      flowId,
+      credentialType: entry.credentialType,
+      existingCount: entry.candidates.length,
+      source: 'setup_panel',
+    });
+    setConnectType(entry.credentialType);
+  };
+
+  /** A newly connected credential becomes the binding for its type's steps. */
+  const handleCredentialCreated = (created: CredentialResponse) => {
+    const entry = entries.find((candidate) =>
+      getAppCredentialTypes(candidate.credentialType).includes(
+        created.credentialType as CredentialType
+      )
+    );
+    if (!entry) return;
+    switchAccount(
+      {
+        ...entry,
+        credentialType: created.credentialType as CredentialType,
+        stepBindingKeys: getBubbleKeysRequiringType(
+          flow?.bubbleParameters ?? {},
+          flow?.requiredCredentials ?? {},
+          created.credentialType
+        ),
+      },
+      created,
+      'connect_modal'
+    );
+  };
 
   if (!flowId) {
     return (
@@ -223,6 +319,60 @@ export function FlowSetupPanel() {
                     Used by step{entry.steps.length === 1 ? '' : 's'}:{' '}
                     {entry.steps.join(', ')}
                   </p>
+                  {entry.connected && (
+                    <div className="mt-2 flex items-center gap-2 flex-wrap">
+                      {entry.candidates.length >= 2 ? (
+                        <select
+                          title={`Account used for ${entry.credentialType}`}
+                          value={
+                            entry.boundCredentialId !== null &&
+                            entry.boundCredentialId !== undefined
+                              ? String(entry.boundCredentialId)
+                              : ''
+                          }
+                          onChange={(event) => {
+                            const chosen = entry.candidates.find(
+                              (candidate) =>
+                                String(candidate.id) === event.target.value
+                            );
+                            if (chosen) {
+                              switchAccount(entry, chosen, 'setup_panel');
+                            }
+                          }}
+                          className="px-2 py-1 text-[11px] bg-neutral-800 border border-neutral-600 rounded text-gray-200 max-w-[220px]"
+                        >
+                          <option value="" disabled>
+                            {entry.boundCredentialId === null
+                              ? 'Mixed per step — pick one for all'
+                              : 'Choose an account…'}
+                          </option>
+                          {entry.candidates.map((candidate) => (
+                            <option
+                              key={candidate.id}
+                              value={String(candidate.id)}
+                            >
+                              {describeCredentialAccount(candidate)}
+                            </option>
+                          ))}
+                        </select>
+                      ) : entry.candidates.length === 1 ? (
+                        <span
+                          className="text-[11px] text-gray-300 truncate max-w-[220px]"
+                          title="The account this flow uses. Connect another to switch."
+                        >
+                          Account:{' '}
+                          {describeCredentialAccount(entry.candidates[0])}
+                        </span>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => openAddAnother(entry)}
+                        className="text-[11px] text-blue-300 hover:text-blue-200 underline underline-offset-2"
+                      >
+                        + Add another account
+                      </button>
+                    </div>
+                  )}
                   {entry.scopeRequirements.length > 0 && (
                     <div className="mt-1.5">
                       <p className="text-[10px] text-gray-500">
@@ -282,6 +432,7 @@ export function FlowSetupPanel() {
         lockedCredentialType={connectType ?? undefined}
         flowScopeRequirements={flowScopeRequirements}
         flowId={flowId ?? undefined}
+        onSuccess={handleCredentialCreated}
       />
     </div>
   );

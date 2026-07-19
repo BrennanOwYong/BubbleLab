@@ -26,6 +26,7 @@ import { useValidateCode } from '@/hooks/useValidateCode';
 import { useRunExecution } from '@/hooks/useRunExecution';
 import { filterEmptyInputs } from '@/utils/inputUtils';
 import { useRenameFlow } from '@/hooks/useRenameFlow';
+import { useAutoBindCredentials } from '@/hooks/useAutoBindCredentials';
 import { useEffect, useState, useRef } from 'react';
 import { shallow } from 'zustand/shallow';
 import { ApiHttpError } from '@/lib/api';
@@ -184,6 +185,11 @@ export function FlowIDEView({ flowId }: FlowIDEViewProps) {
       }
     }
   }, [currentFlow?.id]);
+
+  // Default credential binding: fill missing per-step credential selections
+  // from the user's connected credentials (declared after the extraction
+  // effect above so saved bindings are restored first and win).
+  useAutoBindCredentials(flowId);
 
   if (isFlowNotFound) {
     return <FlowNotFoundView flowId={flowId} onRetry={() => refetch()} />;

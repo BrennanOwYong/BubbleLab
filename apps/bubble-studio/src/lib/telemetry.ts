@@ -10,6 +10,13 @@
  * - `connect.scopes_preselected`          — Connect UI pre-selected exactly the discovered scopes
  * - `connect.oauth_initiated`             — OAuth popup opened with the final requested scope list
  * - `setup.field_autopopulated`           — a setup input was pre-filled from a saved credential
+ * - `setup.credential_autobound`          — a required credential slot was bound by default to a
+ *                                           connected credential (reason: only_credential |
+ *                                           default_of_many)
+ * - `setup.add_another_opened`            — the add-another-account affordance opened the connect
+ *                                           flow (source: setup_panel | bubble_node)
+ * - `setup.credential_switched`           — the credential bound to one or more steps changed
+ *                                           (source: setup_panel | bubble_node | connect_modal)
  */
 
 export const TELEMETRY_PREFIX = '[bl:telemetry]';
