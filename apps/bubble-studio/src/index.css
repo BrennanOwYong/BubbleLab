@@ -246,3 +246,10 @@ body {
 .Toastify__close-button:hover {
   color: #e6edf3 !important;
 }
+
+/* Masking for secret inputs that must stay type="text" (a type="password"
+   input inside a submitted form makes Chrome offer to save the credential
+   in the password manager — API keys/tokens must never go there). */
+.masked-secret {
+  -webkit-text-security: disc;
+}
