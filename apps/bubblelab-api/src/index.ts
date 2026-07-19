@@ -133,10 +133,13 @@ logMemoryUsage();
 // Log memory usage every 30 seconds
 // setInterval(logMemoryUsage, 30000);
 
-// Print ip address
+// Print ip address (best-effort; must never crash the server on a network failure)
 fetch('https://api.ipify.org?format=json')
   .then((response) => response.json())
-  .then((data) => console.log('Current IP:', (data as { ip: string }).ip));
+  .then((data) => console.log('Current IP:', (data as { ip: string }).ip))
+  .catch((e) =>
+    console.warn('IP lookup failed (non-fatal):', (e as Error)?.message)
+  );
 // Initialize PostHog error tracking
 posthog.init({
   apiKey: env.POSTHOG_API_KEY || '',
