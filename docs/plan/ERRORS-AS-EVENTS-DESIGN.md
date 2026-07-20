@@ -1,7 +1,7 @@
 # Errors as Events — Technical Design
 
 Branch: `feature/errors-as-events` (base `integration/live-testing` @ cdc84d0). Clone: `/home/unix/bubblelab-events`.
-Status: design for review; implementation lands on the branch only, never on main until approved.
+Status: IMPLEMENTED on the branch (pushed); awaiting user review before any merge. Verification results in §7.
 
 The model: every error becomes a first-class TYPED EVENT on one bus. An error event is a condition
 like any other — a declarative policy maps it to a reaction (halt the flow, retry the step, notify,
@@ -312,16 +312,28 @@ For typical flows (≤ dozens of steps) this is noise relative to bubble I/O.
 - `notify` channels beyond stream + webhook (e.g. Telegram bubble reuse): extension point via the
   reactor; the reaction schema already carries `webhookUrl`.
 
-## 7. Verification plan
+## 7. Verification (executed, results)
 
-- Unit (vitest, shared-schemas): schema round-trips, bus subscribe/emit/isolation, `resolveReaction`
-  precedence and AND/OR matching.
-- Unit (vitest, bubble-core): stub bubble — default behavior unchanged with no bus/policy; events
-  emitted for hard error / soft failure / result deviation / success; retry loop honors
-  maxAttempts + then; halt-on-soft-failure throws `FlowHaltedByPolicyError`; continue-on-hard-error
-  returns a failed `BubbleResult`.
-- Regression: full existing `bubble-core` + `bubble-runtime` vitest suites must pass.
-- Build: `shared-schemas → bubble-core → bubble-runtime → api` tsc/build clean.
+- `workflow-events.test.ts` (shared-schemas, vitest): 12/12 pass — schema round-trips + payload
+  narrowing, bus ordering/unsubscribe/handler isolation/malformed-event drop, retry defaults,
+  AND/OR matching, first-match-wins, no-match → undefined.
+- `base-bubble-events.test.ts` (bubble-core, vitest): 19/19 pass — default behavior unchanged with
+  no bus/policy (hard throw, soft warn-and-continue, deviation throw); events emitted at every
+  seam incl. input-schema and schema-diff payload; retry honors maxAttempts + then; halt-on-soft
+  throws `FlowHaltedByPolicyError`; continue-on-hard returns failed `BubbleResult`; per-step rule
+  scoping; trigger_flow haltAfter semantics.
+- `workflow-events.test.ts` (bubblelab-api, bun test): 10/10 pass — policy endpoint (store /
+  reject invalid / clear / 404), persistence rows + GET inspection endpoint, FK-failure isolation,
+  notify reaction recorded, trigger_flow dispatch with depth+1, depth-limit block, stream bridge.
+- Regression: full `shared-schemas` suite 27/27; full `bubble-core` suite 613 pass 2 skip 0 fail;
+  full `bubble-runtime` suite 184 pass 1 skip, 1 fail (`validation/index.test.ts` "yfinance flow")
+  — reproduced identically on pristine base cdc84d0 in the untouched `bubblelab-live` clone:
+  pre-existing, unrelated. Full `bubblelab-api` bun suite run — see RESULT file.
+- Build: shared-schemas (tsup+tsc), bubble-core (tsc+bundlers), bubble-runtime (tsc), bubblelab-api
+  (`bun build`) all exit 0; `tsc --noEmit` clean on bubble-core, bubble-runtime, bubblelab-api.
+- Migrations: drizzle-kit generated `0018_clammy_quasimodo.sql` (sqlite) +
+  `0018_petite_mephistopheles.sql` (postgres); applied by the API test setup's migrator during the
+  bun suite (workflow_events rows written and read back).
 
 ## References
 
