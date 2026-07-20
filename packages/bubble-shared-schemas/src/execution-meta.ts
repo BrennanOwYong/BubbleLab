@@ -1,5 +1,9 @@
 import type { ZodTypeAny } from 'zod';
 import type { BubbleOperationResult } from './mock-data-generator.js';
+import type {
+  WorkflowEventBus,
+  WorkflowEventPolicy,
+} from './workflow-events.js';
 
 /** Identity of the bubble invocation asking for a recorded response (test mode). */
 export interface RecordedMockLookup {
@@ -132,6 +136,19 @@ export interface ExecutionMeta {
   approvedWriteCallSites?: string[];
   /** Contract KB seam: recorded real responses served as test-mode mocks. */
   recordedMockProvider?: RecordedMockProvider;
+  /**
+   * Errors-as-events: per-execution bus every bubble emits typed
+   * WorkflowEvents on. Rides the existing context injection the same way
+   * testMode/recordedMockProvider do (parameter-formatter context literal).
+   */
+  eventBus?: WorkflowEventBus;
+  /**
+   * Errors-as-events: the user-declared reaction policy (per flow/step).
+   * Consulted by BaseBubble.action() for halt/continue/retry and by the
+   * API-layer reactor for notify/trigger_flow. Absent policy = behavior
+   * identical to before this feature.
+   */
+  eventPolicy?: WorkflowEventPolicy;
   // Forward compat
   [key: string]: unknown;
 }

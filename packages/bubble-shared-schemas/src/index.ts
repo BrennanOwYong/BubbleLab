@@ -32,6 +32,7 @@ export * from './permission-schema.js';
 export * from './organization-schema.js';
 export * from './capability-schema.js';
 export * from './execution-meta.js';
+export * from './workflow-events.js';
 export * from './operation-metadata-schema.js';
 export * from './auth-method-schema.js';
 export * from './scope-audit-schema.js';
