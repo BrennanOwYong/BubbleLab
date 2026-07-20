@@ -26,6 +26,11 @@ export const oauthInitiateRequestSchema = z
         'Subdomain for providers that require subdomain-scoped OAuth (e.g. Zendesk)',
       example: 'mycompany',
     }),
+    credentialId: z.number().int().positive().optional().openapi({
+      description:
+        'Incremental re-consent target: the existing OAuth credential to ADD the requested scopes to. The callback updates this row (token + scope union) instead of inserting a new credential. Google authorization runs with include_granted_scopes=true so the returned token accumulates previously granted scopes.',
+      example: 42,
+    }),
   })
   .openapi('OAuthInitiateRequest');
 
@@ -83,6 +88,69 @@ export const oauthRevokeResponseSchema = z
     }),
   })
   .openapi('OAuthRevokeResponse');
+
+// ========================= Scope check (suite-aware binding) =========================
+
+/**
+ * One scope requirement to verify against a credential's granted scopes.
+ * Mirrors the scope-audit encoding: the requirement is satisfied when the
+ * grant set contains ANY of `alternatives`.
+ */
+export const scopeCheckRequirementSchema = z
+  .object({
+    scope: z.string().openapi({
+      description:
+        "The requirement as declared (alternatives joined with '|'); satisfied by any one alternative",
+      example: 'https://www.googleapis.com/auth/spreadsheets',
+    }),
+    alternatives: z
+      .array(z.string())
+      .min(1)
+      .openapi({
+        description: 'The individual scopes that each satisfy this requirement',
+        example: ['https://www.googleapis.com/auth/spreadsheets'],
+      }),
+  })
+  .openapi('ScopeCheckRequirement');
+
+// POST /credentials/:id/scope-check request
+export const credentialScopeCheckRequestSchema = z
+  .object({
+    requirements: z.array(scopeCheckRequirementSchema).openapi({
+      description:
+        'Scope requirements to verify (from flow scope discovery). May be empty to probe granted scopes only.',
+    }),
+  })
+  .openapi('CredentialScopeCheckRequest');
+
+// POST /credentials/:id/scope-check response
+export const credentialScopeCheckResponseSchema = z
+  .object({
+    satisfied: z.boolean().openapi({
+      description:
+        'Whether the granted scopes cover every requirement (any-of per requirement)',
+    }),
+    grantedScopes: z.array(z.string()).openapi({
+      description:
+        "Scopes actually granted on the credential's token, from a live provider probe when possible",
+    }),
+    missing: z.array(scopeCheckRequirementSchema).openapi({
+      description: 'Requirements the granted scopes do not cover',
+    }),
+    source: z.enum(['probe', 'stored']).openapi({
+      description:
+        "'probe' = granted scopes read live from the provider (Google tokeninfo) and synced to storage; 'stored' = probe unavailable, recorded grants used",
+    }),
+  })
+  .openapi('CredentialScopeCheckResponse');
+
+export type ScopeCheckRequirement = z.infer<typeof scopeCheckRequirementSchema>;
+export type CredentialScopeCheckRequest = z.infer<
+  typeof credentialScopeCheckRequestSchema
+>;
+export type CredentialScopeCheckResponse = z.infer<
+  typeof credentialScopeCheckResponseSchema
+>;
 
 // Export OAuth TypeScript types
 export type OAuthInitiateRequest = z.infer<typeof oauthInitiateRequestSchema>;

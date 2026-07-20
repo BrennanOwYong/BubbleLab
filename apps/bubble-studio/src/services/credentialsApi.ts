@@ -6,6 +6,8 @@ import type {
   BrowserbaseSessionCreateResponse,
   BrowserbaseSessionCompleteResponse,
   BrowserbaseSessionReopenResponse,
+  CredentialScopeCheckResponse,
+  ScopeCheckRequirement,
 } from '@bubblelab/shared-schemas';
 
 export const credentialsApi = {
@@ -17,7 +19,8 @@ export const credentialsApi = {
     provider: string,
     credentialType: string,
     name?: string,
-    scopes?: string[]
+    scopes?: string[],
+    credentialId?: number
   ): Promise<{ authUrl: string; state: string }> => {
     return api.post<{ authUrl: string; state: string }>(
       `/oauth/${provider}/initiate`,
@@ -25,7 +28,25 @@ export const credentialsApi = {
         credentialType,
         name,
         scopes,
+        // Incremental re-consent: ADD the scopes to this existing credential
+        // (the callback updates the row instead of inserting a new one).
+        credentialId,
       }
+    );
+  },
+
+  /**
+   * Verify a credential's GRANTED scopes against scope requirements. The API
+   * probes the provider live when possible (Google tokeninfo) and syncs the
+   * probed grants into storage; `source` says which path answered.
+   */
+  checkCredentialScopes: async (
+    credentialId: number,
+    requirements: ScopeCheckRequirement[]
+  ): Promise<CredentialScopeCheckResponse> => {
+    return api.post<CredentialScopeCheckResponse>(
+      `/credentials/${credentialId}/scope-check`,
+      { requirements }
     );
   },
 

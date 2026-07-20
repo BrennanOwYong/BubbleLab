@@ -6,6 +6,8 @@ import type {
 } from '@bubblelab/shared-schemas';
 import {
   computeAutoBindings,
+  computeSuiteBindingProposals,
+  getProviderSuiteCandidates,
   pickDefaultCredential,
   getBubbleKeysRequiringType,
   getBoundCredentialIdForType,
@@ -197,5 +199,121 @@ describe('setup-panel binding helpers', () => {
         CredentialType.GMAIL_CRED
       )
     ).toBeNull();
+  });
+});
+
+describe('computeSuiteBindingProposals (same OAuth provider, sibling type)', () => {
+  const oauthDrive = credential({
+    id: 20,
+    name: 'Drive (work)',
+    credentialType: CredentialType.GOOGLE_DRIVE_CRED,
+    isOauth: true,
+    createdAt: '2026-07-10T00:00:00.000Z',
+  });
+  const oauthGmail = credential({
+    id: 21,
+    name: 'Gmail (work)',
+    credentialType: CredentialType.GMAIL_CRED,
+    isOauth: true,
+    createdAt: '2026-07-12T00:00:00.000Z',
+  });
+  const sheetsFlow = {
+    bubbleParameters: { '5': bubble(5, 'google-sheets') },
+    requiredCredentials: { '5': [CredentialType.GOOGLE_SHEETS_CRED] },
+  };
+
+  it('proposes a sibling Google credential for a slot with no exact-type match', () => {
+    const proposals = computeSuiteBindingProposals({
+      ...sheetsFlow,
+      pendingCredentials: {},
+      credentials: [oauthDrive],
+    });
+    expect(proposals).toEqual([
+      {
+        bubbleKey: '5',
+        requiredCredentialType: CredentialType.GOOGLE_SHEETS_CRED,
+        provider: 'google',
+        credentialId: 20,
+        credentialName: 'Drive (work)',
+        sourceCredentialType: CredentialType.GOOGLE_DRIVE_CRED,
+        candidateCount: 1,
+      },
+    ]);
+  });
+
+  it('defers to the exact-type path when an exact-type credential exists', () => {
+    const exactSheets = credential({
+      id: 22,
+      credentialType: CredentialType.GOOGLE_SHEETS_CRED,
+      isOauth: true,
+    });
+    const proposals = computeSuiteBindingProposals({
+      ...sheetsFlow,
+      pendingCredentials: {},
+      credentials: [oauthDrive, exactSheets],
+    });
+    expect(proposals).toEqual([]);
+  });
+
+  it('never overrides an existing per-step selection', () => {
+    const proposals = computeSuiteBindingProposals({
+      ...sheetsFlow,
+      pendingCredentials: {
+        '5': { [CredentialType.GOOGLE_SHEETS_CRED]: 99 },
+      },
+      credentials: [oauthDrive],
+    });
+    expect(proposals).toEqual([]);
+  });
+
+  it('picks the most recently created sibling when several exist', () => {
+    const proposals = computeSuiteBindingProposals({
+      ...sheetsFlow,
+      pendingCredentials: {},
+      credentials: [oauthDrive, oauthGmail],
+    });
+    expect(proposals).toHaveLength(1);
+    expect(proposals[0].credentialId).toBe(21);
+    expect(proposals[0].candidateCount).toBe(2);
+  });
+
+  it('ignores non-OAuth rows and non-provider-grouped types (exact-match only)', () => {
+    const pastedSlackBot = credential({
+      id: 23,
+      credentialType: CredentialType.SLACK_API,
+    });
+    const nonOauthDrive = credential({
+      id: 24,
+      credentialType: CredentialType.GOOGLE_DRIVE_CRED,
+    });
+    expect(
+      computeSuiteBindingProposals({
+        ...sheetsFlow,
+        pendingCredentials: {},
+        credentials: [pastedSlackBot, nonOauthDrive],
+      })
+    ).toEqual([]);
+    // A slot of a single-type provider group (slack) never gets suite proposals.
+    expect(
+      computeSuiteBindingProposals({
+        bubbleParameters: { '7': bubble(7, 'slack') },
+        requiredCredentials: { '7': [CredentialType.SLACK_CRED] },
+        pendingCredentials: {},
+        credentials: [oauthDrive, oauthGmail],
+      })
+    ).toEqual([]);
+  });
+
+  it('getProviderSuiteCandidates excludes the exact type itself', () => {
+    const exactSheets = credential({
+      id: 25,
+      credentialType: CredentialType.GOOGLE_SHEETS_CRED,
+      isOauth: true,
+    });
+    const candidates = getProviderSuiteCandidates(
+      [oauthDrive, exactSheets],
+      CredentialType.GOOGLE_SHEETS_CRED
+    );
+    expect(candidates.map((c) => c.id)).toEqual([20]);
   });
 });

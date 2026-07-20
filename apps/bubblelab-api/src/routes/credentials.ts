@@ -17,7 +17,10 @@ import {
   updateCredentialRoute,
   deleteCredentialRoute,
   getCredentialMetadataRoute,
+  credentialScopeCheckRoute,
 } from '../schemas/credentials.js';
+import type { CredentialScopeCheckResponse } from '../schemas/index.js';
+import { oauthService } from '../services/oauth-service.js';
 import {
   setupErrorHandler,
   validationErrorHook,
@@ -28,6 +31,51 @@ const app = new OpenAPIHono({
   defaultHook: validationErrorHook,
 });
 setupErrorHandler(app);
+
+/**
+ * Scope comparison key, mirroring the scope audit's normalization: trims whitespace and a
+ * trailing '/' so 'https://mail.google.com/' equals 'https://mail.google.com'. Case is
+ * preserved — OAuth scope strings are case-sensitive per RFC 6749 §3.3.
+ */
+function normalizeScope(scope: string): string {
+  const trimmed = scope.trim();
+  return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
+}
+
+// POST /credentials/:id/scope-check — verify a credential's GRANTED scopes (live Google
+// tokeninfo probe when possible, stored grants otherwise) against the flow's requirements.
+// Serves suite-aware binding: a same-provider credential of a different type binds only
+// when this check confirms coverage; otherwise the missing requirements drive incremental
+// re-consent.
+app.openapi(credentialScopeCheckRoute, async (c) => {
+  const userId = getUserId(c);
+  const credentialId = parseInt(c.req.valid('param').id, 10);
+  const { requirements } = c.req.valid('json');
+
+  const granted = await oauthService.checkGrantedScopes(userId, credentialId);
+  if (!granted) {
+    return c.json(
+      { error: 'Credential not found or not an OAuth credential' },
+      404
+    );
+  }
+
+  const grantedSet = new Set(granted.grantedScopes.map(normalizeScope));
+  const missing = requirements.filter(
+    (requirement) =>
+      !requirement.alternatives.some((alternative) =>
+        grantedSet.has(normalizeScope(alternative))
+      )
+  );
+
+  const response: CredentialScopeCheckResponse = {
+    satisfied: missing.length === 0,
+    grantedScopes: granted.grantedScopes,
+    missing,
+    source: granted.source,
+  };
+  return c.json(response, 200);
+});
 
 app.openapi(listCredentialsRoute, async (c) => {
   const userId = getUserId(c);

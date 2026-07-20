@@ -41,7 +41,8 @@ app.openapi(oauthInitiateRoute, async (c) => {
       userId,
       body.credentialType,
       body.name,
-      body.scopes
+      body.scopes,
+      body.credentialId
     );
 
     return c.json(result, 200);

@@ -8,7 +8,64 @@ import {
   updateCredentialResponseSchema,
   successMessageResponseSchema,
   databaseMetadataSchema,
+  credentialScopeCheckRequestSchema,
+  credentialScopeCheckResponseSchema,
 } from './index.js';
+
+// POST /credentials/:id/scope-check - Verify granted scopes against requirements
+// (suite-aware binding: a Google credential of one type can serve a step of a sibling
+// type once its granted scopes cover the step's requirements).
+export const credentialScopeCheckRoute = createRoute({
+  method: 'post',
+  path: '/{id}/scope-check',
+  request: {
+    params: z.object({
+      id: z
+        .string()
+        .regex(/^[0-9]+$/)
+        .openapi({
+          description: 'Credential ID',
+          example: '123',
+        }),
+    }),
+    body: {
+      content: {
+        'application/json': {
+          schema: credentialScopeCheckRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: credentialScopeCheckResponseSchema,
+        },
+      },
+      description:
+        'Granted scopes verified (live probe when the provider supports it) and diffed against the requirements',
+    },
+    404: {
+      content: {
+        'application/json': {
+          schema: errorResponseSchema,
+        },
+      },
+      description:
+        'Credential not found, not owned, or not an OAuth credential',
+    },
+    500: {
+      content: {
+        'application/json': {
+          schema: errorResponseSchema,
+        },
+      },
+      description: 'Internal server error',
+    },
+  },
+  tags: ['Credentials'],
+});
 
 // GET /credentials - List user's credentials
 export const listCredentialsRoute = createRoute({

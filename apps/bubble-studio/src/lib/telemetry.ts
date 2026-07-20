@@ -17,6 +17,17 @@
  *                                           flow (source: setup_panel | bubble_node)
  * - `setup.credential_switched`           — the credential bound to one or more steps changed
  *                                           (source: setup_panel | bubble_node | connect_modal)
+ * - `setup.suite_binding_proposed`        — a same-OAuth-provider credential of a sibling type
+ *                                           was proposed for a slot no exact-type credential
+ *                                           can fill (pending granted-scope verification)
+ * - `setup.scope_check_passed`            — the proposed credential's granted scopes cover the
+ *                                           steps' requirements; the suite binding was applied
+ *                                           (source: probe | stored)
+ * - `setup.scope_check_insufficient`      — granted scopes do NOT cover the requirements; the
+ *                                           missing scopes drive incremental re-consent
+ * - `setup.incremental_consent_started`   — the user launched incremental OAuth re-consent to
+ *                                           ADD the missing scopes to the existing credential
+ * - `setup.incremental_consent_completed` — the re-consent popup finished (success: boolean)
  */
 
 export const TELEMETRY_PREFIX = '[bl:telemetry]';

@@ -27,6 +27,7 @@ import { useRunExecution } from '@/hooks/useRunExecution';
 import { filterEmptyInputs } from '@/utils/inputUtils';
 import { useRenameFlow } from '@/hooks/useRenameFlow';
 import { useAutoBindCredentials } from '@/hooks/useAutoBindCredentials';
+import { useSuiteBindings } from '@/hooks/useSuiteBindings';
 import { useEffect, useState, useRef } from 'react';
 import { shallow } from 'zustand/shallow';
 import { ApiHttpError } from '@/lib/api';
@@ -190,6 +191,12 @@ export function FlowIDEView({ flowId }: FlowIDEViewProps) {
   // from the user's connected credentials (declared after the extraction
   // effect above so saved bindings are restored first and win).
   useAutoBindCredentials(flowId);
+
+  // Suite-aware binding: slots no exact-type credential can fill may be served
+  // by a sibling-type credential of the same OAuth provider (e.g. a Google
+  // Drive credential for a Sheets step) — bound only after its granted scopes
+  // are verified against the steps' requirements.
+  useSuiteBindings(flowId);
 
   if (isFlowNotFound) {
     return <FlowNotFoundView flowId={flowId} onRetry={() => refetch()} />;

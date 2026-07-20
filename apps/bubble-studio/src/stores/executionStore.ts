@@ -6,6 +6,28 @@ import type {
 } from '@bubblelab/shared-schemas';
 
 /**
+ * Suite-aware binding: outcome of checking a same-OAuth-provider credential's
+ * GRANTED scopes against the scopes a step of a different credential type
+ * requires (e.g. a Google Drive credential proposed for a Google Sheets step).
+ */
+export interface SuiteBindingState {
+  /** The proposed credential row. */
+  credentialId: number;
+  credentialName?: string;
+  /** The credential row's own type (e.g. GOOGLE_DRIVE_CRED). */
+  sourceCredentialType: string;
+  /** The type the step requires (e.g. GOOGLE_SHEETS_CRED) — the binding key. */
+  requiredCredentialType: string;
+  status: 'checking' | 'verified' | 'insufficient' | 'error';
+  /** Scopes the provider reports as granted (probe) or the recorded grants (stored). */
+  grantedScopes?: string[];
+  /** Requirements the granted scopes do not cover (drives incremental re-consent). */
+  missing?: Array<{ scope: string; alternatives: string[] }>;
+  /** Where the granted scopes came from: live provider probe vs stored record. */
+  checkSource?: 'probe' | 'stored';
+}
+
+/**
  * Result of processing an execution event.
  * Contains information the caller can use for UI updates.
  */
@@ -115,6 +137,20 @@ export interface FlowExecutionState {
    * Key: bubble name, Value: { credentialType: credentialId }
    */
   pendingCredentials: Record<string, Record<string, number>>;
+
+  /**
+   * Suite-aware binding state per REQUIRED credential type: a same-OAuth-provider
+   * credential of a different type (e.g. a Google Drive credential proposed for a
+   * Google Sheets step) goes through a granted-scope check before it may bind.
+   * Key: required credential type.
+   */
+  suiteBindings: Record<string, SuiteBindingState>;
+
+  /**
+   * Bumped after incremental re-consent completes so the suite-binding hook
+   * re-probes granted scopes for 'insufficient' entries.
+   */
+  suiteRecheckNonce: number;
 
   // ============= Streaming State =============
 
@@ -287,6 +323,16 @@ export interface FlowExecutionState {
     credentials: Record<string, Record<string, number>>
   ) => void;
 
+  /**
+   * Record suite-binding scope-check state for a required credential type
+   */
+  setSuiteBinding: (credentialType: string, state: SuiteBindingState) => void;
+
+  /**
+   * Request a re-probe of granted scopes for suite bindings (after re-consent)
+   */
+  bumpSuiteRecheck: () => void;
+
   // ============= Actions - Streaming State =============
 
   /**
@@ -436,6 +482,8 @@ function createExecutionStore(flowId: number) {
       bubbleResults: {},
       executionInputs: {},
       pendingCredentials: {},
+      suiteBindings: {},
+      suiteRecheckNonce: 0,
       expandedRootIds: [],
       suppressedRootIds: [],
       isConnected: false,
@@ -551,6 +599,17 @@ function createExecutionStore(flowId: number) {
         })),
 
       setInputs: (inputs) => set({ executionInputs: inputs }),
+
+      setSuiteBinding: (credentialType, bindingState) =>
+        set((state) => ({
+          suiteBindings: {
+            ...state.suiteBindings,
+            [credentialType]: bindingState,
+          },
+        })),
+
+      bumpSuiteRecheck: () =>
+        set((state) => ({ suiteRecheckNonce: state.suiteRecheckNonce + 1 })),
 
       setCredential: (bubbleName, credType, credId) =>
         set((state) => {
@@ -836,6 +895,8 @@ function createExecutionStore(flowId: number) {
           completedBubbles: {},
           executionInputs: {},
           pendingCredentials: {},
+          suiteBindings: {},
+          suiteRecheckNonce: 0,
           expandedRootIds: [],
           suppressedRootIds: [],
           isConnected: false,
@@ -948,6 +1009,8 @@ const emptyState: FlowExecutionState = {
   bubbleResults: {},
   executionInputs: {},
   pendingCredentials: {},
+  suiteBindings: {},
+  suiteRecheckNonce: 0,
   expandedRootIds: [],
   suppressedRootIds: [],
   isConnected: false,
@@ -978,6 +1041,8 @@ const emptyState: FlowExecutionState = {
   setCredential: () => {},
   setBubbleCredentials: () => {},
   setAllCredentials: () => {},
+  setSuiteBinding: () => {},
+  bumpSuiteRecheck: () => {},
   addEvent: () => {},
   setCurrentLine: () => {},
   setConnected: () => {},

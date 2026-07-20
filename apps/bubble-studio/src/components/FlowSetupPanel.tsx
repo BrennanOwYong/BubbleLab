@@ -7,6 +7,12 @@
  * each credential type must cover, derived per operation from doc-grounded metadata. The
  * panel displays them ("what this tool needs and which step needs it") and threads them into
  * the Connect modal so the OAuth consent requests exactly those scopes.
+ *
+ * Suite-aware binding: when no exact/app-type credential is connected but a sibling-type
+ * credential of the same OAuth provider exists (useSuiteBindings), the panel shows its
+ * granted-scope check outcome — green "Verified" when the live-probed grant covers the
+ * steps' requirements, or the exact missing permissions plus a "Grant missing permissions"
+ * button that runs INCREMENTAL re-consent on the SAME credential (no new credential row).
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CheckCircleIcon, KeyIcon } from '@heroicons/react/24/outline';
@@ -14,14 +20,17 @@ import {
   CredentialType,
   CREDENTIAL_TYPE_CONFIG,
   SYSTEM_CREDENTIALS,
+  getOAuthProvider,
 } from '@bubblelab/shared-schemas';
 import type {
   CredentialResponse,
   CredentialScopeRequirements,
   DiscoveredScopeRequirement,
 } from '@bubblelab/shared-schemas';
+import { useQueryClient } from '@tanstack/react-query';
 import { useUIStore } from '../stores/uiStore';
 import { useExecutionStore, getExecutionStore } from '../stores/executionStore';
+import type { SuiteBindingState } from '../stores/executionStore';
 import { useBubbleFlow } from '../hooks/useBubbleFlow';
 import { useCredentials, useCreateCredential } from '../hooks/useCredentials';
 import { API_BASE_URL } from '../env';
@@ -31,6 +40,8 @@ import {
   getBubbleKeysRequiringType,
   getCredentialsOfType,
 } from '../lib/credentialBinding';
+import { describeMissingScope } from '../hooks/useSuiteBindings';
+import { runIncrementalConsent } from '../lib/incrementalConsent';
 import {
   CreateCredentialModal,
   getServiceNameForCredentialType,
@@ -95,6 +106,11 @@ interface ManifestEntry {
   stepBindingKeys: string[];
   /** Credential id bound across those steps: id when they agree, null when mixed, undefined when unbound. */
   boundCredentialId: number | null | undefined;
+  /**
+   * Suite-aware binding state: a same-OAuth-provider credential of a sibling
+   * type proposed for this type, with its granted-scope check outcome.
+   */
+  suite?: SuiteBindingState;
 }
 
 export function FlowSetupPanel() {
@@ -103,9 +119,16 @@ export function FlowSetupPanel() {
   const { data: credentials = [] } = useCredentials(API_BASE_URL);
   const createCredentialMutation = useCreateCredential();
   const [connectType, setConnectType] = useState<CredentialType | null>(null);
+  const [grantingType, setGrantingType] = useState<string | null>(null);
+  const [grantError, setGrantError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
   const pendingCredentials = useExecutionStore(
     flowId,
     (state) => state.pendingCredentials
+  );
+  const suiteBindings = useExecutionStore(
+    flowId,
+    (state) => state.suiteBindings
   );
 
   const flowScopeRequirements = useMemo<CredentialScopeRequirements[]>(
@@ -169,16 +192,21 @@ export function FlowSetupPanel() {
         stepBindingKeys,
         credentialType
       );
+      // Suite-aware state: relevant only while no exact/app-type credential is
+      // connected — a sibling-type credential of the same OAuth provider may
+      // serve the steps once its granted scopes are verified.
+      const suite = match ? undefined : suiteBindings[credentialType];
       return {
         credentialType,
         steps: [...steps],
         connected: !!match,
         connectedName: match?.name,
         scopeRequirements: scopeEntry?.requirements ?? [],
-        grantedScopes: match?.oauthScopes,
+        grantedScopes: match?.oauthScopes ?? suite?.grantedScopes,
         candidates,
         stepBindingKeys,
         boundCredentialId,
+        suite,
       };
     });
   }, [
@@ -187,6 +215,7 @@ export function FlowSetupPanel() {
     credentials,
     flowScopeRequirements,
     pendingCredentials,
+    suiteBindings,
   ]);
 
   /** Rebind every step requiring the type to the chosen account. */
@@ -220,6 +249,56 @@ export function FlowSetupPanel() {
       source: 'setup_panel',
     });
     setConnectType(entry.credentialType);
+  };
+
+  /**
+   * Incremental re-consent: ADD the missing scopes to the proposed
+   * same-provider credential's existing grant (no new credential row), then
+   * refetch credentials and re-probe so the suite binding can verify.
+   */
+  const handleGrantMissing = async (entry: ManifestEntry) => {
+    const suite = entry.suite;
+    if (!flowId || !suite || !suite.missing || suite.missing.length === 0) {
+      return;
+    }
+    const provider = getOAuthProvider(entry.credentialType);
+    if (!provider) return;
+    // One canonical scope per missing requirement (the first alternative).
+    const scopes = suite.missing.map(
+      (requirement) => requirement.alternatives[0]
+    );
+    setGrantingType(entry.credentialType);
+    setGrantError(null);
+    emitTelemetry('setup.incremental_consent_started', {
+      flowId,
+      credentialType: entry.credentialType,
+      credentialId: suite.credentialId,
+      provider,
+      scopes,
+    });
+    try {
+      const result = await runIncrementalConsent({
+        provider,
+        credentialId: suite.credentialId,
+        credentialType: suite.sourceCredentialType,
+        scopes,
+      });
+      emitTelemetry('setup.incremental_consent_completed', {
+        flowId,
+        credentialType: entry.credentialType,
+        credentialId: suite.credentialId,
+        success: result.success,
+        error: result.error,
+      });
+      if (result.success) {
+        queryClient.invalidateQueries({ queryKey: ['credentials'] });
+        getExecutionStore(flowId).bumpSuiteRecheck();
+      } else {
+        setGrantError(result.error ?? 'Re-consent failed');
+      }
+    } finally {
+      setGrantingType(null);
+    }
   };
 
   /** A newly connected credential becomes the binding for its type's steps. */
@@ -259,7 +338,11 @@ export function FlowSetupPanel() {
     );
   }
 
-  const missingCount = entries.filter((e) => !e.connected).length;
+  // Suite-verified entries are satisfied: a same-provider credential is bound
+  // and its granted scopes were verified to cover the steps' requirements.
+  const missingCount = entries.filter(
+    (e) => !e.connected && e.suite?.status !== 'verified'
+  ).length;
 
   return (
     <div className="h-full overflow-y-auto bg-[#1a1a1a] p-4">
@@ -308,6 +391,28 @@ export function FlowSetupPanel() {
                         <CheckCircleIcon className="h-3 w-3" />
                         Connected
                         {entry.connectedName ? ` (${entry.connectedName})` : ''}
+                      </span>
+                    ) : entry.suite?.status === 'verified' ? (
+                      <span
+                        className="flex items-center gap-1 text-[10px] px-2 py-0.5 bg-green-500/20 text-green-300 rounded-full border border-green-500/30"
+                        title={`Bound to your ${entry.suite.sourceCredentialType} account — its granted permissions were verified live to cover every scope these steps need.`}
+                      >
+                        <CheckCircleIcon className="h-3 w-3" />
+                        Verified
+                        {entry.suite.credentialName
+                          ? ` (${entry.suite.credentialName})`
+                          : ''}
+                      </span>
+                    ) : entry.suite?.status === 'checking' ? (
+                      <span className="text-[10px] px-2 py-0.5 bg-neutral-700/50 text-gray-300 rounded-full border border-neutral-600">
+                        Checking permissions…
+                      </span>
+                    ) : entry.suite?.status === 'insufficient' ? (
+                      <span
+                        className="text-[10px] px-2 py-0.5 bg-amber-500/20 text-amber-300 rounded-full border border-amber-500/30"
+                        title={`Your ${entry.suite.sourceCredentialType} account is the same sign-in, but its grant is missing permissions these steps need.`}
+                      >
+                        Missing permissions
                       </span>
                     ) : (
                       <span className="text-[10px] px-2 py-0.5 bg-amber-500/20 text-amber-300 rounded-full border border-amber-500/30">
@@ -382,10 +487,15 @@ export function FlowSetupPanel() {
                         {entry.scopeRequirements.map((requirement) => {
                           const granted = isRequirementGranted(
                             requirement,
-                            entry.connected ? entry.grantedScopes : undefined
+                            entry.connected || entry.suite
+                              ? entry.grantedScopes
+                              : undefined
                           );
                           const missingOnConnected =
-                            entry.connected && granted === false;
+                            (entry.connected ||
+                              entry.suite?.status === 'insufficient' ||
+                              entry.suite?.status === 'verified') &&
+                            granted === false;
                           return (
                             <span
                               key={requirement.scope}
@@ -408,8 +518,50 @@ export function FlowSetupPanel() {
                       </div>
                     </div>
                   )}
+                  {entry.suite?.status === 'insufficient' &&
+                    entry.suite.missing &&
+                    entry.suite.missing.length > 0 && (
+                      <div className="mt-2 rounded border border-amber-500/30 bg-amber-500/10 p-2">
+                        <p className="text-[11px] text-amber-200">
+                          Your{' '}
+                          {entry.suite.credentialName ??
+                            entry.suite.sourceCredentialType}{' '}
+                          account is the same sign-in but is missing:
+                        </p>
+                        <ul className="mt-1 space-y-0.5">
+                          {entry.suite.missing.map((requirement) => (
+                            <li
+                              key={requirement.scope}
+                              className="text-[10px] text-amber-300"
+                              title={requirement.alternatives[0]}
+                            >
+                              •{' '}
+                              {describeMissingScope(
+                                entry.credentialType,
+                                requirement.alternatives[0]
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                        <button
+                          type="button"
+                          disabled={grantingType === entry.credentialType}
+                          onClick={() => void handleGrantMissing(entry)}
+                          className="mt-2 px-3 py-1 bg-amber-400 text-black hover:bg-amber-300 disabled:opacity-60 rounded-full text-[11px] font-medium transition-colors"
+                        >
+                          {grantingType === entry.credentialType
+                            ? 'Waiting for Google…'
+                            : 'Grant missing permissions'}
+                        </button>
+                        {grantError && grantingType === null && (
+                          <p className="mt-1 text-[10px] text-red-400">
+                            {grantError}
+                          </p>
+                        )}
+                      </div>
+                    )}
                 </div>
-                {!entry.connected && (
+                {!entry.connected && entry.suite?.status !== 'verified' && (
                   <button
                     type="button"
                     onClick={() => setConnectType(entry.credentialType)}

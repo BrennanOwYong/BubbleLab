@@ -2783,6 +2783,28 @@ export function isOAuthCredential(credentialType: CredentialType): boolean {
 }
 
 /**
+ * All credential types issued by the same OAuth provider as `credentialType`
+ * (self included). One provider login mints ONE token whose scopes decide
+ * capability across every type in the group — e.g. the `google` provider group
+ * is GOOGLE_DRIVE_CRED, GMAIL_CRED, GOOGLE_SHEETS_CRED, GOOGLE_CALENDAR_CRED,
+ * so a Drive credential can satisfy a Sheets step once its granted scopes
+ * cover the Sheets requirements. Returns `[credentialType]` for types outside
+ * any OAuth provider (API keys, tokens) — those stay exact-match.
+ */
+export function getOAuthProviderGroupTypes(
+  credentialType: CredentialType
+): CredentialType[] {
+  const provider = getOAuthProvider(credentialType);
+  if (!provider) {
+    return [credentialType];
+  }
+  return Object.keys(OAUTH_PROVIDERS[provider].credentialTypes).filter(
+    (type): type is CredentialType =>
+      Object.values(CredentialType).includes(type as CredentialType)
+  );
+}
+
+/**
  * Get scope descriptions for a specific credential type
  * Returns an array of scope descriptions that will be requested during OAuth
  */

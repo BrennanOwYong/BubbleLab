@@ -20,6 +20,8 @@ import {
   SYSTEM_CREDENTIALS,
   OPTIONAL_CREDENTIALS,
   CredentialType,
+  getOAuthProvider,
+  getOAuthProviderGroupTypes,
 } from '@bubblelab/shared-schemas';
 import type {
   CredentialResponse,
@@ -162,6 +164,103 @@ export function computeAutoBindings(
     }
   }
   return bindings;
+}
+
+// ── Suite-aware binding (same OAuth provider, different credential type) ─────
+//
+// Google Drive/Gmail/Sheets/Calendar are separate CredentialTypes but ONE OAuth
+// provider issuing ONE token whose SCOPES decide capability. A credential of a
+// sibling type in the provider group can therefore satisfy a step of another
+// type — but only after its GRANTED scopes are verified against the step's
+// required scopes (the proposal below is checked by useSuiteBindings before
+// any binding happens; nothing binds on type membership alone).
+
+export interface SuiteBindingProposal {
+  /** Key into pendingCredentials (bubble variableId as string). */
+  bubbleKey: string;
+  /** The credential type the step requires (the binding key). */
+  requiredCredentialType: string;
+  /** OAuth provider shared by the required type and the proposed credential. */
+  provider: string;
+  /** The proposed credential (a sibling type in the same provider group). */
+  credentialId: number;
+  credentialName?: string;
+  /** The proposed credential row's own type. */
+  sourceCredentialType: string;
+  /** Sibling-type candidates available at decision time. */
+  candidateCount: number;
+}
+
+/**
+ * OAuth credentials of a SIBLING type in the required type's provider group
+ * (never the exact type — exact matches are the normal binding path).
+ */
+export function getProviderSuiteCandidates(
+  credentials: CredentialResponse[],
+  credentialType: string
+): CredentialResponse[] {
+  const groupTypes = getOAuthProviderGroupTypes(
+    credentialType as CredentialType
+  );
+  if (groupTypes.length <= 1) return [];
+  return credentials.filter(
+    (credential) =>
+      credential.isOauth === true &&
+      credential.credentialType !== credentialType &&
+      groupTypes.includes(credential.credentialType as CredentialType)
+  );
+}
+
+/**
+ * Every missing (bubble, credentialType) slot that NO exact-type credential can
+ * fill but a sibling-type credential of the same OAuth provider could — with
+ * the default rule's pick. Non-provider-grouped types never yield proposals.
+ * Callers must scope-verify a proposal before binding it.
+ */
+export function computeSuiteBindingProposals(
+  input: ComputeAutoBindingsInput
+): SuiteBindingProposal[] {
+  const proposals: SuiteBindingProposal[] = [];
+  for (const [entryKey, bubble] of Object.entries(input.bubbleParameters)) {
+    const bubbleKey = bindingKeyForBubble(bubble, entryKey);
+    const selected = input.pendingCredentials[bubbleKey] ?? {};
+    for (const credentialType of requiredTypesForBubble(
+      input.requiredCredentials,
+      bubble,
+      entryKey
+    )) {
+      if (SYSTEM_CREDENTIALS.has(credentialType as CredentialType)) continue;
+      if (OPTIONAL_CREDENTIALS.has(credentialType as CredentialType)) continue;
+      const existing = selected[credentialType];
+      if (existing !== undefined && existing !== null) continue;
+      // Exact-type credentials exist -> the normal auto-bind path owns the slot.
+      if (getCredentialsOfType(input.credentials, credentialType).length > 0) {
+        continue;
+      }
+      const provider = getOAuthProvider(credentialType as CredentialType);
+      if (!provider) continue;
+      const candidates = getProviderSuiteCandidates(
+        input.credentials,
+        credentialType
+      );
+      if (candidates.length === 0) continue;
+      const chosen =
+        candidates.length === 1
+          ? candidates[0]
+          : pickDefaultCredential(candidates);
+      if (!chosen) continue;
+      proposals.push({
+        bubbleKey,
+        requiredCredentialType: credentialType,
+        provider,
+        credentialId: chosen.id,
+        credentialName: chosen.name,
+        sourceCredentialType: chosen.credentialType,
+        candidateCount: candidates.length,
+      });
+    }
+  }
+  return proposals;
 }
 
 /**

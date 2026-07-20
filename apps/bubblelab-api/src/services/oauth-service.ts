@@ -9,8 +9,26 @@ import {
 import { db } from '../db/index.js';
 import { userCredentials } from '../db/schema.js';
 import { CredentialEncryption } from '../utils/encryption.js';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { env } from '../config/env.js';
+
+/**
+ * The OAuth account email recorded on a credential's metadata (GoogleOAuthMetadata et al),
+ * when present — used as login_hint so incremental re-consent lands on the SAME account.
+ */
+function extractMetadataEmail(metadata: unknown): string | undefined {
+  if (
+    metadata !== null &&
+    typeof metadata === 'object' &&
+    'email' in metadata
+  ) {
+    const email: unknown = metadata.email;
+    if (typeof email === 'string' && email.length > 0) {
+      return email;
+    }
+  }
+  return undefined;
+}
 
 export interface OAuthAuthorizationUrl {
   authUrl: string;
@@ -34,6 +52,18 @@ export interface StoredOAuthCredential {
 /**
  * OAuth service that handles OAuth flows, token management, and refresh
  * Uses @badgateway/oauth2-client for OAuth 2.0 operations
+ *
+ * ## References (Google incremental authorization + token introspection)
+ * - Incremental authorization (`include_granted_scopes=true` on
+ *   https://accounts.google.com/o/oauth2/v2/auth; the returned token also covers
+ *   every scope the user previously granted the application):
+ *   https://developers.google.com/identity/protocols/oauth2/web-server#incrementalAuth
+ * - tokeninfo introspection (GET https://oauth2.googleapis.com/tokeninfo?access_token=...
+ *   returns `scope` as space-delimited case-sensitive strings, plus aud/azp/expires_in):
+ *   https://docs.cloud.google.com/docs/authentication/token-types
+ * - OIDC userinfo (email identity; OIDC scopes combine with API scopes in one request):
+ *   https://developers.google.com/identity/openid-connect/openid-connect
+ * Verified against these pages on 2026-07-20.
  */
 export class OAuthService {
   private clients: Map<string, OAuth2Client> = new Map();
@@ -46,6 +76,8 @@ export class OAuthService {
       credentialName?: string;
       timestamp: number;
       scopes: string[];
+      /** Incremental re-consent: existing credential row the callback must UPDATE (no insert). */
+      credentialId?: number;
     }
   > = new Map();
 
@@ -141,7 +173,8 @@ export class OAuthService {
     userId: string,
     credentialType: CredentialType,
     credentialName?: string,
-    scopes?: string[]
+    scopes?: string[],
+    existingCredentialId?: number
   ): Promise<OAuthAuthorizationUrl> {
     const client = this.clients.get(provider);
     if (!client) {
@@ -154,11 +187,47 @@ export class OAuthService {
     const state = crypto.randomUUID();
     const timestamp = Date.now();
 
+    // Incremental re-consent: the authorization ADDS scopes to an existing grant and the
+    // callback updates that credential row in place. Google's include_granted_scopes=true
+    // makes the returned token cover previously granted scopes too, so requesting only the
+    // missing scopes yields a token for the accumulated set. See ## References above.
+    const extraAuthParams: Record<string, string> = {};
+    let effectiveCredentialType = credentialType;
+    if (existingCredentialId !== undefined) {
+      const credential = await db.query.userCredentials.findFirst({
+        where: and(
+          eq(userCredentials.id, existingCredentialId),
+          eq(userCredentials.userId, userId)
+        ),
+      });
+      if (
+        !credential ||
+        !credential.isOauth ||
+        credential.oauthProvider !== provider
+      ) {
+        throw new Error(
+          `Credential ${existingCredentialId} is not an OAuth credential of provider '${provider}' owned by this user`
+        );
+      }
+      // The row keeps its credential type — scopes, not the type, decide capability.
+      effectiveCredentialType = credential.credentialType as CredentialType;
+      if (provider === 'google') {
+        extraAuthParams.include_granted_scopes = 'true';
+        const email = extractMetadataEmail(credential.metadata);
+        if (email) {
+          extraAuthParams.login_hint = email;
+        }
+      }
+    }
+
     // Validate that the credential type is supported by this provider
-    this.getCredentialConfig(provider, credentialType);
+    this.getCredentialConfig(provider, effectiveCredentialType);
 
     const redirectUri = `${env.NODEX_API_URL || 'http://localhost:3001'}/oauth/${provider}/callback`;
-    const defaultScopes = this.getDefaultScopes(provider, credentialType);
+    const defaultScopes = this.getDefaultScopes(
+      provider,
+      effectiveCredentialType
+    );
     let requestedScopes = scopes || defaultScopes;
 
     // Google: always add the OIDC identity scopes so the callback can resolve WHICH account
@@ -169,9 +238,7 @@ export class OAuthService {
     // argument can also include other scope values", example: "openid profile email
     // https://www.googleapis.com/auth/drive.file").
     if (provider === 'google') {
-      requestedScopes = [
-        ...new Set([...requestedScopes, 'openid', 'email']),
-      ];
+      requestedScopes = [...new Set([...requestedScopes, 'openid', 'email'])];
     }
 
     console.log(
@@ -185,10 +252,11 @@ export class OAuthService {
     this.stateStore.set(state, {
       userId,
       provider,
-      credentialType,
+      credentialType: effectiveCredentialType,
       credentialName,
       timestamp,
       scopes: requestedScopes,
+      credentialId: existingCredentialId,
     });
 
     try {
@@ -222,6 +290,11 @@ export class OAuthService {
           'response_type',
           authorizationParams.response_type
         );
+      }
+      // Incremental re-consent params (include_granted_scopes, login_hint) — the OAuth2
+      // client library does not know them, so set them on the final URL directly.
+      for (const [param, value] of Object.entries(extraAuthParams)) {
+        urlObj.searchParams.set(param, value);
       }
 
       const finalAuthUrl = urlObj.toString();
@@ -341,6 +414,19 @@ export class OAuthService {
 
       // Determine which provider metadata to pass
       const providerMetadata = jiraMetadata ?? googleMetadata;
+
+      // Incremental re-consent: UPDATE the existing credential row (token + accumulated
+      // scopes) — no new credential row is created.
+      if (stateData.credentialId !== undefined) {
+        const credentialId = await this.applyIncrementalToken(
+          stateData.credentialId,
+          provider,
+          token,
+          stateData.scopes,
+          providerMetadata
+        );
+        return { credentialId, token };
+      }
 
       // Store token in database
       const credentialId = await this.storeOAuthToken(
@@ -555,6 +641,147 @@ export class OAuthService {
   }
 
   /**
+   * Read the scopes ACTUALLY granted on a Google access token via the tokeninfo
+   * introspection endpoint. The stored `oauthScopes` recorded at authorization are the
+   * REQUESTED scopes (the token response library surfaces no scope field); the probe is
+   * the honest source — Google returns `scope` as space-delimited case-sensitive strings.
+   *
+   * Endpoint per https://docs.cloud.google.com/docs/authentication/token-types:
+   * GET https://oauth2.googleapis.com/tokeninfo?access_token=...
+   *
+   * Non-fatal by design: a probe failure (network, expired token) returns undefined and
+   * callers fall back to the recorded scopes.
+   */
+  private async fetchGoogleGrantedScopes(
+    accessToken: string
+  ): Promise<string[] | undefined> {
+    try {
+      const response = await fetch(
+        `https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(accessToken)}`,
+        { headers: { Accept: 'application/json' } }
+      );
+      if (!response.ok) {
+        console.warn(
+          `[Google OAuth] tokeninfo probe failed: ${response.status} — falling back to recorded scopes`
+        );
+        return undefined;
+      }
+      const info = (await response.json()) as { scope?: string };
+      if (typeof info.scope !== 'string') {
+        console.warn(
+          '[Google OAuth] tokeninfo response carried no scope field — falling back to recorded scopes'
+        );
+        return undefined;
+      }
+      const scopes = info.scope
+        .split(' ')
+        .map((scope) => scope.trim())
+        .filter((scope) => scope.length > 0);
+      return scopes.length > 0 ? scopes : undefined;
+    } catch (error) {
+      console.warn(
+        '[Google OAuth] tokeninfo probe errored — falling back to recorded scopes:',
+        error
+      );
+      return undefined;
+    }
+  }
+
+  /**
+   * Verify the scopes granted on an OAuth credential. Google credentials are probed live
+   * (tokeninfo on a freshly refreshed access token) and the probed set is synced into
+   * `user_credentials.oauth_scopes` so the build-time scope audit reads verified grants.
+   * Other providers (no introspection wired) return the recorded scopes with
+   * source 'stored'. Returns null when the credential is missing, not user-owned, or not
+   * an OAuth credential — the scope check never guesses.
+   */
+  async checkGrantedScopes(
+    userId: string,
+    credentialId: number
+  ): Promise<{ grantedScopes: string[]; source: 'probe' | 'stored' } | null> {
+    const credential = await db.query.userCredentials.findFirst({
+      where: and(
+        eq(userCredentials.id, credentialId),
+        eq(userCredentials.userId, userId)
+      ),
+    });
+    if (!credential || !credential.isOauth) {
+      return null;
+    }
+
+    if (credential.oauthProvider === 'google') {
+      const accessToken = await this.getValidToken(credentialId);
+      const probed = accessToken
+        ? await this.fetchGoogleGrantedScopes(accessToken)
+        : undefined;
+      if (probed) {
+        await db
+          .update(userCredentials)
+          .set({ oauthScopes: probed, updatedAt: new Date() })
+          .where(eq(userCredentials.id, credentialId));
+        return { grantedScopes: probed, source: 'probe' };
+      }
+    }
+
+    return { grantedScopes: credential.oauthScopes ?? [], source: 'stored' };
+  }
+
+  /**
+   * Incremental re-consent write path: update the existing credential row with the new
+   * token and the accumulated scope set. Google tokens issued with
+   * include_granted_scopes=true cover previously granted scopes, so the tokeninfo probe
+   * yields the full accumulated grant; when the probe is unavailable the union of
+   * recorded + newly requested scopes is stored instead.
+   */
+  private async applyIncrementalToken(
+    credentialId: number,
+    provider: string,
+    token: OAuth2Token,
+    requestedScopes: string[],
+    providerMetadata?: JiraOAuthMetadata | GoogleOAuthMetadata
+  ): Promise<number> {
+    const credential = await db.query.userCredentials.findFirst({
+      where: eq(userCredentials.id, credentialId),
+    });
+    if (!credential) {
+      throw new Error(
+        `Incremental consent target credential ${credentialId} no longer exists`
+      );
+    }
+
+    let scopes = [
+      ...new Set([...(credential.oauthScopes ?? []), ...requestedScopes]),
+    ];
+    if (provider === 'google') {
+      const granted = await this.fetchGoogleGrantedScopes(token.accessToken);
+      if (granted) {
+        scopes = granted;
+      }
+    }
+
+    const encryptedAccessToken = await CredentialEncryption.encrypt(
+      token.accessToken
+    );
+    const encryptedRefreshToken = token.refreshToken
+      ? await CredentialEncryption.encrypt(token.refreshToken)
+      : undefined;
+
+    await db
+      .update(userCredentials)
+      .set({
+        oauthAccessToken: encryptedAccessToken,
+        oauthRefreshToken: encryptedRefreshToken,
+        oauthExpiresAt: token.expiresAt ? new Date(token.expiresAt) : null,
+        oauthScopes: scopes,
+        metadata: credential.metadata ?? providerMetadata ?? null,
+        updatedAt: new Date(),
+      })
+      .where(eq(userCredentials.id, credentialId));
+
+    return credentialId;
+  }
+
+  /**
    * Store OAuth token in database
    */
   private async storeOAuthToken(
@@ -577,11 +804,19 @@ export class OAuthService {
     // Use expiration from token (already a timestamp in milliseconds)
     const expiresAt = token.expiresAt ? new Date(token.expiresAt) : null;
 
-    // Note: @badgateway/oauth2-client doesn't include scope in token response
-    // We'll use the scopes that were requested during authorization
-    const scopes =
+    // Note: @badgateway/oauth2-client doesn't include scope in token response.
+    // Google: probe tokeninfo for the scopes ACTUALLY granted (the user can deselect
+    // scopes on the consent screen); fall back to the requested scopes when the probe
+    // is unavailable. Other providers: requested scopes remain the best record.
+    let scopes =
       requestedScopes ||
       this.getDefaultScopes(provider as OAuthProvider, credentialType);
+    if (provider === 'google') {
+      const granted = await this.fetchGoogleGrantedScopes(token.accessToken);
+      if (granted) {
+        scopes = granted;
+      }
+    }
 
     const [result] = await db
       .insert(userCredentials)
