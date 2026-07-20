@@ -79,3 +79,31 @@ export class BubbleExecutionError extends BubbleError {
     this.executionPhase = options?.executionPhase;
   }
 }
+
+/**
+ * Thrown when a user-declared event-reaction policy says a deviation halts the
+ * flow (errors-as-events). Extends BubbleError so every existing catch branch
+ * (BubbleRunner and generated try/catch) handles it without changes.
+ */
+export class FlowHaltedByPolicyError extends BubbleError {
+  /** The WorkflowEventCode of the event that matched the halting rule. */
+  public readonly eventCode?: string;
+  /** Index of the matched rule inside the flow's event policy. */
+  public readonly ruleIndex?: number;
+
+  constructor(
+    message: string,
+    options?: {
+      variableId?: number;
+      bubbleName?: string;
+      eventCode?: string;
+      ruleIndex?: number;
+      cause?: Error;
+    }
+  ) {
+    super(message, options);
+    this.name = 'FlowHaltedByPolicyError';
+    this.eventCode = options?.eventCode;
+    this.ruleIndex = options?.ruleIndex;
+  }
+}

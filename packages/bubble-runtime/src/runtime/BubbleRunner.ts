@@ -3,6 +3,9 @@ import {
   ParsedBubbleWithInfo,
   CredentialType,
   type ExecutionMeta,
+  type WorkflowEventBus,
+  type WorkflowEventPolicy,
+  type WorkflowEventInput,
 } from '@bubblelab/shared-schemas';
 import {
   BubbleFactory,
@@ -18,7 +21,9 @@ import {
   BubbleValidationError,
   BubbleExecutionError,
   BubbleError,
+  FlowHaltedByPolicyError,
 } from '@bubblelab/bubble-core';
+import type { WorkflowEvent } from '@bubblelab/shared-schemas';
 import type { ExecutionPlan, ExecutionStep, MiniStep } from './types';
 import { BubbleScript } from '../parse/BubbleScript';
 import { BubbleInjector } from '../injection/BubbleInjector';
@@ -56,6 +61,14 @@ export interface BubbleRunnerOptions {
    * mode ("dummy-data" grant). Exact match only.
    */
   approvedWriteCallSites?: string[];
+  /**
+   * Errors-as-events: per-execution bus. Threaded to every bubble via
+   * executionMeta (the same channel testMode rides) and used by runAll for
+   * flow-level lifecycle events.
+   */
+  eventBus?: WorkflowEventBus;
+  /** Errors-as-events: the user-declared reaction policy for this flow. */
+  eventPolicy?: WorkflowEventPolicy;
 }
 
 export class BubbleRunner {
@@ -505,7 +518,9 @@ export class BubbleRunner {
       const executionMeta: ExecutionMeta | undefined =
         this.options.executionMeta ||
         this.options.testMode !== undefined ||
-        this.options.approvedWriteCallSites
+        this.options.approvedWriteCallSites ||
+        this.options.eventBus ||
+        this.options.eventPolicy
           ? {
               ...this.options.executionMeta,
               ...(this.options.testMode !== undefined && {
@@ -513,6 +528,12 @@ export class BubbleRunner {
               }),
               ...(this.options.approvedWriteCallSites && {
                 approvedWriteCallSites: this.options.approvedWriteCallSites,
+              }),
+              // Errors-as-events: the bus and policy ride executionMeta into
+              // every bubble via the existing context injection.
+              ...(this.options.eventBus && { eventBus: this.options.eventBus }),
+              ...(this.options.eventPolicy && {
+                eventPolicy: this.options.eventPolicy,
               }),
             }
           : undefined;
@@ -531,9 +552,24 @@ export class BubbleRunner {
       }
 
       // Execute the handle method
+      await this.emitFlowEvent({
+        type: 'flow_started',
+        code: 'FLOW_STARTED',
+        severity: 'info',
+        message: 'BubbleFlow execution started',
+        payload: {},
+      });
       const startTime = Date.now();
       const result = await flowInstance.handle(webhookPayload);
       const executionTime = Date.now() - startTime;
+
+      await this.emitFlowEvent({
+        type: 'flow_completed',
+        code: 'FLOW_COMPLETED',
+        severity: 'info',
+        message: `BubbleFlow execution completed in ${executionTime}ms`,
+        payload: { durationMs: executionTime },
+      });
 
       this.logger?.info(
         `BubbleFlow execution completed in ${executionTime}ms`,
@@ -558,6 +594,22 @@ export class BubbleRunner {
         data: result,
       };
     } catch (error: unknown) {
+      // Errors-as-events: the flow-level failure is emitted before the typed
+      // class collapses into the ExecutionResult error string below.
+      const haltedByPolicy = error instanceof FlowHaltedByPolicyError;
+      await this.emitFlowEvent({
+        type: 'flow_failed',
+        code: haltedByPolicy ? 'FLOW_HALTED_BY_POLICY' : 'FLOW_FATAL',
+        severity: 'fatal',
+        message: getSafeErrorMessage(error),
+        errorClass: error instanceof Error ? error.name : undefined,
+        ...(error instanceof BubbleError && {
+          variableId: error.variableId,
+          bubbleName: error.bubbleName,
+        }),
+        payload: { haltedByPolicy },
+      });
+
       // Enhanced error handling for bubble-specific errors
       if (error instanceof BubbleValidationError) {
         const validationError = error as BubbleValidationError;
@@ -702,6 +754,19 @@ export class BubbleRunner {
         }
       }
     }
+  }
+
+  /**
+   * Errors-as-events: emit a flow-level lifecycle event on the per-execution
+   * bus, when one is wired. The bus isolates handler failures itself.
+   */
+  private async emitFlowEvent(input: WorkflowEventInput): Promise<void> {
+    const bus = this.options.eventBus;
+    if (!bus) return;
+    await bus.emit({
+      timestamp: new Date().toISOString(),
+      ...input,
+    } as WorkflowEvent);
   }
 
   /**

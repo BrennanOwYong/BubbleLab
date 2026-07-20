@@ -14,8 +14,19 @@ import type { DependencyGraphNode } from '@bubblelab/shared-schemas';
 import {
   BubbleValidationError,
   BubbleExecutionError,
+  FlowHaltedByPolicyError,
 } from './bubble-errors.js';
-import { sanitizeParams } from '@bubblelab/shared-schemas';
+import {
+  sanitizeParams,
+  resolveReaction,
+  WorkflowEventBus,
+} from '@bubblelab/shared-schemas';
+import type {
+  WorkflowEvent,
+  WorkflowEventInput,
+  WorkflowEventPolicy,
+} from '@bubblelab/shared-schemas';
+import { sanitizeErrorMessage } from '../utils/error-sanitizer.js';
 import { formatSchemaExpectedVsActual } from '../utils/schema-comparison.js';
 import type { OperationSideEffectMap } from './operation-side-effect.js';
 
@@ -85,6 +96,25 @@ export abstract class BaseBubble<
         error instanceof z.ZodError
           ? `Input Schema validation failed: ${error.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join(', ')}`
           : `Input Schema validation failed: ${error instanceof Error ? error.message : 'Unknown validation error'}`;
+
+      // Errors-as-events: input-schema deviations are emitted before the
+      // existing throw (fire-and-forget — constructors cannot await). No
+      // reaction applies here: an unconstructed bubble cannot continue/retry.
+      const bus = context?.executionMeta?.eventBus;
+      if (bus instanceof WorkflowEventBus) {
+        void bus.emit({
+          type: 'validation_deviation',
+          code: 'INPUT_SCHEMA_VALIDATION_FAILED',
+          severity: 'error',
+          timestamp: new Date().toISOString(),
+          stepId: context?.currentUniqueId ?? context?.invocationCallSiteKey,
+          variableId: context?.variableId,
+          bubbleName: ctor.bubbleName,
+          message: sanitizeErrorMessage(errorMessage),
+          errorClass: 'BubbleValidationError',
+          payload: { phase: 'input' },
+        });
+      }
 
       throw new BubbleValidationError(errorMessage, {
         variableId: context?.variableId,
@@ -281,6 +311,17 @@ export abstract class BaseBubble<
       return savedResult;
     }
 
+    // Errors-as-events: the step lifecycle starts here. Saved-result returns
+    // above execute nothing, so they emit nothing.
+    await this.emitWorkflowEvent({
+      type: 'step_started',
+      code: 'STEP_STARTED',
+      severity: 'info',
+      message: `Executing bubble ${this.name}`,
+      payload: { operation: this.getOperationName() },
+    });
+    const stepStartedAt = Date.now();
+
     // TEST-MODE SWITCH — intercept ABOVE performAction so no client is ever
     // constructed and no credential is ever read, regardless of auth type.
     // Write-hinted operations (the fail-safe default for unclassified ones)
@@ -309,129 +350,426 @@ export abstract class BaseBubble<
         mockResult
       );
 
+      await this.emitWorkflowEvent({
+        type: 'step_succeeded',
+        code: 'STEP_SUCCEEDED',
+        severity: 'info',
+        message: `Bubble ${this.name} returned a test-mode mock`,
+        payload: { durationMs: Date.now() - stepStartedAt, mocked: true },
+      });
+
       return mockResult;
     }
 
-    let result: TResult;
-    try {
-      result = await this.performAction(this.context);
-    } catch (error) {
-      console.error('Error executing bubble:', error);
-      this.context?.logger?.logBubbleExecutionComplete(
-        this.context?.variableId ?? -999,
-        this.name,
-        this.name,
-        {
-          success: false,
-          error: error instanceof Error ? error.message : 'Unknown error',
-          executionId: randomUUID(),
-          timestamp: new Date(),
-        }
-      );
-      this.context?.logger?.error(
-        `[${this.name}] Unexpected error when performing action: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
-      throw new BubbleExecutionError(
-        error instanceof Error ? error.message : 'Unknown error',
-        {
-          variableId: this.context?.variableId,
-          bubbleName: this.name,
-          executionPhase: 'execution',
-          cause: error instanceof Error ? error : undefined,
-        }
-      );
-    }
+    // Errors-as-events: the attempt loop wraps performAction + result
+    // validation so a declared retry reaction can re-run the step. With no
+    // policy the loop runs exactly once and every path below preserves the
+    // pre-events behavior (same logs, same throws, same returns).
+    const eventPolicy = this.getWorkflowEventPolicy();
+    let attempt = 1;
 
-    // Validate result if schema is provided
-    if (this.resultSchema) {
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      let result: TResult;
       try {
-        const validatedResult = this.resultSchema.parse(result);
-
-        const finalResult = {
-          success: result.success,
-          data: result,
-          executionId: randomUUID(),
-          error: validatedResult.error || '',
-          timestamp: new Date(),
-        };
-
-        // Log bubble execution completion
-        logger?.logBubbleExecutionComplete(
-          this.context?.variableId ?? -999,
-          this.name,
-          this.name,
-          finalResult
-        );
-
-        if (!finalResult.success) {
-          logger?.warn(
-            `[${this.name}] Execution did not succeed: ${finalResult.error}. The flow will continue to run unless you manually catch and handle the error.`
-          );
-        }
-
-        return finalResult;
-      } catch (validationError) {
-        // Validation error for result validation failures
-        const errorMessage =
-          validationError instanceof z.ZodError
-            ? `Result schema validation failed: ${validationError.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join(', ')}`
-            : `Result validation failed: ${validationError instanceof Error ? validationError.message : 'Unknown validation error'}`;
-
-        // Generate schema comparison for detailed debugging
-        const diffReport = formatSchemaExpectedVsActual(
-          this.resultSchema,
-          result
-        );
-        const detailedError = `${errorMessage}\n\n${diffReport}`;
-
-        // Log the validation error before throwing
-        logger?.logBubbleExecutionComplete(
+        result = await this.performAction(this.context);
+      } catch (error) {
+        console.error('Error executing bubble:', error);
+        const rawMessage =
+          error instanceof Error ? error.message : 'Unknown error';
+        this.context?.logger?.logBubbleExecutionComplete(
           this.context?.variableId ?? -999,
           this.name,
           this.name,
           {
             success: false,
-            error: detailedError,
+            error: rawMessage,
             executionId: randomUUID(),
             timestamp: new Date(),
           }
         );
-        logger?.error(`[${this.name}] ${detailedError}`);
+        this.context?.logger?.error(
+          `[${this.name}] Unexpected error when performing action: ${rawMessage}`
+        );
 
-        throw new BubbleValidationError(errorMessage, {
+        const event = await this.emitWorkflowEvent({
+          type: 'step_failed',
+          code: 'BUBBLE_EXECUTION_ERROR',
+          severity: 'error',
+          message: sanitizeErrorMessage(rawMessage),
+          errorClass: 'BubbleExecutionError',
+          payload: { failureMode: 'thrown', attempt },
+        });
+        const { control, ruleIndex } = await this.resolveFlowControl(
+          event,
+          eventPolicy,
+          attempt
+        );
+        if (control === 'retry') {
+          attempt++;
+          continue;
+        }
+        if (control === 'continue') {
+          // A continued failure has no result data by definition; a consumer
+          // opting into 'continue' must branch on success before touching
+          // data (the flow-level ExecutionResult has the same contract).
+          return {
+            success: false,
+            data: undefined as unknown as TResult,
+            error: sanitizeErrorMessage(rawMessage),
+            executionId: randomUUID(),
+            timestamp: new Date(),
+          };
+        }
+        if (control === 'halt-by-policy') {
+          throw this.buildHaltError(event, ruleIndex);
+        }
+        // Default: the pre-events typed throw.
+        throw new BubbleExecutionError(rawMessage, {
           variableId: this.context?.variableId,
           bubbleName: this.name,
-          cause: validationError instanceof Error ? validationError : undefined,
+          executionPhase: 'execution',
+          cause: error instanceof Error ? error : undefined,
         });
       }
-    }
 
-    // No result schema defined - proceed without validation
-    const finalResult = {
-      success: result.success,
-      // For data we strip out any excessive fields
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      data: (({ ...rest }) => rest)(result) as TResult,
-      error: result.error || '',
-      executionId: randomUUID(),
-      timestamp: new Date(),
-    };
+      // Validate result if schema is provided
+      if (this.resultSchema) {
+        try {
+          const validatedResult = this.resultSchema.parse(result);
 
-    if (!result.success) {
-      logger?.error(
-        `[${this.name}] Execution error when performing action: ${result.error}`
+          const finalResult = {
+            success: result.success,
+            data: result,
+            executionId: randomUUID(),
+            error: validatedResult.error || '',
+            timestamp: new Date(),
+          };
+
+          // Log bubble execution completion
+          logger?.logBubbleExecutionComplete(
+            this.context?.variableId ?? -999,
+            this.name,
+            this.name,
+            finalResult
+          );
+
+          if (!finalResult.success) {
+            // Errors-as-events: a SOFT failure is an event. Default keeps the
+            // pre-events warn-and-continue; the policy can halt or retry it.
+            const event = await this.emitWorkflowEvent({
+              type: 'step_failed',
+              code: 'BUBBLE_SOFT_FAILURE',
+              severity: 'warning',
+              message: sanitizeErrorMessage(String(finalResult.error ?? '')),
+              payload: { failureMode: 'soft', attempt },
+            });
+            const { control, ruleIndex } = await this.resolveFlowControl(
+              event,
+              eventPolicy,
+              attempt
+            );
+            if (control === 'retry') {
+              attempt++;
+              continue;
+            }
+            if (control === 'halt-by-policy') {
+              throw this.buildHaltError(event, ruleIndex);
+            }
+            logger?.warn(
+              `[${this.name}] Execution did not succeed: ${finalResult.error}. The flow will continue to run unless you manually catch and handle the error.`
+            );
+          } else {
+            await this.emitWorkflowEvent({
+              type: 'step_succeeded',
+              code: 'STEP_SUCCEEDED',
+              severity: 'info',
+              message: `Bubble ${this.name} succeeded`,
+              payload: { durationMs: Date.now() - stepStartedAt },
+            });
+          }
+
+          return finalResult;
+        } catch (validationError) {
+          // Policy-driven control flow above throws through this try block;
+          // pass those through untouched.
+          if (validationError instanceof FlowHaltedByPolicyError) {
+            throw validationError;
+          }
+          // Validation error for result validation failures
+          const errorMessage =
+            validationError instanceof z.ZodError
+              ? `Result schema validation failed: ${validationError.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join(', ')}`
+              : `Result validation failed: ${validationError instanceof Error ? validationError.message : 'Unknown validation error'}`;
+
+          // Generate schema comparison for detailed debugging
+          const diffReport = formatSchemaExpectedVsActual(
+            this.resultSchema,
+            result
+          );
+          const detailedError = `${errorMessage}\n\n${diffReport}`;
+
+          // Log the validation error before throwing
+          logger?.logBubbleExecutionComplete(
+            this.context?.variableId ?? -999,
+            this.name,
+            this.name,
+            {
+              success: false,
+              error: detailedError,
+              executionId: randomUUID(),
+              timestamp: new Date(),
+            }
+          );
+          logger?.error(`[${this.name}] ${detailedError}`);
+
+          // Errors-as-events: a result-schema deviation is a typed event
+          // carrying the expected-vs-actual diff.
+          const event = await this.emitWorkflowEvent({
+            type: 'validation_deviation',
+            code: 'RESULT_SCHEMA_DEVIATION',
+            severity: 'error',
+            message: sanitizeErrorMessage(errorMessage),
+            errorClass: 'BubbleValidationError',
+            payload: {
+              phase: 'result',
+              schemaDiff: sanitizeErrorMessage(diffReport),
+            },
+          });
+          const { control, ruleIndex } = await this.resolveFlowControl(
+            event,
+            eventPolicy,
+            attempt
+          );
+          if (control === 'retry') {
+            attempt++;
+            continue;
+          }
+          if (control === 'continue') {
+            // A continued failure has no result data by definition; a consumer
+            // opting into 'continue' must branch on success before touching
+            // data (the flow-level ExecutionResult has the same contract).
+            return {
+              success: false,
+              data: undefined as unknown as TResult,
+              error: sanitizeErrorMessage(detailedError),
+              executionId: randomUUID(),
+              timestamp: new Date(),
+            };
+          }
+          if (control === 'halt-by-policy') {
+            throw this.buildHaltError(event, ruleIndex);
+          }
+          // Default: the pre-events typed throw.
+          throw new BubbleValidationError(errorMessage, {
+            variableId: this.context?.variableId,
+            bubbleName: this.name,
+            cause:
+              validationError instanceof Error ? validationError : undefined,
+          });
+        }
+      }
+
+      // No result schema defined - proceed without validation
+      const finalResult = {
+        success: result.success,
+        // For data we strip out any excessive fields
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        data: (({ ...rest }) => rest)(result) as TResult,
+        error: result.error || '',
+        executionId: randomUUID(),
+        timestamp: new Date(),
+      };
+
+      if (!result.success) {
+        logger?.error(
+          `[${this.name}] Execution error when performing action: ${result.error}`
+        );
+        // Errors-as-events: soft failure without a result schema.
+        const event = await this.emitWorkflowEvent({
+          type: 'step_failed',
+          code: 'BUBBLE_SOFT_FAILURE',
+          severity: 'warning',
+          message: sanitizeErrorMessage(String(result.error ?? '')),
+          payload: { failureMode: 'soft', attempt },
+        });
+        const { control, ruleIndex } = await this.resolveFlowControl(
+          event,
+          eventPolicy,
+          attempt
+        );
+        if (control === 'retry') {
+          attempt++;
+          continue;
+        }
+        if (control === 'halt-by-policy') {
+          throw this.buildHaltError(event, ruleIndex);
+        }
+      } else {
+        await this.emitWorkflowEvent({
+          type: 'step_succeeded',
+          code: 'STEP_SUCCEEDED',
+          severity: 'info',
+          message: `Bubble ${this.name} succeeded`,
+          payload: { durationMs: Date.now() - stepStartedAt },
+        });
+      }
+
+      // Log bubble execution completion
+      logger?.logBubbleExecutionComplete(
+        this.context?.variableId ?? -999,
+        this.name,
+        this.name,
+        finalResult
       );
+
+      return finalResult;
     }
+  }
 
-    // Log bubble execution completion
-    logger?.logBubbleExecutionComplete(
-      this.context?.variableId ?? -999,
-      this.name,
-      this.name,
-      finalResult
+  // -------------------------------------------------------------------------
+  // Errors-as-events machinery (design doc: docs/plan/ERRORS-AS-EVENTS-DESIGN.md)
+  // -------------------------------------------------------------------------
+
+  /** The per-execution event bus, threaded via executionMeta like testMode. */
+  protected getWorkflowEventBus(): WorkflowEventBus | undefined {
+    const bus = this.context?.executionMeta?.eventBus;
+    return bus instanceof WorkflowEventBus ? bus : undefined;
+  }
+
+  /** The user-declared reaction policy for this flow, when present. */
+  protected getWorkflowEventPolicy(): WorkflowEventPolicy | undefined {
+    return this.context?.executionMeta?.eventPolicy;
+  }
+
+  /**
+   * Build the full event from emitter input (identity fields filled from this
+   * bubble's context), emit it on the bus when one is wired, and return it so
+   * the caller can match it against the policy even without a bus.
+   */
+  protected async emitWorkflowEvent(
+    input: WorkflowEventInput
+  ): Promise<WorkflowEvent> {
+    const event = {
+      stepId:
+        this.context?.currentUniqueId ?? this.context?.invocationCallSiteKey,
+      variableId: this.context?.variableId,
+      bubbleName: this.name,
+      timestamp: new Date().toISOString(),
+      ...input,
+    } as WorkflowEvent;
+    const bus = this.getWorkflowEventBus();
+    if (bus) {
+      await bus.emit(event);
+    }
+    return event;
+  }
+
+  private async emitReactionApplied(
+    reaction: string,
+    ruleIndex: number,
+    source: WorkflowEvent
+  ): Promise<void> {
+    await this.emitWorkflowEvent({
+      type: 'reaction_applied',
+      code: 'REACTION_APPLIED',
+      severity: 'info',
+      message: `Policy rule ${ruleIndex} applied reaction '${reaction}' to ${source.code}`,
+      payload: {
+        reaction,
+        ruleIndex,
+        detail: { sourceType: source.type, sourceCode: source.code },
+      },
+    });
+  }
+
+  private buildHaltError(
+    event: WorkflowEvent,
+    ruleIndex?: number
+  ): FlowHaltedByPolicyError {
+    return new FlowHaltedByPolicyError(
+      `Flow halted by event policy (${event.code}) at ${this.name}: ${event.message}`,
+      {
+        variableId: this.context?.variableId,
+        bubbleName: this.name,
+        eventCode: event.code,
+        ruleIndex,
+      }
     );
+  }
 
-    return finalResult;
+  /**
+   * Resolve the FLOW-CONTROL consequence of a failure-class event against the
+   * declared policy. External reactions (notify, trigger_flow dispatch) are
+   * the API-layer reactor's job; here only halt/continue/retry (and
+   * trigger_flow.haltAfter) change control flow. No matching rule = 'default'
+   * = exactly the pre-events behavior at each call site.
+   */
+  private async resolveFlowControl(
+    event: WorkflowEvent,
+    policy: WorkflowEventPolicy | undefined,
+    attempt: number
+  ): Promise<{
+    control: 'default' | 'retry' | 'continue' | 'halt-by-policy';
+    ruleIndex?: number;
+  }> {
+    const resolved = resolveReaction(policy, event);
+    if (!resolved) return { control: 'default' };
+    const { rule, ruleIndex } = resolved;
+    const reaction = rule.reaction;
+
+    if (reaction.kind === 'retry') {
+      if (attempt < reaction.maxAttempts) {
+        await this.emitWorkflowEvent({
+          type: 'step_retried',
+          code: 'STEP_RETRIED',
+          severity: 'warning',
+          message: `Retrying ${this.name} (attempt ${attempt + 1}/${reaction.maxAttempts}) per policy rule ${ruleIndex}`,
+          payload: {
+            attempt: attempt + 1,
+            maxAttempts: reaction.maxAttempts,
+            backoffMs: reaction.backoffMs,
+          },
+        });
+        if (reaction.backoffMs > 0) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, reaction.backoffMs)
+          );
+        }
+        return { control: 'retry', ruleIndex };
+      }
+      // Retries exhausted: apply the declared `then` fallback.
+      if (reaction.then === 'continue') {
+        await this.emitReactionApplied(
+          'retry_exhausted_continue',
+          ruleIndex,
+          event
+        );
+        return { control: 'continue', ruleIndex };
+      }
+      await this.emitReactionApplied('retry_exhausted_halt', ruleIndex, event);
+      return { control: 'halt-by-policy', ruleIndex };
+    }
+    if (reaction.kind === 'continue') {
+      await this.emitReactionApplied('continue', ruleIndex, event);
+      return { control: 'continue', ruleIndex };
+    }
+    if (reaction.kind === 'halt') {
+      await this.emitReactionApplied('halt', ruleIndex, event);
+      return { control: 'halt-by-policy', ruleIndex };
+    }
+    if (reaction.kind === 'trigger_flow' && reaction.haltAfter) {
+      // Dispatching the target flow is the API reactor's job; the declared
+      // flow-control consequence (halt) is applied here.
+      await this.emitReactionApplied(
+        'trigger_flow_halt_after',
+        ruleIndex,
+        event
+      );
+      return { control: 'halt-by-policy', ruleIndex };
+    }
+    // notify / trigger_flow without haltAfter: external effect only.
+    return { control: 'default' };
   }
 
   /** The `operation` discriminator of the current params, when present. */

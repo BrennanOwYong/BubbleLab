@@ -95,6 +95,7 @@ export {
   BubbleError,
   BubbleValidationError,
   BubbleExecutionError,
+  FlowHaltedByPolicyError,
 } from './types/bubble-errors.js';
 
 // Export base classes
