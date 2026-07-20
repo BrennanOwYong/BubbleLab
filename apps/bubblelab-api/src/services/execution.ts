@@ -14,6 +14,8 @@ import {
   CredentialType,
   CREDENTIAL_ENV_MAP,
   ParsedBubbleWithInfo,
+  type WorkflowEventBus,
+  type WorkflowEventPolicy,
 } from '@bubblelab/shared-schemas';
 import { trackServiceUsages } from './service-usage-tracking.js';
 import { getSafeErrorMessage } from '../utils/error-sanitizer.js';
@@ -34,6 +36,10 @@ export interface ExecutionOptions {
   testMode?: boolean;
   /** Call-site keys approved to execute writes for real in test mode. */
   approvedWriteCallSites?: string[];
+  /** Errors-as-events: per-execution bus (created by the tracking service). */
+  eventBus?: WorkflowEventBus;
+  /** Errors-as-events: the flow's declared reaction policy. */
+  eventPolicy?: WorkflowEventPolicy;
 }
 
 export interface StreamingExecutionOptions extends ExecutionOptions {
@@ -118,6 +124,8 @@ async function runBubbleFlowCommon(
     userCredentialMapping,
     testMode: options.testMode,
     approvedWriteCallSites: options.approvedWriteCallSites,
+    eventBus: options.eventBus,
+    eventPolicy: options.eventPolicy,
   });
   const usageCheck = await getMonthlyLimitForPlan(options.userId);
 

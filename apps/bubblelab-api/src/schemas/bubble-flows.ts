@@ -982,3 +982,127 @@ export const runContextFlowRoute = createRoute({
   description:
     'Executes a validated BubbleFlow to gather external context (e.g., database schema, file listings) for the Coffee planning agent',
 });
+
+// ---------------------------------------------------------------------------
+// Errors-as-events (design doc: docs/plan/ERRORS-AS-EVENTS-DESIGN.md)
+// ---------------------------------------------------------------------------
+
+// PUT /bubble-flow/:id/event-policy - Declare which deviations halt/retry/notify/trigger
+export const updateEventPolicyRoute = createRoute({
+  method: 'put',
+  path: '/{id}/event-policy',
+  request: {
+    params: z.object({
+      id: z
+        .string()
+        .regex(/^[0-9]+$/)
+        .openapi({ description: 'BubbleFlow ID', example: '123' }),
+    }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z
+            .object({
+              // Validated against workflowEventPolicySchema in the handler
+              // (shared-schemas is the source of truth for the shape).
+              policy: z.unknown().nullable(),
+            })
+            .openapi({
+              description:
+                'WorkflowEventPolicy (shared-schemas workflowEventPolicySchema) or null to clear',
+            }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': { schema: successMessageResponseSchema },
+      },
+      description: 'Event policy updated',
+    },
+    400: {
+      content: { 'application/json': { schema: errorResponseSchema } },
+      description: 'Invalid ID or policy failed schema validation',
+    },
+    404: {
+      content: { 'application/json': { schema: errorResponseSchema } },
+      description: 'BubbleFlow not found',
+    },
+    500: {
+      content: { 'application/json': { schema: errorResponseSchema } },
+      description: 'Internal server error',
+    },
+  },
+  tags: ['BubbleFlow'],
+  summary: 'Set the errors-as-events reaction policy for a flow',
+});
+
+// GET /bubble-flow/:id/events - Inspect the typed workflow event log
+export const listWorkflowEventsRoute = createRoute({
+  method: 'get',
+  path: '/{id}/events',
+  request: {
+    params: z.object({
+      id: z
+        .string()
+        .regex(/^[0-9]+$/)
+        .openapi({ description: 'BubbleFlow ID', example: '123' }),
+    }),
+    query: z.object({
+      executionId: z
+        .string()
+        .regex(/^[0-9]+$/)
+        .optional()
+        .openapi({ description: 'Filter by execution ID' }),
+      limit: z
+        .string()
+        .regex(/^[0-9]+$/)
+        .optional()
+        .openapi({ description: 'Max rows (default 200)' }),
+    }),
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            events: z.array(
+              z.object({
+                id: z.number(),
+                executionId: z.number(),
+                bubbleFlowId: z.number(),
+                type: z.string(),
+                code: z.string(),
+                severity: z.string(),
+                stepId: z.string().nullable(),
+                variableId: z.number().nullable(),
+                bubbleName: z.string().nullable(),
+                message: z.string(),
+                errorClass: z.string().nullable(),
+                payload: z.unknown().nullable(),
+                timestamp: z.string(),
+              })
+            ),
+          }),
+        },
+      },
+      description: 'Typed workflow events, newest first',
+    },
+    400: {
+      content: { 'application/json': { schema: errorResponseSchema } },
+      description: 'Invalid ID format',
+    },
+    404: {
+      content: { 'application/json': { schema: errorResponseSchema } },
+      description: 'BubbleFlow not found',
+    },
+    500: {
+      content: { 'application/json': { schema: errorResponseSchema } },
+      description: 'Internal server error',
+    },
+  },
+  tags: ['BubbleFlow'],
+  summary: 'List errors-as-events telemetry for a flow',
+});

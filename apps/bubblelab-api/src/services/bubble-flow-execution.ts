@@ -10,7 +10,14 @@ import {
   type StreamingLogEvent,
   type StreamCallback,
   CredentialType,
+  WorkflowEventBus,
+  parseWorkflowEventPolicy,
 } from '@bubblelab/shared-schemas';
+import {
+  attachWorkflowEventSubscribers,
+  type TriggerFlowRequest,
+} from './workflow-event-recorder.js';
+import { randomUUID } from 'crypto';
 import type { ExecutionResult } from '@bubblelab/shared-schemas';
 
 import { eq, and, sql } from 'drizzle-orm';
@@ -141,6 +148,26 @@ export async function executeBubbleFlowWithTracking(
     }
   };
 
+  // Errors-as-events: one bus per execution, created here because this is
+  // where the execution row id exists. Every WorkflowEvent is persisted to
+  // workflow_events AND bridged into collectionCallback; the reactor applies
+  // notify/trigger_flow per the flow's declared policy.
+  const eventPolicy = parseWorkflowEventPolicy(flow.eventPolicy);
+  const eventBus = new WorkflowEventBus();
+  const rawTriggerDepth = (payload as Record<string, unknown>)
+    .__eventTriggerDepth;
+  const triggerDepth =
+    typeof rawTriggerDepth === 'number' ? rawTriggerDepth : 0;
+  attachWorkflowEventSubscribers(eventBus, {
+    executionId: execResult[0].id,
+    bubbleFlowId,
+    userId: options.userId,
+    policy: eventPolicy,
+    streamCallback: collectionCallback,
+    triggerDepth,
+    triggerFlow: dispatchEventTriggeredFlow,
+  });
+
   try {
     // Always use streaming execution to capture logs
     // The collectionCallback will collect events regardless of whether
@@ -157,6 +184,8 @@ export async function executeBubbleFlowWithTracking(
         appType: appType,
         testMode: options.testMode,
         approvedWriteCallSites: options.approvedWriteCallSites,
+        eventBus,
+        eventPolicy,
       }
     );
 
@@ -215,6 +244,34 @@ export async function executeBubbleFlowWithTracking(
       error: errorMessage,
     };
   }
+}
+
+/**
+ * Errors-as-events: dispatch the target flow of a trigger_flow reaction. The
+ * triggered execution is a normal tracked execution (own row, own bus, own
+ * events) whose payload carries the source event and the chain depth guard.
+ */
+async function dispatchEventTriggeredFlow(
+  request: TriggerFlowRequest
+): Promise<void> {
+  const payload: ExecutionPayload = {
+    type: 'webhook/http',
+    timestamp: new Date().toISOString(),
+    path: `/internal/event-trigger/${request.sourceFlowId}`,
+    executionId: randomUUID(),
+    body: {
+      triggeredBy: {
+        flowId: request.sourceFlowId,
+        executionId: request.sourceExecutionId,
+        event: request.sourceEvent,
+      },
+    },
+    __eventTriggerDepth: request.currentDepth + 1,
+  };
+  await executeBubbleFlowWithTracking(request.targetFlowId, payload, {
+    userId: request.userId,
+    pricingTable: getPricingTable(),
+  });
 }
 
 /**

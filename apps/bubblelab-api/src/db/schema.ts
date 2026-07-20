@@ -24,6 +24,7 @@ export const {
   webhooks,
   bubbleFlowExecutions,
   bubbleFlowEvaluations,
+  workflowEvents,
   userCredentials,
   userServiceUsage,
   waitlistedUsers,
@@ -31,5 +32,6 @@ export const {
   webhooksRelations,
   bubbleFlowExecutionsRelations,
   bubbleFlowEvaluationsRelations,
+  workflowEventsRelations,
   users,
 } = schema;

@@ -50,6 +50,7 @@ export const bubbleFlows = pgTable('bubble_flows', {
   cron: text('cron'), // Cron expression extracted from code
   cronActive: boolean('cron_active').notNull().default(false), // Whether cron scheduling is active
   defaultInputs: jsonb('default_inputs'), // User-filled input values for cron execution
+  eventPolicy: jsonb('event_policy'), // Errors-as-events: user-declared WorkflowEventPolicy (deviation -> reaction rules)
   createdAt: timestamp('created_at', { mode: 'date' })
     .notNull()
     .$defaultFn(() => new Date()),
@@ -110,6 +111,32 @@ export const bubbleFlowEvaluations = pgTable('bubble_flow_evaluations', {
   // Metadata
   modelUsed: text('model_used').notNull(), // Model used for evaluation (e.g., RECOMMENDED_MODELS.FAST)
   evaluatedAt: timestamp('evaluated_at', { mode: 'date' })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+// Errors-as-events: every WorkflowEvent emitted during an execution is
+// persisted here (telemetry-first) so agents can inspect each error + its
+// type, regardless of what the user was shown.
+export const workflowEvents = pgTable('workflow_events', {
+  id: serial().primaryKey(),
+  executionId: integer('execution_id')
+    .notNull()
+    .references(() => bubbleFlowExecutions.id, { onDelete: 'cascade' }),
+  bubbleFlowId: integer('bubble_flow_id')
+    .notNull()
+    .references(() => bubbleFlows.id, { onDelete: 'cascade' }),
+  type: text('type').notNull(), // WorkflowEventType (step_failed, validation_deviation, ...)
+  code: text('code').notNull(), // WorkflowEventCode (BUBBLE_EXECUTION_ERROR, ...)
+  severity: text('severity').notNull(), // info | warning | error | fatal
+  stepId: text('step_id'), // currentUniqueId ?? invocationCallSiteKey
+  variableId: integer('variable_id'),
+  bubbleName: text('bubble_name'),
+  message: text('message').notNull(), // sanitized
+  errorClass: text('error_class'), // BubbleExecutionError | BubbleValidationError | ...
+  payload: jsonb('payload'), // per-type payload (schemaDiff, attempt, ...)
+  timestamp: timestamp('timestamp', { mode: 'date' }).notNull(), // emission time
+  createdAt: timestamp('created_at', { mode: 'date' })
     .notNull()
     .$defaultFn(() => new Date()),
 });
@@ -237,5 +264,16 @@ export const bubbleFlowEvaluationsRelations = relations(
     }),
   })
 );
+
+export const workflowEventsRelations = relations(workflowEvents, ({ one }) => ({
+  execution: one(bubbleFlowExecutions, {
+    fields: [workflowEvents.executionId],
+    references: [bubbleFlowExecutions.id],
+  }),
+  bubbleFlow: one(bubbleFlows, {
+    fields: [workflowEvents.bubbleFlowId],
+    references: [bubbleFlows.id],
+  }),
+}));
 
 // No relations needed for userCredentials as it's a standalone table

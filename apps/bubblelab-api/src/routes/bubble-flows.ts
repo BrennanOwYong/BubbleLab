@@ -5,8 +5,10 @@ import {
   bubbleFlows,
   webhooks,
   bubbleFlowExecutions,
+  workflowEvents,
   users,
 } from '../db/schema.js';
+import { workflowEventPolicySchema } from '@bubblelab/shared-schemas';
 import { ServiceUsage, type StreamingEvent } from '@bubblelab/shared-schemas';
 import { validateBubbleFlow } from '../services/validation.js';
 import { processUserCode } from '../services/code-processor.js';
@@ -29,7 +31,7 @@ import {
   discoverFlowScopeRequirements,
 } from '../services/scope-audit-service.js';
 import { getUserId, getAppType } from '../middleware/auth.js';
-import { eq, and, count } from 'drizzle-orm';
+import { eq, and, count, desc } from 'drizzle-orm';
 import { isValidBubbleTriggerEvent } from '@bubblelab/shared-schemas';
 import { runBoba } from '../services/ai/boba.js';
 import { runCoffee } from '../services/ai/coffee.js';
@@ -51,6 +53,8 @@ import {
   validateBubbleFlowCodeRoute,
   generateBubbleFlowCodeRoute,
   runContextFlowRoute,
+  updateEventPolicyRoute,
+  listWorkflowEventsRoute,
 } from '../schemas/bubble-flows.js';
 
 import { createBubbleFlowResponseSchema } from '../schemas/index.js';
@@ -1902,6 +1906,105 @@ app.openapi(runContextFlowRoute, async (c) => {
       500
     );
   }
+});
+
+// ---------------------------------------------------------------------------
+// Errors-as-events (design doc: docs/plan/ERRORS-AS-EVENTS-DESIGN.md)
+// ---------------------------------------------------------------------------
+
+app.openapi(updateEventPolicyRoute, async (c) => {
+  const userId = getUserId(c);
+  const id = parseInt(c.req.param('id'));
+  const { policy } = c.req.valid('json');
+
+  if (isNaN(id)) {
+    return c.json({ error: 'Invalid ID format' }, 400);
+  }
+
+  const existingFlow = await db.query.bubbleFlows.findFirst({
+    where: and(eq(bubbleFlows.id, id), eq(bubbleFlows.userId, userId)),
+  });
+  if (!existingFlow) {
+    return c.json({ error: 'BubbleFlow not found' }, 404);
+  }
+
+  if (policy === null || policy === undefined) {
+    await db
+      .update(bubbleFlows)
+      .set({ eventPolicy: null, updatedAt: new Date() })
+      .where(eq(bubbleFlows.id, id));
+    return c.json({ message: 'Event policy cleared' }, 200);
+  }
+
+  const parsed = workflowEventPolicySchema.safeParse(policy);
+  if (!parsed.success) {
+    return c.json(
+      {
+        error: `Invalid event policy: ${parsed.error.errors
+          .map((e) => `${e.path.join('.')}: ${e.message}`)
+          .join(', ')}`,
+      },
+      400
+    );
+  }
+
+  await db
+    .update(bubbleFlows)
+    .set({ eventPolicy: parsed.data, updatedAt: new Date() })
+    .where(eq(bubbleFlows.id, id));
+
+  return c.json({ message: 'Event policy updated' }, 200);
+});
+
+app.openapi(listWorkflowEventsRoute, async (c) => {
+  const userId = getUserId(c);
+  const id = parseInt(c.req.param('id'));
+  const { executionId, limit } = c.req.valid('query');
+
+  if (isNaN(id)) {
+    return c.json({ error: 'Invalid ID format' }, 400);
+  }
+
+  const existingFlow = await db.query.bubbleFlows.findFirst({
+    where: and(eq(bubbleFlows.id, id), eq(bubbleFlows.userId, userId)),
+  });
+  if (!existingFlow) {
+    return c.json({ error: 'BubbleFlow not found' }, 404);
+  }
+
+  const conditions = [eq(workflowEvents.bubbleFlowId, id)];
+  if (executionId !== undefined) {
+    conditions.push(eq(workflowEvents.executionId, parseInt(executionId)));
+  }
+  const rowLimit = limit !== undefined ? Math.min(parseInt(limit), 1000) : 200;
+
+  const rows = await db
+    .select()
+    .from(workflowEvents)
+    .where(and(...conditions))
+    .orderBy(desc(workflowEvents.id))
+    .limit(rowLimit);
+
+  return c.json(
+    {
+      events: rows.map((row) => ({
+        id: row.id,
+        executionId: row.executionId,
+        bubbleFlowId: row.bubbleFlowId,
+        type: row.type,
+        code: row.code,
+        severity: row.severity,
+        stepId: row.stepId,
+        variableId: row.variableId,
+        bubbleName: row.bubbleName,
+        message: row.message,
+        errorClass: row.errorClass,
+        payload: row.payload,
+        timestamp: row.timestamp.toISOString(),
+      })),
+    },
+    200
+  );
 });
 
 export default app;
