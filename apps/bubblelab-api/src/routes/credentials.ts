@@ -20,7 +20,10 @@ import {
   credentialScopeCheckRoute,
 } from '../schemas/credentials.js';
 import type { CredentialScopeCheckResponse } from '../schemas/index.js';
-import { oauthService } from '../services/oauth-service.js';
+import {
+  oauthService,
+  extractMetadataEmail,
+} from '../services/oauth-service.js';
 import {
   setupErrorHandler,
   validationErrorHook,
@@ -95,7 +98,23 @@ app.openapi(listCredentialsRoute, async (c) => {
     },
   });
 
-  const response: CredentialResponse[] = credentials.map((cred) => {
+  // Lazy identity backfill: Google OAuth credentials connected before the callback
+  // recorded the account email (metadata without email) get the email probed once
+  // (OIDC userinfo) and persisted, so the studio's account dropdowns and setup-field
+  // auto-population can name the account. A failed probe degrades to the bare row.
+  const enriched = await Promise.all(
+    credentials.map(async (cred) => {
+      if (!cred.isOauth || cred.oauthProvider !== 'google') return cred;
+      if (extractMetadataEmail(cred.metadata)) return cred;
+      const backfilled = await oauthService.backfillGoogleAccountEmail(
+        userId,
+        cred.id
+      );
+      return backfilled ? { ...cred, metadata: backfilled } : cred;
+    })
+  );
+
+  const response: CredentialResponse[] = enriched.map((cred) => {
     const now = new Date();
     let oauthStatus: 'active' | 'expired' | 'needs_refresh' | undefined;
 

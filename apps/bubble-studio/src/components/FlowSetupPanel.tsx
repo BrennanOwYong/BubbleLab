@@ -79,6 +79,30 @@ function normalizeScope(scope: string): string {
   return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
 }
 
+/** Display label for a suite binding's SOURCE credential type (e.g. 'Google Drive'). */
+function suiteSourceLabel(suite: SuiteBindingState): string {
+  return (
+    CREDENTIAL_TYPE_CONFIG[suite.sourceCredentialType as CredentialType]
+      ?.label ?? suite.sourceCredentialType
+  );
+}
+
+/**
+ * Account identity for a suite binding's source credential: the credential
+ * row's OAuth email (or name) when the row is loaded, the name recorded on the
+ * binding otherwise. Real stored data only — never a guess.
+ */
+function suiteAccountLabel(
+  suite: SuiteBindingState,
+  credentials: CredentialResponse[]
+): string {
+  const row = credentials.find(
+    (credential) => credential.id === suite.credentialId
+  );
+  if (row) return describeCredentialAccount(row);
+  return suite.credentialName ?? `#${suite.credentialId}`;
+}
+
 /** Client-side hint: is a requirement covered by the recorded grants? */
 function isRequirementGranted(
   requirement: DiscoveredScopeRequirement,
@@ -154,6 +178,10 @@ export function FlowSetupPanel() {
     });
   }, [flowId, flowScopeRequirements]);
 
+  // Telemetry: a suite-binding provenance label rendered (once per verified
+  // flow/type/credential combination).
+  const provenanceEmittedRef = useRef<Set<string>>(new Set());
+
   const entries = useMemo<ManifestEntry[]>(() => {
     const required = flow?.requiredCredentials ?? {};
     const byType = new Map<CredentialType, Set<string>>();
@@ -217,6 +245,28 @@ export function FlowSetupPanel() {
     pendingCredentials,
     suiteBindings,
   ]);
+
+  // Emit setup.suite_provenance_shown when a verified cross-type suite binding
+  // renders its provenance label ("Google Sheets via the Google Drive
+  // credential"), once per flow/type/credential.
+  useEffect(() => {
+    if (!flowId) return;
+    for (const entry of entries) {
+      const suite = entry.suite;
+      if (suite?.status !== 'verified') continue;
+      const key = `${flowId}:${entry.credentialType}:${suite.credentialId}`;
+      if (provenanceEmittedRef.current.has(key)) continue;
+      provenanceEmittedRef.current.add(key);
+      emitTelemetry('setup.suite_provenance_shown', {
+        surface: 'setup_panel',
+        flowId,
+        requiredCredentialType: entry.credentialType,
+        sourceCredentialType: suite.sourceCredentialType,
+        credentialId: suite.credentialId,
+        account: suiteAccountLabel(suite, credentials),
+      });
+    }
+  }, [flowId, entries, credentials]);
 
   /** Rebind every step requiring the type to the chosen account. */
   const switchAccount = (
@@ -424,6 +474,16 @@ export function FlowSetupPanel() {
                     Used by step{entry.steps.length === 1 ? '' : 's'}:{' '}
                     {entry.steps.join(', ')}
                   </p>
+                  {entry.suite?.status === 'verified' && (
+                    <p
+                      className="text-xs text-gray-400 mt-1"
+                      data-testid="suite-provenance"
+                      title={`${config?.label ?? entry.credentialType} steps run through this ${suiteSourceLabel(entry.suite)} credential — same Google sign-in, and its granted permissions were verified to cover what these steps need.`}
+                    >
+                      via your {suiteSourceLabel(entry.suite)} credential (
+                      {suiteAccountLabel(entry.suite, credentials)})
+                    </p>
+                  )}
                   {entry.connected && (
                     <div className="mt-2 flex items-center gap-2 flex-wrap">
                       {entry.candidates.length >= 2 ? (

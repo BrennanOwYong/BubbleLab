@@ -6,6 +6,7 @@ import {
   type JiraOAuthMetadata,
   type GoogleOAuthMetadata,
 } from '@bubblelab/shared-schemas';
+import { emitServerTelemetry } from '../utils/telemetry.js';
 import { db } from '../db/index.js';
 import { userCredentials } from '../db/schema.js';
 import { CredentialEncryption } from '../utils/encryption.js';
@@ -14,9 +15,10 @@ import { env } from '../config/env.js';
 
 /**
  * The OAuth account email recorded on a credential's metadata (GoogleOAuthMetadata et al),
- * when present — used as login_hint so incremental re-consent lands on the SAME account.
+ * when present — used as login_hint so incremental re-consent lands on the SAME account,
+ * and as the "already identified" check for the lazy email backfill.
  */
-function extractMetadataEmail(metadata: unknown): string | undefined {
+export function extractMetadataEmail(metadata: unknown): string | undefined {
   if (
     metadata !== null &&
     typeof metadata === 'object' &&
@@ -599,7 +601,8 @@ export class OAuthService {
    * the credential still works; only auto-population degrades (returns undefined).
    */
   private async fetchGoogleUserInfo(
-    accessToken: string
+    accessToken: string,
+    signal?: AbortSignal
   ): Promise<GoogleOAuthMetadata | undefined> {
     try {
       const response = await fetch(
@@ -609,6 +612,7 @@ export class OAuthService {
             Authorization: `Bearer ${accessToken}`,
             Accept: 'application/json',
           },
+          signal,
         }
       );
       if (!response.ok) {
@@ -724,6 +728,84 @@ export class OAuthService {
     }
 
     return { grantedScopes: credential.oauthScopes ?? [], source: 'stored' };
+  }
+
+  /**
+   * Credentials whose identity backfill was attempted this process. A persisted email is
+   * the durable cache (the guard below skips identified rows); this set only prevents
+   * re-probing a FAILING credential on every list call. A restart retries.
+   */
+  private googleEmailBackfillAttempts = new Set<number>();
+
+  /**
+   * Lazy identity backfill for Google OAuth credentials connected BEFORE the callback
+   * started recording the account email (their metadata carries no email, so account
+   * dropdowns and setup-field auto-population have nothing to show). Probes the OIDC
+   * UserInfo endpoint once with the credential's access token and persists the email.
+   *
+   * Endpoint per Google's OpenID Connect reference (bearer GET; response carries `email`
+   * when the email scope was granted; the discovery document at
+   * https://accounts.google.com/.well-known/openid-configuration lists it as
+   * userinfo_endpoint): https://developers.google.com/identity/openid-connect/openid-connect
+   * Re-verified against that page on 2026-07-21.
+   *
+   * Non-fatal by design: any failure (network, token without the email scope, expired
+   * grant) returns null and the caller serves the row as stored — the backfill never
+   * blocks a credentials listing. The probe carries a 5s abort signal so a dead route
+   * cannot hang the request.
+   */
+  async backfillGoogleAccountEmail(
+    userId: string,
+    credentialId: number
+  ): Promise<GoogleOAuthMetadata | null> {
+    const credential = await db.query.userCredentials.findFirst({
+      where: and(
+        eq(userCredentials.id, credentialId),
+        eq(userCredentials.userId, userId)
+      ),
+    });
+    if (
+      !credential ||
+      !credential.isOauth ||
+      credential.oauthProvider !== 'google'
+    ) {
+      return null;
+    }
+    if (extractMetadataEmail(credential.metadata)) {
+      return null; // Already identified — nothing to backfill.
+    }
+    if (this.googleEmailBackfillAttempts.has(credentialId)) {
+      return null;
+    }
+    this.googleEmailBackfillAttempts.add(credentialId);
+
+    const accessToken = await this.getValidToken(credentialId);
+    if (!accessToken) {
+      return null;
+    }
+    const userInfo = await this.fetchGoogleUserInfo(
+      accessToken,
+      AbortSignal.timeout(5000)
+    );
+    if (!userInfo) {
+      return null;
+    }
+
+    const existing = credential.metadata;
+    const metadata =
+      existing !== null && existing !== undefined && typeof existing === 'object'
+        ? { ...existing, ...userInfo }
+        : userInfo;
+    await db
+      .update(userCredentials)
+      .set({ metadata, updatedAt: new Date() })
+      .where(eq(userCredentials.id, credentialId));
+    emitServerTelemetry('setup.account_email_backfilled', {
+      credentialId,
+      credentialType: credential.credentialType,
+      provider: 'google',
+    });
+    return userInfo;
   }
 
   /**

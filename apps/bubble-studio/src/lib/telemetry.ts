@@ -28,6 +28,14 @@
  * - `setup.incremental_consent_started`   — the user launched incremental OAuth re-consent to
  *                                           ADD the missing scopes to the existing credential
  * - `setup.incremental_consent_completed` — the re-consent popup finished (success: boolean)
+ * - `setup.suite_provenance_shown`        — a suite-binding provenance label rendered
+ *                                           (surface: setup_panel — "Sheets via your Drive
+ *                                           credential" | credentials_page — "Also grants:
+ *                                           Google Sheets, ...")
+ *
+ * The API emits the same format server-side (src/utils/telemetry.ts):
+ * - `setup.account_email_backfilled`      — a pre-existing Google credential's account email
+ *                                           was probed (OIDC userinfo) and persisted
  */
 
 export const TELEMETRY_PREFIX = '[bl:telemetry]';

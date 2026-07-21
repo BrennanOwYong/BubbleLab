@@ -43,6 +43,7 @@ import {
   GOOGLE_SUITE_TYPES,
 } from '../lib/authMethods';
 import { emitTelemetry } from '../lib/telemetry';
+import { computeSuiteCoverage } from '../lib/credentialBinding';
 
 // ── Scope discovery (IR-6/7) helpers ─────────────────────────────────────────
 
@@ -1274,6 +1275,29 @@ function CredentialCard({
   );
   const logo = useMemo(() => resolveLogoByName(serviceName), [serviceName]);
 
+  // Suite coverage: which sibling types of the same OAuth provider group this
+  // credential's granted scopes cover (e.g. a Google Drive credential whose
+  // grant includes spreadsheets also serves Google Sheets steps).
+  const coveredSiblings = useMemo(
+    () => computeSuiteCoverage(credential).filter((entry) => entry.covered),
+    [credential]
+  );
+  const coverageKey = coveredSiblings
+    .map((entry) => entry.credentialType)
+    .join(',');
+  useEffect(() => {
+    if (coveredSiblings.length === 0) return;
+    emitTelemetry('setup.suite_provenance_shown', {
+      surface: 'credentials_page',
+      credentialId: credential.id,
+      sourceCredentialType: credential.credentialType,
+      coveredTypes: coveredSiblings.map((entry) => entry.credentialType),
+    });
+    // coverageKey (not the array identity) keys the emit: once per credential
+    // per covered-set, not per refetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [credential.id, coverageKey]);
+
   return (
     <div className="bg-[#1a1a1a] rounded-lg border border-[#30363d] p-4 hover:border-[#444c56] transition-all duration-200">
       <div className="flex items-start justify-between mb-3">
@@ -1323,6 +1347,17 @@ function CredentialCard({
               <p className="text-xs text-gray-400 mt-1">
                 {credentialConfig?.label || credential.credentialType}
               </p>
+              {coveredSiblings.length > 0 && (
+                <p
+                  className="text-xs text-gray-500 mt-1"
+                  data-testid="suite-coverage"
+                  title={`This sign-in's granted permissions already cover these tools — a flow needing them binds through this credential instead of asking for a new connection.`}
+                >
+                  Also grants:{' '}
+                  {coveredSiblings.map((entry) => entry.label).join(', ')}{' '}
+                  (scopes present)
+                </p>
+              )}
               {(isOAuthCredentialType || isBrowserSessionCredentialType) && (
                 <div className="flex items-center gap-2 mt-2">
                   <div className="w-2 h-2 bg-green-400 rounded-full"></div>

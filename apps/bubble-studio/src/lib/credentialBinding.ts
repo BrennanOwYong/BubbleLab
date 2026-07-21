@@ -20,8 +20,10 @@ import {
   SYSTEM_CREDENTIALS,
   OPTIONAL_CREDENTIALS,
   CredentialType,
+  CREDENTIAL_TYPE_CONFIG,
   getOAuthProvider,
   getOAuthProviderGroupTypes,
+  getDefaultScopes,
 } from '@bubblelab/shared-schemas';
 import type {
   CredentialResponse,
@@ -261,6 +263,69 @@ export function computeSuiteBindingProposals(
     }
   }
   return proposals;
+}
+
+// ── Suite coverage (credentials page provenance) ─────────────────────────────
+
+/** Scope comparison key: trailing-slash tolerant, case preserved (RFC 6749 §3.3). */
+function normalizeScope(scope: string): string {
+  const trimmed = scope.trim();
+  return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
+}
+
+/** Identity scopes ride along on every Google authorization — capability-neutral. */
+const IDENTITY_SCOPES = new Set(['openid', 'email', 'profile']);
+
+export interface SuiteCoverageEntry {
+  /** The sibling credential type in the same OAuth provider group. */
+  credentialType: CredentialType;
+  /** Display label for the sibling type (e.g. 'Google Sheets'). */
+  label: string;
+  /** True when the credential's recorded granted scopes cover every default scope of the sibling type. */
+  covered: boolean;
+  /** The sibling's default scopes the grant does not cover (empty when covered). */
+  missingScopes: string[];
+}
+
+/**
+ * Which sibling types of the credential's OAuth provider group its recorded
+ * granted scopes cover ("this Google Drive credential also grants Google
+ * Sheets"). Legibility for the suite-binding behavior: a flow needing a
+ * covered sibling type binds through this credential instead of asking for a
+ * new connection. Comparison uses the STORED oauthScopes — the scope-check
+ * probe syncs those with the live grant, so covered entries reflect real
+ * grants; no probe happens here. Types outside a multi-type provider group
+ * return [].
+ */
+export function computeSuiteCoverage(
+  credential: CredentialResponse
+): SuiteCoverageEntry[] {
+  if (credential.isOauth !== true) return [];
+  const ownType = credential.credentialType as CredentialType;
+  const groupTypes = getOAuthProviderGroupTypes(ownType);
+  if (groupTypes.length <= 1) return [];
+  const granted = new Set(
+    (credential.oauthScopes ?? []).map((scope) => normalizeScope(scope))
+  );
+  if (granted.size === 0) return [];
+  const entries: SuiteCoverageEntry[] = [];
+  for (const siblingType of groupTypes) {
+    if (siblingType === ownType) continue;
+    const requiredScopes = getDefaultScopes(siblingType).filter(
+      (scope) => !IDENTITY_SCOPES.has(scope)
+    );
+    if (requiredScopes.length === 0) continue;
+    const missingScopes = requiredScopes.filter(
+      (scope) => !granted.has(normalizeScope(scope))
+    );
+    entries.push({
+      credentialType: siblingType,
+      label: CREDENTIAL_TYPE_CONFIG[siblingType]?.label ?? siblingType,
+      covered: missingScopes.length === 0,
+      missingScopes,
+    });
+  }
+  return entries;
 }
 
 /**
