@@ -171,6 +171,85 @@ describe('computeAutoBindings', () => {
     });
     expect(bindings.map((b) => b.bubbleKey)).toEqual(['5']);
   });
+
+  it('falls back to a credential whose derived record covers the type (suite zero-click)', () => {
+    const gmailCoveringSheets = credential({
+      id: 4,
+      name: 'Gmail (covers Sheets)',
+      credentialType: CredentialType.GMAIL_CRED,
+      isOauth: true,
+      derivedCredentials: [derivedRecord(4, CredentialType.GOOGLE_SHEETS_CRED)],
+    });
+    const bindings = computeAutoBindings({
+      bubbleParameters: { '5': bubble(5, 'google-sheets') },
+      requiredCredentials: { '5': [CredentialType.GOOGLE_SHEETS_CRED] },
+      pendingCredentials: {},
+      credentials: [gmailCoveringSheets],
+    });
+    expect(bindings).toEqual([
+      {
+        bubbleKey: '5',
+        credentialType: CredentialType.GOOGLE_SHEETS_CRED,
+        credentialId: 4,
+        credentialName: 'Gmail (covers Sheets)',
+        reason: 'derived_record',
+        candidateCount: 1,
+      },
+    ]);
+  });
+
+  it('prefers an exact-type credential over a derived-record sibling', () => {
+    const exactSheets = credential({
+      id: 5,
+      name: 'Sheets',
+      credentialType: CredentialType.GOOGLE_SHEETS_CRED,
+      isOauth: true,
+    });
+    const gmailCoveringSheets = credential({
+      id: 4,
+      credentialType: CredentialType.GMAIL_CRED,
+      isOauth: true,
+      derivedCredentials: [derivedRecord(4, CredentialType.GOOGLE_SHEETS_CRED)],
+    });
+    const bindings = computeAutoBindings({
+      bubbleParameters: { '5': bubble(5, 'google-sheets') },
+      requiredCredentials: { '5': [CredentialType.GOOGLE_SHEETS_CRED] },
+      pendingCredentials: {},
+      credentials: [gmailCoveringSheets, exactSheets],
+    });
+    expect(bindings).toHaveLength(1);
+    expect(bindings[0].credentialId).toBe(5);
+    expect(bindings[0].reason).toBe('only_credential');
+  });
+
+  it('defaults among several record-covered siblings by recency', () => {
+    const olderGmail = credential({
+      id: 4,
+      credentialType: CredentialType.GMAIL_CRED,
+      isOauth: true,
+      createdAt: '2026-07-01T00:00:00.000Z',
+      derivedCredentials: [derivedRecord(4, CredentialType.GOOGLE_SHEETS_CRED)],
+    });
+    const newerDrive = credential({
+      id: 6,
+      credentialType: CredentialType.GOOGLE_DRIVE_CRED,
+      isOauth: true,
+      createdAt: '2026-07-15T00:00:00.000Z',
+      derivedCredentials: [
+        derivedRecord(6, CredentialType.GOOGLE_SHEETS_CRED, 601),
+      ],
+    });
+    const bindings = computeAutoBindings({
+      bubbleParameters: { '5': bubble(5, 'google-sheets') },
+      requiredCredentials: { '5': [CredentialType.GOOGLE_SHEETS_CRED] },
+      pendingCredentials: {},
+      credentials: [olderGmail, newerDrive],
+    });
+    expect(bindings).toHaveLength(1);
+    expect(bindings[0].credentialId).toBe(6);
+    expect(bindings[0].reason).toBe('derived_record');
+    expect(bindings[0].candidateCount).toBe(2);
+  });
 });
 
 describe('pickDefaultCredential', () => {
@@ -300,7 +379,23 @@ describe('computeSuiteBindingProposals (same OAuth provider, sibling type)', () 
     expect(proposals).toEqual([]);
   });
 
-  it('never overrides an existing per-step selection', () => {
+  it('skips a slot bound to an exact-type credential', () => {
+    const exactSheets = credential({
+      id: 99,
+      credentialType: CredentialType.GOOGLE_SHEETS_CRED,
+      isOauth: true,
+    });
+    const proposals = computeSuiteBindingProposals({
+      ...sheetsFlow,
+      pendingCredentials: {
+        '5': { [CredentialType.GOOGLE_SHEETS_CRED]: 99 },
+      },
+      credentials: [oauthDrive, exactSheets],
+    });
+    expect(proposals).toEqual([]);
+  });
+
+  it('skips a slot bound to a credential outside the provider group', () => {
     const proposals = computeSuiteBindingProposals({
       ...sheetsFlow,
       pendingCredentials: {
@@ -309,6 +404,32 @@ describe('computeSuiteBindingProposals (same OAuth provider, sibling type)', () 
       credentials: [oauthDrive],
     });
     expect(proposals).toEqual([]);
+  });
+
+  it('proposes the ALREADY-BOUND sibling credential for scope-check confirmation', () => {
+    // The derived-record auto-bind selected the Drive credential for the
+    // Sheets slot; the proposal must name that same credential (not the
+    // recency default) so the live probe confirms or rolls back the binding.
+    const driveWithRecord = credential({
+      id: 20,
+      name: 'Drive (work)',
+      credentialType: CredentialType.GOOGLE_DRIVE_CRED,
+      isOauth: true,
+      createdAt: '2026-07-10T00:00:00.000Z',
+      derivedCredentials: [
+        derivedRecord(20, CredentialType.GOOGLE_SHEETS_CRED),
+      ],
+    });
+    const proposals = computeSuiteBindingProposals({
+      ...sheetsFlow,
+      pendingCredentials: {
+        '5': { [CredentialType.GOOGLE_SHEETS_CRED]: 20 },
+      },
+      credentials: [driveWithRecord, oauthGmail],
+    });
+    expect(proposals).toHaveLength(1);
+    expect(proposals[0].credentialId).toBe(20);
+    expect(proposals[0].hasDerivedRecord).toBe(true);
   });
 
   it('picks the most recently created sibling when several exist', () => {

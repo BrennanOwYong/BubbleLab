@@ -139,6 +139,14 @@ export interface FlowExecutionState {
   pendingCredentials: Record<string, Record<string, number>>;
 
   /**
+   * Slots (`bubbleKey:credentialType`) auto-bind must leave empty: the user
+   * cleared the selection deliberately, or a suite scope-probe rolled a
+   * binding back. Distinguishes deliberate clears from external wipes
+   * (validation round-trips, flow reloads), which auto-bind re-fills.
+   */
+  suppressedAutoBindSlots: Set<string>;
+
+  /**
    * Suite-aware binding state per REQUIRED credential type: a same-OAuth-provider
    * credential of a different type (e.g. a Google Drive credential proposed for a
    * Google Sheets step) goes through a granted-scope check before it may bind.
@@ -324,6 +332,16 @@ export interface FlowExecutionState {
   ) => void;
 
   /**
+   * Merge server-derived credentials into the pending selections per slot:
+   * a server value wins its slot (unless the slot is suppressed), and slots
+   * the server response does not mention keep their current selection. A
+   * validation round-trip that lost bindings therefore never drops them.
+   */
+  mergeCredentials: (
+    credentials: Record<string, Record<string, number>>
+  ) => void;
+
+  /**
    * Record suite-binding scope-check state for a required credential type
    */
   setSuiteBinding: (credentialType: string, state: SuiteBindingState) => void;
@@ -482,6 +500,7 @@ function createExecutionStore(flowId: number) {
       bubbleResults: {},
       executionInputs: {},
       pendingCredentials: {},
+      suppressedAutoBindSlots: new Set<string>(),
       suiteBindings: {},
       suiteRecheckNonce: 0,
       expandedRootIds: [],
@@ -614,8 +633,12 @@ function createExecutionStore(flowId: number) {
       setCredential: (bubbleName, credType, credId) =>
         set((state) => {
           const bubbleCredentials = state.pendingCredentials[bubbleName] || {};
+          const slotKey = `${bubbleName}:${credType}`;
 
-          // If credId is null, remove the credential
+          // If credId is null, remove the credential. Every null through this
+          // action is a deliberate clear (user chooser, suite rollback), so
+          // the slot is suppressed and auto-bind will not re-fill it; external
+          // wipes go through setAllCredentials/mergeCredentials instead.
           if (credId === null) {
             const rest = Object.fromEntries(
               Object.entries(bubbleCredentials).filter(
@@ -627,10 +650,22 @@ function createExecutionStore(flowId: number) {
                 ...state.pendingCredentials,
                 [bubbleName]: rest,
               },
+              suppressedAutoBindSlots: new Set([
+                ...state.suppressedAutoBindSlots,
+                slotKey,
+              ]),
             };
           }
 
-          // Otherwise, add/update the credential
+          // Otherwise, add/update the credential; a fresh selection lifts any
+          // suppression on the slot.
+          const suppressed = state.suppressedAutoBindSlots.has(slotKey)
+            ? new Set(
+                [...state.suppressedAutoBindSlots].filter(
+                  (key) => key !== slotKey
+                )
+              )
+            : state.suppressedAutoBindSlots;
           return {
             pendingCredentials: {
               ...state.pendingCredentials,
@@ -639,6 +674,7 @@ function createExecutionStore(flowId: number) {
                 [credType]: credId,
               },
             },
+            suppressedAutoBindSlots: suppressed,
           };
         }),
 
@@ -652,6 +688,30 @@ function createExecutionStore(flowId: number) {
 
       setAllCredentials: (credentials) =>
         set({ pendingCredentials: credentials }),
+
+      mergeCredentials: (credentials) =>
+        set((state) => {
+          const merged: Record<string, Record<string, number>> = {};
+          const bubbleKeys = new Set([
+            ...Object.keys(state.pendingCredentials),
+            ...Object.keys(credentials),
+          ]);
+          for (const bubbleKey of bubbleKeys) {
+            const existing = state.pendingCredentials[bubbleKey] ?? {};
+            const incoming = credentials[bubbleKey] ?? {};
+            const slot: Record<string, number> = { ...existing };
+            for (const [credType, credId] of Object.entries(incoming)) {
+              if (
+                state.suppressedAutoBindSlots.has(`${bubbleKey}:${credType}`)
+              ) {
+                continue;
+              }
+              slot[credType] = credId;
+            }
+            merged[bubbleKey] = slot;
+          }
+          return { pendingCredentials: merged };
+        }),
 
       // Streaming state
       addEvent: (event) =>
@@ -895,6 +955,7 @@ function createExecutionStore(flowId: number) {
           completedBubbles: {},
           executionInputs: {},
           pendingCredentials: {},
+          suppressedAutoBindSlots: new Set<string>(),
           suiteBindings: {},
           suiteRecheckNonce: 0,
           expandedRootIds: [],
@@ -1009,6 +1070,7 @@ const emptyState: FlowExecutionState = {
   bubbleResults: {},
   executionInputs: {},
   pendingCredentials: {},
+  suppressedAutoBindSlots: new Set<string>(),
   suiteBindings: {},
   suiteRecheckNonce: 0,
   expandedRootIds: [],
@@ -1041,6 +1103,7 @@ const emptyState: FlowExecutionState = {
   setCredential: () => {},
   setBubbleCredentials: () => {},
   setAllCredentials: () => {},
+  mergeCredentials: () => {},
   setSuiteBinding: () => {},
   bumpSuiteRecheck: () => {},
   addEvent: () => {},

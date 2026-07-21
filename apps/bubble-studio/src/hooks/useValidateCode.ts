@@ -106,7 +106,10 @@ export function useValidateCode({ flowId }: ValidateCodeOptions) {
           executionState.setBubbleError(null);
         }
 
-        // Extract credentials from bubbleParameters and sync pendingCredentials
+        // Extract credentials from bubbleParameters and merge them into
+        // pendingCredentials per slot. Merging (not replacing) means a server
+        // round-trip that failed to map a binding (fresh flow, changed
+        // variableIds) can never drop a selection the user or auto-bind set.
         const newCredentials: Record<string, Record<string, number>> = {};
         Object.entries(result.bubbles).forEach(([key, bubbleData]) => {
           const bubble = bubbleData as {
@@ -136,7 +139,7 @@ export function useValidateCode({ flowId }: ValidateCodeOptions) {
             }
           }
         });
-        executionState.setAllCredentials(newCredentials);
+        executionState.mergeCredentials(newCredentials);
       }
 
       if (result.defaultInputs) {

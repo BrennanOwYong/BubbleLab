@@ -60,6 +60,7 @@ import {
 } from '../utils/error-handler.js';
 import { getCurrentWebhookUsage } from '../services/subscription-validation.js';
 import { executeBubbleFlowWithTracking } from '../services/bubble-flow-execution.js';
+import { autoBindMissingCredentials } from '../services/credential-auto-bind.js';
 import { runBubbleFlow } from '../services/execution.js';
 import {
   BubbleScript,
@@ -205,6 +206,16 @@ app.openapi(createBubbleFlowRoute, async (c) => {
   const processedCode = processUserCode(data.code);
 
   const userId = getUserId(c);
+
+  // Auto-select credentials at identification time: every required slot the
+  // user's connected credentials decide unambiguously is bound BEFORE the
+  // flow is stored, so a fresh flow arrives in the editor (and at webhook/cron
+  // execution) with its credentials already selected and persisted.
+  const autoBind = await autoBindMissingCredentials(
+    userId,
+    validationResult.bubbleParameters || {}
+  );
+
   const [inserted] = await db
     .insert(bubbleFlows)
     .values({
@@ -214,7 +225,7 @@ app.openapi(createBubbleFlowRoute, async (c) => {
       prompt: data.prompt,
       code: processedCode,
       originalCode: data.code,
-      bubbleParameters: validationResult.bubbleParameters || {},
+      bubbleParameters: autoBind.bubbleParameters,
       workflow: validationResult.workflow || null,
       inputSchema: validationResult.inputSchema || {},
       eventType: validationResult.trigger?.type || 'webhook/http',
@@ -225,15 +236,15 @@ app.openapi(createBubbleFlowRoute, async (c) => {
     .returning({ id: bubbleFlows.id });
 
   // Extract required credentials from bubble parameters
-  const requiredCredentials = validationResult.bubbleParameters
-    ? extractRequiredCredentials(validationResult.bubbleParameters)
-    : {};
+  const requiredCredentials = extractRequiredCredentials(
+    autoBind.bubbleParameters
+  );
 
   const response: z.infer<typeof createBubbleFlowResponseSchema> = {
     id: inserted.id,
     message: 'BubbleFlow created successfully',
     inputSchema: validationResult.inputSchema || {},
-    bubbleParameters: validationResult.bubbleParameters || {},
+    bubbleParameters: autoBind.bubbleParameters,
     workflow: validationResult.workflow,
     eventType: validationResult.trigger?.type || 'webhook/http',
     requiredCredentials,
@@ -1288,6 +1299,13 @@ app.openapi(validateBubbleFlowCodeRoute, async (c) => {
           credentials
         );
       }
+      // Refill slots the bubbleName merge could not map (fresh flow, changed
+      // variableIds, stale old params) when the user's credentials decide them
+      // unambiguously — a validation round-trip must never persist fewer
+      // bindings than the user's credentials can justify.
+      finalBubbleParameters = (
+        await autoBindMissingCredentials(userId, finalBubbleParameters)
+      ).bubbleParameters;
       const cronExpression = result.trigger?.cronSchedule || null;
 
       // Prepare update object
@@ -1325,6 +1343,17 @@ app.openapi(validateBubbleFlowCodeRoute, async (c) => {
         > | null,
         credentials
       );
+    }
+
+    // Same single-match refill as the sync branch, so the response the studio
+    // rebuilds its selections from never drops an unambiguous binding.
+    if (result.valid) {
+      finalBubbleParametersForResponse = (
+        await autoBindMissingCredentials(
+          userId,
+          finalBubbleParametersForResponse
+        )
+      ).bubbleParameters;
     }
 
     // Return the validation result based on if code itself is valid
@@ -1641,6 +1670,15 @@ app.openapi(generateBubbleFlowCodeRoute, async (c) => {
                   : {}),
               };
 
+              // Auto-select credentials for the generated steps before the
+              // flow is saved — the studio's refetch after generation_complete
+              // then delivers already-bound parameters, and server-side
+              // execution needs no editor visit first.
+              const autoBind = await autoBindMissingCredentials(
+                userId,
+                validationResult.bubbleParameters || {}
+              );
+
               // Update the flow with generated code
               await db
                 .update(bubbleFlows)
@@ -1648,7 +1686,7 @@ app.openapi(generateBubbleFlowCodeRoute, async (c) => {
                   name: flowName,
                   code: processedCode,
                   originalCode: generationResult.generatedCode,
-                  bubbleParameters: validationResult.bubbleParameters || {},
+                  bubbleParameters: autoBind.bubbleParameters,
                   workflow: validationResult.workflow || null,
                   inputSchema: validationResult.inputSchema || {},
                   eventType: validationResult.trigger?.type || 'webhook/http',

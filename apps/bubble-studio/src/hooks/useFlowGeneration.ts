@@ -8,26 +8,20 @@ import { useGenerationStore } from '@/stores/generationStore';
 import { useOutputStore } from '@/stores/outputStore';
 import { getFlowNameFromCode } from '@/utils/codeParser';
 import { useCreateBubbleFlow } from '@/hooks/useCreateBubbleFlow';
-import { useBubbleFlow } from '@/hooks/useBubbleFlow';
 import { useUIStore } from '@/stores/uiStore';
-import { ParsedBubbleWithInfo } from '@bubblelab/shared-schemas';
-import { useExecutionStore } from '@/stores/executionStore';
 import { useNavigate } from '@tanstack/react-router';
 
 // Export the generateCode function for use in other components
 export const useFlowGeneration = () => {
   const navigate = useNavigate();
   const { setOutput } = useOutputStore();
-  const { selectedFlowId: currentFlowId, selectFlow } = useUIStore();
+  const { selectFlow } = useUIStore();
   const { startGenerationFlow, stopGenerationFlow, setGenerationPrompt } =
     useGenerationStore();
 
   // Two mutation hooks: one for empty flows (AI generation), one for regular flows (templates/with code)
   const createEmptyFlowMutation = useCreateBubbleFlow({ isEmpty: true });
   const createRegularFlowMutation = useCreateBubbleFlow(); // Regular flow with code
-  const executionState = useExecutionStore(currentFlowId);
-  const { updateBubbleParameters: updateCurrentBubbleParameters } =
-    useBubbleFlow(currentFlowId);
   // State for managing generation
   const [generationParams, setGenerationParams] = useState<{
     prompt: string;
@@ -94,13 +88,12 @@ export const useFlowGeneration = () => {
       });
 
       if (hasCode) {
-        // For flows with code (templates), just stop generation and show the flow
-        const bubbleParameters = createResult.bubbleParameters || {};
-        updateCurrentBubbleParameters(
-          bubbleParameters as Record<string, ParsedBubbleWithInfo>
-        );
-        executionState.setAllCredentials({});
-        executionState.setInputs({});
+        // For flows with code (templates), just stop generation and show the
+        // flow. useCreateBubbleFlow's onSuccess already cached the new flow's
+        // bubbleParameters under the REAL flow id; the old code here wrote
+        // them (and a credential/input wipe) into the PREVIOUSLY selected
+        // flow's cache and store — currentFlowId still held the pre-create
+        // selection at this point.
         stopGenerationFlow();
         setOutput('');
       } else {

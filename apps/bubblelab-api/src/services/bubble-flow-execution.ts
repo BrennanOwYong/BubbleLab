@@ -21,6 +21,7 @@ import {
   shouldEvaluateExecution,
   storeEvaluation,
 } from './evaluation-trigger.js';
+import { autoBindMissingCredentials } from './credential-auto-bind.js';
 import { runRice, getRiceModelUsed } from './ai/rice.js';
 import { env } from '../config/env.js';
 
@@ -114,6 +115,26 @@ export async function executeBubbleFlowWithTracking(
     );
   }
 
+  // Single-match backstop: fill unbound required-credential slots the user's
+  // credentials decide unambiguously, and persist the bindings so every later
+  // path (editor load, webhook, cron) sees them. Without this, a flow whose
+  // stored bindings were never persisted (e.g. created before the credential
+  // was connected) fails server-side execution despite an obvious match.
+  const flowBubbleParameters = flow.bubbleParameters as Record<
+    string,
+    ParsedBubbleWithInfo
+  >;
+  const autoBind = await autoBindMissingCredentials(
+    options.userId,
+    flowBubbleParameters
+  );
+  if (autoBind.bound.length > 0) {
+    await db
+      .update(bubbleFlows)
+      .set({ bubbleParameters: autoBind.bubbleParameters })
+      .where(eq(bubbleFlows.id, bubbleFlowId));
+  }
+
   // Create execution record
   const execResult = await db
     .insert(bubbleFlowExecutions)
@@ -147,7 +168,7 @@ export async function executeBubbleFlowWithTracking(
     // we're streaming to a client (webhook, cron, manual all get logged)
     const result = await runBubbleFlowWithStreaming(
       flow.originalCode!, // Use original TypeScript code
-      flow.bubbleParameters as Record<string, ParsedBubbleWithInfo>,
+      autoBind.bubbleParameters,
       payload,
       {
         userId: options.userId,

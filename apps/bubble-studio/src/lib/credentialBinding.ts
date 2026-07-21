@@ -6,7 +6,10 @@
  * - exactly one credential of type T exists -> bind it (reason 'only_credential')
  * - several exist -> bind the most recently created one (reason
  *   'default_of_many'); the chooser stays available so the user can switch
- * - none exist -> no binding (the Connect affordance handles it)
+ * - none exist, but a credential of another type carries a STORED
+ *   derived-credential record covering T (its granted scopes serve T) ->
+ *   bind it (reason 'derived_record'); useSuiteBindings probe-confirms after
+ * - none at all -> no binding (the Connect affordance handles it)
  *
  * Bindings are PER STEP: the execution store keys pendingCredentials by bubble
  * variableId, so two steps can hold different accounts of the same type. The
@@ -29,7 +32,10 @@ import type {
   ParsedBubbleWithInfo,
 } from '@bubblelab/shared-schemas';
 
-export type AutoBindReason = 'only_credential' | 'default_of_many';
+export type AutoBindReason =
+  | 'only_credential'
+  | 'default_of_many'
+  | 'derived_record';
 
 export interface AutoBinding {
   /** Key into pendingCredentials (bubble variableId as string). */
@@ -144,10 +150,19 @@ export function computeAutoBindings(
       if (OPTIONAL_CREDENTIALS.has(credentialType as CredentialType)) continue;
       const existing = selected[credentialType];
       if (existing !== undefined && existing !== null) continue;
-      const candidates = getCredentialsOfType(
+      // Exact-type credentials first; with none connected, credentials whose
+      // STORED derived-credential records cover the type stand in (e.g. a
+      // Gmail credential whose granted scopes serve a Google Sheets step) —
+      // the API already verified and persisted that coverage, so the binding
+      // needs no probe. useSuiteBindings still confirms it live afterwards.
+      const exactCandidates = getCredentialsOfType(
         input.credentials,
         credentialType
       );
+      const candidates =
+        exactCandidates.length > 0
+          ? exactCandidates
+          : getDerivedRecordCandidates(input.credentials, credentialType);
       if (candidates.length === 0) continue;
       const chosen =
         candidates.length === 1
@@ -159,7 +174,12 @@ export function computeAutoBindings(
         credentialType,
         credentialId: chosen.id,
         credentialName: chosen.name,
-        reason: candidates.length === 1 ? 'only_credential' : 'default_of_many',
+        reason:
+          exactCandidates.length === 0
+            ? 'derived_record'
+            : exactCandidates.length === 1
+              ? 'only_credential'
+              : 'default_of_many',
         candidateCount: candidates.length,
       });
     }
@@ -213,6 +233,22 @@ export function credentialCoversTypeByRecord(
 }
 
 /**
+ * Credentials of a DIFFERENT type whose stored derived-credential records
+ * cover `credentialType` — the pre-verified stand-ins computeAutoBindings
+ * falls back to when no exact-type credential is connected.
+ */
+export function getDerivedRecordCandidates(
+  credentials: CredentialResponse[],
+  credentialType: string
+): CredentialResponse[] {
+  return credentials.filter(
+    (credential) =>
+      credential.credentialType !== credentialType &&
+      credentialCoversTypeByRecord(credential, credentialType)
+  );
+}
+
+/**
  * OAuth credentials of a SIBLING type in the required type's provider group
  * (never the exact type — exact matches are the normal binding path).
  */
@@ -233,10 +269,12 @@ export function getProviderSuiteCandidates(
 }
 
 /**
- * Every missing (bubble, credentialType) slot that NO exact-type credential can
- * fill but a sibling-type credential of the same OAuth provider could — with
- * the default rule's pick. Non-provider-grouped types never yield proposals.
- * Callers must scope-verify a proposal before binding it.
+ * Every (bubble, credentialType) slot a sibling-type credential of the same
+ * OAuth provider should serve — unfilled slots no exact-type credential can
+ * cover (default rule's pick), plus slots ALREADY bound to a sibling (the
+ * derived-record auto-bind), proposed with that same credential so the live
+ * scope-check confirms the binding. Non-provider-grouped types never yield
+ * proposals. Callers scope-verify a proposal and roll back on failure.
  */
 export function computeSuiteBindingProposals(
   input: ComputeAutoBindingsInput
@@ -252,18 +290,32 @@ export function computeSuiteBindingProposals(
     )) {
       if (SYSTEM_CREDENTIALS.has(credentialType as CredentialType)) continue;
       if (OPTIONAL_CREDENTIALS.has(credentialType as CredentialType)) continue;
-      const existing = selected[credentialType];
-      if (existing !== undefined && existing !== null) continue;
-      // Exact-type credentials exist -> the normal auto-bind path owns the slot.
-      if (getCredentialsOfType(input.credentials, credentialType).length > 0) {
-        continue;
-      }
       const provider = getOAuthProvider(credentialType as CredentialType);
       if (!provider) continue;
       const candidates = getProviderSuiteCandidates(
         input.credentials,
         credentialType
       );
+
+      const existing = selected[credentialType];
+      // A slot already bound to a SIBLING-type credential (the derived-record
+      // auto-bind path) still needs the live scope-check as confirmation —
+      // propose that same credential. A slot bound to an exact-type credential
+      // (or any credential outside the provider group) is settled.
+      let boundSibling: CredentialResponse | undefined;
+      if (existing !== undefined && existing !== null) {
+        boundSibling = candidates.find(
+          (candidate) => candidate.id === existing
+        );
+        if (!boundSibling) continue;
+      } else {
+        // Exact-type credentials exist -> the normal auto-bind path owns the slot.
+        if (
+          getCredentialsOfType(input.credentials, credentialType).length > 0
+        ) {
+          continue;
+        }
+      }
       if (candidates.length === 0) continue;
       // Candidates whose STORED derived-credential record covers the required
       // type come first: the persisted relationship is the source of truth, so
@@ -272,7 +324,9 @@ export function computeSuiteBindingProposals(
         credentialCoversTypeByRecord(candidate, credentialType)
       );
       const pool = withRecord.length > 0 ? withRecord : candidates;
-      const chosen = pool.length === 1 ? pool[0] : pickDefaultCredential(pool);
+      const chosen =
+        boundSibling ??
+        (pool.length === 1 ? pool[0] : pickDefaultCredential(pool));
       if (!chosen) continue;
       proposals.push({
         bubbleKey,

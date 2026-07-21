@@ -28,6 +28,7 @@ import { filterEmptyInputs } from '@/utils/inputUtils';
 import { useRenameFlow } from '@/hooks/useRenameFlow';
 import { useAutoBindCredentials } from '@/hooks/useAutoBindCredentials';
 import { useSuiteBindings } from '@/hooks/useSuiteBindings';
+import { usePersistCredentialBindings } from '@/hooks/usePersistCredentialBindings';
 import { useEffect, useState, useRef } from 'react';
 import { shallow } from 'zustand/shallow';
 import { ApiHttpError } from '@/lib/api';
@@ -61,7 +62,7 @@ export function FlowIDEView({ flowId }: FlowIDEViewProps) {
       isValidating: state.isValidating,
       isRunning: state.isRunning,
       pendingCredentials: state.pendingCredentials,
-      setAllCredentials: state.setAllCredentials,
+      mergeCredentials: state.mergeCredentials,
     }),
     shallow
   );
@@ -181,8 +182,11 @@ export function FlowIDEView({ flowId }: FlowIDEViewProps) {
         }
       );
 
+      // Merge (not replace): saved bindings win their slots, while selections
+      // already in the store (e.g. auto-bound before this effect ran) survive
+      // for slots the saved parameters do not mention.
       if (Object.keys(extractedCredentials).length > 0) {
-        executionState.setAllCredentials(extractedCredentials);
+        executionState.mergeCredentials(extractedCredentials);
       }
     }
   }, [currentFlow?.id]);
@@ -197,6 +201,11 @@ export function FlowIDEView({ flowId }: FlowIDEViewProps) {
   // Drive credential for a Sheets step) — bound only after its granted scopes
   // are verified against the steps' requirements.
   useSuiteBindings(flowId);
+
+  // Persist selections into the stored bubbleParameters as they settle, so
+  // bindings survive reload and server-side (webhook/cron) execution without
+  // requiring a Run first.
+  usePersistCredentialBindings(flowId);
 
   if (isFlowNotFound) {
     return <FlowNotFoundView flowId={flowId} onRetry={() => refetch()} />;
