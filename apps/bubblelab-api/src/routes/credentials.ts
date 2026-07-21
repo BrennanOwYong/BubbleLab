@@ -347,8 +347,15 @@ app.openapi(deleteCredentialRoute, async (c) => {
     return c.json({ error: 'Credential not found or access denied' }, 404);
   }
 
-  // Delete the credential
-  await db.delete(userCredentials).where(eq(userCredentials.id, credentialId));
+  if (credential.isOauth) {
+    // Revoke the token at the provider (best effort — an already-invalid token
+    // or unreachable provider never blocks the delete), then drop the row.
+    await oauthService.revokeCredential(credentialId);
+  } else {
+    await db
+      .delete(userCredentials)
+      .where(eq(userCredentials.id, credentialId));
+  }
 
   return c.json({ message: 'Credential deleted successfully' }, 200);
 });

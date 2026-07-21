@@ -67,6 +67,18 @@ export interface StoredOAuthCredential {
  * - OIDC userinfo (email identity; OIDC scopes combine with API scopes in one request):
  *   https://developers.google.com/identity/openid-connect/openid-connect
  * Verified against these pages on 2026-07-20.
+ *
+ * ## References (token revocation, verified 2026-07-21)
+ * - Google: POST https://oauth2.googleapis.com/revoke with
+ *   `Content-Type: application/x-www-form-urlencoded`, body `token=<access-or-refresh>`;
+ *   200 on success, 400 when the token is already invalid/expired:
+ *   https://developers.google.com/identity/protocols/oauth2/web-server#tokenrevoke
+ * - Notion: POST https://api.notion.com/v1/oauth/revoke, Basic auth
+ *   (client_id:client_secret), JSON `{token}`, `Notion-Version` header:
+ *   https://developers.notion.com/reference/revoke-token
+ * - Atlassian OAuth 2.0 (3LO) documents NO programmatic revocation endpoint
+ *   (users revoke via their Atlassian account console):
+ *   https://developer.atlassian.com/cloud/jira/platform/oauth-2-3lo-apps/
  */
 export class OAuthService {
   private clients: Map<string, OAuth2Client> = new Map();
@@ -1019,7 +1031,9 @@ export class OAuthService {
   }
 
   /**
-   * Revoke OAuth token and remove from database
+   * Revoke the token at the provider (best effort), then remove the credential
+   * from the database. Provider unreachable / token already invalid never blocks
+   * the delete — the row goes regardless; the revocation outcome is logged.
    */
   async revokeCredential(credentialId: number): Promise<void> {
     const credential = await db.query.userCredentials.findFirst({
@@ -1030,33 +1044,101 @@ export class OAuthService {
       throw new Error('OAuth credential not found');
     }
 
-    // Try to revoke token with provider (best effort)
-    if (credential.oauthAccessToken && credential.oauthProvider) {
+    if (credential.oauthProvider) {
       try {
-        const client = this.clients.get(credential.oauthProvider);
-        if (client) {
-          // const accessToken = await CredentialEncryption.decrypt(
-          //   credential.oauthAccessToken
-          // );
-          // Note: Not all providers support token revocation via @badgateway/oauth2-client
-          // This would need to be implemented per-provider if needed
-          console.debug(
-            `[oauthService] Would revoke token for ${credential.oauthProvider} (not implemented)`
-          );
+        // Prefer the refresh token: revoking it invalidates the whole grant
+        // (Google revokes the paired access token with it); fall back to the
+        // access token when no refresh token was stored.
+        const encryptedToken =
+          credential.oauthRefreshToken ?? credential.oauthAccessToken;
+        if (encryptedToken) {
+          const token = await CredentialEncryption.decrypt(encryptedToken);
+          await this.revokeProviderToken(credential.oauthProvider, token);
         }
       } catch (error) {
         console.error(
-          'Token revocation failed (continuing with deletion):',
+          `[oauthService] Token revocation for provider '${credential.oauthProvider}' failed (continuing with deletion):`,
           error
         );
       }
     }
 
-    // Delete credential from database
+    // Delete credential from database (derived_credentials rows cascade)
     await db
       .delete(userCredentials)
       .where(eq(userCredentials.id, credentialId));
   }
+
+  /**
+   * POST the token to the provider's documented revocation endpoint (see the
+   * "token revocation" References above). Best effort: a non-2xx response —
+   * e.g. Google's 400 for an already-invalid/expired token — is logged and
+   * swallowed. Providers with no documented endpoint (jira, followupboss) log
+   * and return; deleting the stored token is all we can do for them.
+   */
+  private async revokeProviderToken(
+    provider: string,
+    token: string
+  ): Promise<void> {
+    const timeout = AbortSignal.timeout(OAuthService.REVOCATION_TIMEOUT_MS);
+
+    switch (provider) {
+      case 'google': {
+        const response = await fetch('https://oauth2.googleapis.com/revoke', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ token }).toString(),
+          signal: timeout,
+        });
+        if (response.ok) {
+          console.info('[oauthService] Revoked google OAuth token');
+        } else {
+          const detail = await response.text().catch(() => '');
+          console.warn(
+            `[oauthService] Google token revocation returned ${response.status} (token likely already invalid): ${detail}`
+          );
+        }
+        return;
+      }
+      case 'notion': {
+        if (!env.NOTION_OAUTH_CLIENT_ID || !env.NOTION_OAUTH_CLIENT_SECRET) {
+          console.warn(
+            '[oauthService] Notion OAuth client not configured; skipping provider-side revocation'
+          );
+          return;
+        }
+        const basicAuth = Buffer.from(
+          `${env.NOTION_OAUTH_CLIENT_ID}:${env.NOTION_OAUTH_CLIENT_SECRET}`
+        ).toString('base64');
+        const response = await fetch('https://api.notion.com/v1/oauth/revoke', {
+          method: 'POST',
+          headers: {
+            Authorization: `Basic ${basicAuth}`,
+            'Content-Type': 'application/json',
+            'Notion-Version': '2025-09-03',
+          },
+          body: JSON.stringify({ token }),
+          signal: timeout,
+        });
+        if (response.ok) {
+          console.info('[oauthService] Revoked notion OAuth token');
+        } else {
+          const detail = await response.text().catch(() => '');
+          console.warn(
+            `[oauthService] Notion token revocation returned ${response.status}: ${detail}`
+          );
+        }
+        return;
+      }
+      default:
+        console.warn(
+          `[oauthService] Provider '${provider}' documents no token-revocation endpoint; deleting stored tokens only`
+        );
+    }
+  }
+
+  /** Dead outbound routes on this box can hang for 30s+; cap the revoke call. */
+  private static readonly REVOCATION_TIMEOUT_MS = 10_000;
 }
 
 // Export singleton instance
