@@ -22,6 +22,10 @@ import {
   getAccountCredentialTypesForField,
   getAccountOptions,
 } from '../lib/authMethods';
+import { runIncrementalConsent } from '../lib/incrementalConsent';
+import { credentialsApi } from '../services/credentialsApi';
+import { useQueryClient } from '@tanstack/react-query';
+import type { CredentialResponse } from '@bubblelab/shared-schemas';
 
 interface SchemaField {
   name: string;
@@ -78,10 +82,86 @@ function InputFieldsRenderer({
   );
   // FU-8: connected credentials feed account dropdowns (e.g. gmailAccountEmail)
   const { data: connectedCredentials = [] } = useCredentials(API_BASE_URL);
+  const queryClient = useQueryClient();
   // Account fields the user switched to manual text entry
   const [manualAccountFields, setManualAccountFields] = useState<Set<string>>(
     new Set()
   );
+  // Account field whose credential is being re-consented for the email scope
+  const [reconnectingField, setReconnectingField] = useState<string | null>(
+    null
+  );
+  const [reconnectErrors, setReconnectErrors] = useState<
+    Record<string, string | null>
+  >({});
+
+  /**
+   * The credential an account field's current value references when that value
+   * is the credential's display NAME (the row carries no account email — a
+   * grant made before the openid/email identity scopes existed). Such fields
+   * work (the OAuth token authenticates alone) but can be upgraded to show the
+   * real address via a one-time incremental re-consent.
+   */
+  const findEmaillessBackingCredential = (
+    value: unknown,
+    accountTypes: readonly string[]
+  ): CredentialResponse | undefined => {
+    if (typeof value !== 'string' || value.length === 0) return undefined;
+    return connectedCredentials.find((cred) => {
+      if (!accountTypes.includes(cred.credentialType)) return false;
+      if (cred.isOauth !== true || !cred.oauthProvider) return false;
+      const metadata = cred.metadata as { email?: string } | undefined;
+      if (typeof metadata?.email === 'string' && metadata.email.length > 0) {
+        return false;
+      }
+      return cred.name === value;
+    });
+  };
+
+  /**
+   * One-time incremental re-consent that adds ONLY the identity scopes
+   * (initiateOAuth appends openid+email server-side to the empty request, and
+   * include_granted_scopes keeps every existing grant). On success the field
+   * upgrades from the credential name to the resolved account email.
+   */
+  const handleReconnectForEmail = async (
+    fieldName: string,
+    credential: CredentialResponse
+  ) => {
+    setReconnectingField(fieldName);
+    setReconnectErrors((prev) => ({ ...prev, [fieldName]: null }));
+    try {
+      const result = await runIncrementalConsent({
+        provider: credential.oauthProvider as string,
+        credentialId: credential.id,
+        credentialType: credential.credentialType,
+        scopes: [],
+      });
+      if (!result.success) {
+        setReconnectErrors((prev) => ({
+          ...prev,
+          [fieldName]: result.error ?? 'Re-consent failed',
+        }));
+        return;
+      }
+      const refreshed = await credentialsApi.getCredentials();
+      queryClient.setQueryData(['credentials'], refreshed);
+      const updated = refreshed.find((cred) => cred.id === credential.id);
+      const email = (updated?.metadata as { email?: string } | undefined)
+        ?.email;
+      if (email) {
+        onInputChange(fieldName, email);
+      } else {
+        setReconnectErrors((prev) => ({
+          ...prev,
+          [fieldName]:
+            'Reconnected, but Google returned no account email for this credential',
+        }));
+      }
+    } finally {
+      setReconnectingField(null);
+    }
+  };
   const [uploadedFileNames, setUploadedFileNames] = useState<
     Record<string, string>
   >({});
@@ -406,6 +486,15 @@ function InputFieldsRenderer({
           : [];
         const showAccountDropdown =
           accountOptions.length > 0 && !manualAccountFields.has(field.name);
+        // The field currently shows a credential NAME because the referenced
+        // credential has no recorded account email — offer the identity
+        // re-consent upgrade.
+        const emaillessCredential = accountCredentialTypes
+          ? findEmaillessBackingCredential(
+              inputValues[field.name],
+              accountCredentialTypes
+            )
+          : undefined;
         const currentValue = inputValues[field.name] as
           | string
           | number
@@ -1262,6 +1351,37 @@ function InputFieldsRenderer({
                   <div className="text-[10px] text-amber-300">
                     {fieldErrors[field.name]}
                   </div>
+                )}
+              </div>
+            )}
+            {emaillessCredential && (
+              <div
+                className="mt-1.5 flex items-center gap-2 flex-wrap"
+                data-testid={`account-field-reconnect-${field.name}`}
+              >
+                <span className="text-[10px] text-neutral-400">
+                  Linked to your "{emaillessCredential.name}" credential — the
+                  account email is not on record. The flow runs fine either way.
+                </span>
+                <button
+                  type="button"
+                  disabled={isExecuting || reconnectingField === field.name}
+                  onClick={() =>
+                    void handleReconnectForEmail(
+                      field.name,
+                      emaillessCredential
+                    )
+                  }
+                  className="text-[10px] text-blue-300 hover:text-blue-200 underline underline-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {reconnectingField === field.name
+                    ? 'Waiting for Google…'
+                    : 'Reconnect to show the email'}
+                </button>
+                {reconnectErrors[field.name] && (
+                  <span className="text-[10px] text-red-400">
+                    {reconnectErrors[field.name]}
+                  </span>
                 )}
               </div>
             )}

@@ -127,6 +127,13 @@
       "when": 1768466667162,
       "tag": "0017_cuddly_kang",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1784634691996,
+      "tag": "0018_lazy_slapstick",
+      "breakpoints": true
     }
   ]
 }

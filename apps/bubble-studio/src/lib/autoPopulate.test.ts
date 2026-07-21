@@ -47,10 +47,58 @@ describe('setup-field auto-population from saved credentials', () => {
     expect(populated).toEqual([]);
   });
 
-  it('never guesses: a credential without a recorded account email populates nothing', () => {
+  it('references the credential by NAME when no account email is on record (never blank while bound)', () => {
     const populated = computeAutoPopulatedFields(
       [{ name: 'gmailAccountEmail' }],
       [gmailCredentialWithoutEmail],
+      {}
+    );
+    expect(populated).toEqual([
+      {
+        field: 'gmailAccountEmail',
+        value: 'Old Gmail',
+        credentialId: 43,
+        credentialType: CredentialType.GMAIL_CRED,
+        credentialName: 'Old Gmail',
+        source: 'credential_name',
+      },
+    ]);
+  });
+
+  it('prefers the step-bound credential over an unbound one with an email', () => {
+    const populated = computeAutoPopulatedFields(
+      [{ name: 'gmailAccountEmail' }],
+      [gmailCredential, gmailCredentialWithoutEmail],
+      {},
+      new Set([43])
+    );
+    expect(populated).toHaveLength(1);
+    expect(populated[0].credentialId).toBe(43);
+    expect(populated[0].value).toBe('Old Gmail');
+    expect(populated[0].source).toBe('credential_name');
+  });
+
+  it('prefers email-carrying rows when nothing is bound', () => {
+    const populated = computeAutoPopulatedFields(
+      [{ name: 'gmailAccountEmail' }],
+      [gmailCredentialWithoutEmail, gmailCredential],
+      {}
+    );
+    expect(populated).toHaveLength(1);
+    expect(populated[0].credentialId).toBe(42);
+    expect(populated[0].source).toBe('oauth_account_email');
+  });
+
+  it('populates nothing when the credential has neither email nor name', () => {
+    const nameless = {
+      id: 44,
+      credentialType: CredentialType.GMAIL_CRED,
+      metadata: undefined,
+      createdAt: '2026-07-17T00:00:00.000Z',
+    } as unknown as CredentialResponse;
+    const populated = computeAutoPopulatedFields(
+      [{ name: 'gmailAccountEmail' }],
+      [nameless],
       {}
     );
     expect(populated).toEqual([]);

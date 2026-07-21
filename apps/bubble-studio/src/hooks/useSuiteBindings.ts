@@ -140,12 +140,31 @@ export function useSuiteBindings(flowId: number | null): void {
         sourceCredentialType: proposal.sourceCredentialType,
         bubbleKeys,
         candidateCount: proposal.candidateCount,
+        hasDerivedRecord: proposal.hasDerivedRecord,
       });
 
       const { requirements, source: requirementSource } = requirementsForType(
         flow.scopeRequirements ?? [],
         credentialType
       );
+
+      // Bind under the REQUIRED type key so validation, execution injection,
+      // and the build-time scope audit all line up.
+      const targetKeys = getBubbleKeysRequiringType(
+        flow.bubbleParameters ?? {},
+        flow.requiredCredentials ?? {},
+        credentialType
+      );
+
+      // Auto-apply on flow load: a STORED derived-credential record means the
+      // API already verified and persisted that this credential's grant covers
+      // the required type, so the steps bind immediately — the probe below
+      // only confirms (and rolls the binding back if the live grant shrank).
+      if (proposal.hasDerivedRecord) {
+        for (const bubbleKey of targetKeys) {
+          store.setCredential(bubbleKey, credentialType, proposal.credentialId);
+        }
+      }
 
       store.setSuiteBinding(credentialType, {
         credentialId: proposal.credentialId,
@@ -159,13 +178,6 @@ export function useSuiteBindings(flowId: number | null): void {
         .checkCredentialScopes(proposal.credentialId, requirements)
         .then((result) => {
           if (result.satisfied) {
-            // Bind under the REQUIRED type key so validation, execution
-            // injection, and the build-time scope audit all line up.
-            const targetKeys = getBubbleKeysRequiringType(
-              flow.bubbleParameters ?? {},
-              flow.requiredCredentials ?? {},
-              credentialType
-            );
             for (const bubbleKey of targetKeys) {
               store.setCredential(
                 bubbleKey,
@@ -194,6 +206,20 @@ export function useSuiteBindings(flowId: number | null): void {
               bubbleKeys: targetKeys,
             });
           } else {
+            // Roll back an auto-applied binding: the live probe found the
+            // grant no longer covers the requirements (the same probe already
+            // dropped the stale derived record server-side).
+            if (proposal.hasDerivedRecord) {
+              for (const bubbleKey of targetKeys) {
+                if (
+                  getExecutionStore(flowId).pendingCredentials[bubbleKey]?.[
+                    credentialType
+                  ] === proposal.credentialId
+                ) {
+                  store.setCredential(bubbleKey, credentialType, null);
+                }
+              }
+            }
             store.setSuiteBinding(credentialType, {
               credentialId: proposal.credentialId,
               credentialName: proposal.credentialName,

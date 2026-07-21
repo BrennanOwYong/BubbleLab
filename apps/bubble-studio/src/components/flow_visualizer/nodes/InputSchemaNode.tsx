@@ -63,6 +63,10 @@ function InputSchemaNode({ data }: InputSchemaNodeProps) {
 
   // Subscribe to execution store (using selectors to avoid re-renders from events)
   const executionInputs = useExecutionStore(flowId, (s) => s.executionInputs);
+  const pendingCredentials = useExecutionStore(
+    flowId,
+    (s) => s.pendingCredentials
+  );
   const isExecuting = useExecutionStore(flowId, (s) => s.isRunning);
   const highlightedBubble = useExecutionStore(
     flowId,
@@ -75,18 +79,26 @@ function InputSchemaNode({ data }: InputSchemaNodeProps) {
   // Get runFlow function with callback
   const { runFlow } = useRunExecution(flowId, { onFocusBubble });
 
-  // Auto-populate: pre-fill account fields from saved credentials (editable, defaulted).
-  // Each field is populated at most once per mounted flow so a user clearing the value is
-  // not fought by the effect; user-entered values are never overwritten (isBlank guard in
+  // Auto-populate: account fields reference the credential the flow's steps
+  // are bound to (editable, defaulted; email if known, else the credential
+  // name — see lib/autoPopulate.ts). Each field is populated at most once per
+  // mounted flow so a user clearing the value is not fought by the effect;
+  // user-entered values are never overwritten (isBlank guard in
   // computeAutoPopulatedFields).
   const { data: connectedCredentials = [] } = useCredentials(API_BASE_URL);
   const autoPopulatedFieldsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (connectedCredentials.length === 0) return;
+    const boundCredentialIds = new Set(
+      Object.values(pendingCredentials).flatMap((byType) =>
+        Object.values(byType)
+      )
+    );
     const candidates = computeAutoPopulatedFields(
       schemaFields,
       connectedCredentials,
-      executionInputs
+      executionInputs,
+      boundCredentialIds
     ).filter((entry) => !autoPopulatedFieldsRef.current.has(entry.field));
     for (const entry of candidates) {
       autoPopulatedFieldsRef.current.add(entry.field);
@@ -102,9 +114,15 @@ function InputSchemaNode({ data }: InputSchemaNodeProps) {
       });
     }
     // executionInputs is intentionally read fresh each run but not a dependency driver:
-    // the effect re-fires when credentials or the schema change.
+    // the effect re-fires when credentials, step bindings, or the schema change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connectedCredentials, schemaFields, flowId, setInput]);
+  }, [
+    connectedCredentials,
+    pendingCredentials,
+    schemaFields,
+    flowId,
+    setInput,
+  ]);
 
   // Handle input changes
   const handleInputChange = (fieldName: string, value: unknown) => {

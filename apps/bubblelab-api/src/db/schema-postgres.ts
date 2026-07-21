@@ -151,6 +151,40 @@ export const userCredentials = pgTable('user_credentials', {
     .$defaultFn(() => new Date()),
 });
 
+// Persisted derived-credential relationship: parent credential's GRANTED scopes
+// cover a sibling type of the same OAuth provider group (e.g. a
+// GOOGLE_DRIVE_CRED whose grant includes spreadsheets serves
+// GOOGLE_SHEETS_CRED). One row per (parent, derived type); recomputed from the
+// parent's oauth_scopes on connect / scope-sync / re-consent so the records
+// stay in lockstep with the real grant (a revoked scope drops the row).
+export const derivedCredentials = pgTable(
+  'derived_credentials',
+  {
+    id: serial().primaryKey(),
+    parentCredentialId: integer('parent_credential_id')
+      .notNull()
+      .references(() => userCredentials.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.clerkId, { onDelete: 'cascade' }),
+    derivedCredentialType: text('derived_credential_type').notNull(), // e.g. 'GOOGLE_SHEETS_CRED'
+    provider: text('provider').notNull(), // OAuth provider shared by parent and derived type (e.g. 'google')
+    isDerived: boolean('is_derived').notNull().default(true), // capability derived from the parent grant, never a standalone connection
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    parentDerivedTypeUnique: unique().on(
+      table.parentCredentialId,
+      table.derivedCredentialType
+    ),
+  })
+);
+
 export const userServiceUsage = pgTable(
   'user_service_usage',
   {

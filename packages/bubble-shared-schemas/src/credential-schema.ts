@@ -2805,6 +2805,74 @@ export function getOAuthProviderGroupTypes(
 }
 
 /**
+ * Scope comparison key: trims whitespace and a trailing '/' so
+ * 'https://mail.google.com/' equals 'https://mail.google.com'. Case is
+ * preserved — OAuth scope strings are case-sensitive per RFC 6749 §3.3.
+ */
+export function normalizeOAuthScope(scope: string): string {
+  const trimmed = scope.trim();
+  return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
+}
+
+/**
+ * Identity scopes ride along on every Google authorization (initiateOAuth
+ * appends them) — they carry no service capability, so coverage comparisons
+ * ignore them.
+ */
+export const OAUTH_IDENTITY_SCOPES: ReadonlySet<string> = new Set([
+  'openid',
+  'email',
+  'profile',
+]);
+
+/** One sibling type's coverage verdict against a credential's granted scopes. */
+export interface ScopeCoverageEntry {
+  /** The sibling credential type in the same OAuth provider group. */
+  credentialType: CredentialType;
+  /** True when the granted scopes cover every non-identity default scope of the sibling type. */
+  covered: boolean;
+  /** The sibling's default scopes the grant does not cover (empty when covered). */
+  missingScopes: string[];
+}
+
+/**
+ * Which sibling types of `ownType`'s OAuth provider group the granted scopes
+ * cover ("this Google Drive grant also serves Google Sheets"). The SINGLE
+ * implementation of suite coverage: the API derives persisted
+ * derived-credential records from it, so every consumer reads one truth.
+ * Types outside a multi-type provider group return []; an empty grant set
+ * covers nothing.
+ */
+export function computeScopeCoverage(
+  ownType: CredentialType,
+  grantedScopes: readonly string[]
+): ScopeCoverageEntry[] {
+  const groupTypes = getOAuthProviderGroupTypes(ownType);
+  if (groupTypes.length <= 1) return [];
+  const granted = new Set(
+    grantedScopes.map((scope) => normalizeOAuthScope(scope))
+  );
+  if (granted.size === 0) return [];
+  const entries: ScopeCoverageEntry[] = [];
+  for (const siblingType of groupTypes) {
+    if (siblingType === ownType) continue;
+    const requiredScopes = getDefaultScopes(siblingType).filter(
+      (scope) => !OAUTH_IDENTITY_SCOPES.has(scope)
+    );
+    if (requiredScopes.length === 0) continue;
+    const missingScopes = requiredScopes.filter(
+      (scope) => !granted.has(normalizeOAuthScope(scope))
+    );
+    entries.push({
+      credentialType: siblingType,
+      covered: missingScopes.length === 0,
+      missingScopes,
+    });
+  }
+  return entries;
+}
+
+/**
  * Get scope descriptions for a specific credential type
  * Returns an array of scope descriptions that will be requested during OAuth
  */
@@ -3303,6 +3371,36 @@ export const updateCredentialSchema = z
     }),
   })
   .openapi('UpdateCredentialRequest');
+// Persisted derived-credential record: "this credential's granted scopes also
+// serve this sibling type of the same OAuth provider". Materialized by the API
+// (derived_credentials table) and kept in lockstep with the parent's granted
+// scopes on connect / scope-sync / re-consent.
+export const derivedCredentialRecordSchema = z
+  .object({
+    id: z.number().openapi({ description: 'Derived-credential record ID' }),
+    parentCredentialId: z.number().openapi({
+      description:
+        'The credential row whose granted scopes cover the derived type',
+    }),
+    derivedCredentialType: z.string().openapi({
+      description:
+        'The sibling credential type the parent credential serves (e.g. GOOGLE_SHEETS_CRED)',
+    }),
+    provider: z.string().openapi({
+      description:
+        'OAuth provider shared by parent and derived type (e.g. google)',
+    }),
+    isDerived: z.boolean().openapi({
+      description:
+        'Always true: the capability is derived from the parent grant, not a standalone connection',
+    }),
+  })
+  .openapi('DerivedCredentialRecord');
+
+export type DerivedCredentialRecord = z.infer<
+  typeof derivedCredentialRecordSchema
+>;
+
 // GET /credentials - List credentials response
 export const credentialResponseSchema = z
   .object({
@@ -3372,6 +3470,16 @@ export const credentialResponseSchema = z
       description:
         'ID of the master credential this credential uses for tokens (null means this is a master)',
     }),
+
+    // Persisted suite coverage: the sibling types this credential's granted
+    // scopes serve (the stored derived-credential records, parent side).
+    derivedCredentials: z
+      .array(derivedCredentialRecordSchema)
+      .optional()
+      .openapi({
+        description:
+          "Sibling credential types of the same OAuth provider this credential's granted scopes cover (persisted derived-credential records)",
+      }),
   })
   .openapi('CredentialResponse');
 

@@ -12,6 +12,7 @@ import { userCredentials } from '../db/schema.js';
 import { CredentialEncryption } from '../utils/encryption.js';
 import { and, eq } from 'drizzle-orm';
 import { env } from '../config/env.js';
+import { syncDerivedCredentialsById } from './derived-credential-service.js';
 
 /**
  * The OAuth account email recorded on a credential's metadata (GoogleOAuthMetadata et al),
@@ -723,6 +724,9 @@ export class OAuthService {
           .update(userCredentials)
           .set({ oauthScopes: probed, updatedAt: new Date() })
           .where(eq(userCredentials.id, credentialId));
+        // Scope-sync: the stored derived-credential records must follow the
+        // freshly probed grant (a revoked scope drops its record here).
+        await syncDerivedCredentialsById(credentialId);
         return { grantedScopes: probed, source: 'probe' };
       }
     }
@@ -793,7 +797,9 @@ export class OAuthService {
 
     const existing = credential.metadata;
     const metadata =
-      existing !== null && existing !== undefined && typeof existing === 'object'
+      existing !== null &&
+      existing !== undefined &&
+      typeof existing === 'object'
         ? { ...existing, ...userInfo }
         : userInfo;
     await db
@@ -860,6 +866,10 @@ export class OAuthService {
       })
       .where(eq(userCredentials.id, credentialId));
 
+    // Re-consent changed the accumulated grant — keep the stored
+    // derived-credential records in lockstep with it.
+    await syncDerivedCredentialsById(credentialId);
+
     return credentialId;
   }
 
@@ -919,6 +929,10 @@ export class OAuthService {
         metadata: providerMetadata ?? null, // Store provider-specific metadata (e.g., Jira cloudId)
       })
       .returning({ id: userCredentials.id });
+
+    // Connect: materialize which sibling types this grant covers as stored
+    // derived-credential records.
+    await syncDerivedCredentialsById(result.id);
 
     return result.id;
   }

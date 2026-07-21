@@ -1,18 +1,37 @@
 import { describe, it, expect } from 'vitest';
-import { CredentialType } from '@bubblelab/shared-schemas';
+import {
+  CredentialType,
+  computeScopeCoverage,
+} from '@bubblelab/shared-schemas';
 import type {
   CredentialResponse,
+  DerivedCredentialRecord,
   ParsedBubbleWithInfo,
 } from '@bubblelab/shared-schemas';
 import {
   computeAutoBindings,
   computeSuiteBindingProposals,
-  computeSuiteCoverage,
+  credentialCoversTypeByRecord,
+  getStoredSuiteCoverage,
   getProviderSuiteCandidates,
   pickDefaultCredential,
   getBubbleKeysRequiringType,
   getBoundCredentialIdForType,
 } from './credentialBinding';
+
+function derivedRecord(
+  parentCredentialId: number,
+  derivedCredentialType: string,
+  id = parentCredentialId * 100
+): DerivedCredentialRecord {
+  return {
+    id,
+    parentCredentialId,
+    derivedCredentialType,
+    provider: 'google',
+    isDerived: true,
+  };
+}
 
 function credential(
   overrides: Partial<CredentialResponse> & { id: number }
@@ -238,8 +257,33 @@ describe('computeSuiteBindingProposals (same OAuth provider, sibling type)', () 
         credentialName: 'Drive (work)',
         sourceCredentialType: CredentialType.GOOGLE_DRIVE_CRED,
         candidateCount: 1,
+        hasDerivedRecord: false,
       },
     ]);
+  });
+
+  it('prefers the sibling holding a STORED derived record for the required type', () => {
+    const driveWithRecord = credential({
+      id: 20,
+      name: 'Drive (work)',
+      credentialType: CredentialType.GOOGLE_DRIVE_CRED,
+      isOauth: true,
+      createdAt: '2026-07-10T00:00:00.000Z',
+      derivedCredentials: [
+        derivedRecord(20, CredentialType.GOOGLE_SHEETS_CRED),
+      ],
+    });
+    // Newer than the Drive credential — the recency default would pick it, but
+    // the stored record on the Drive credential wins.
+    const proposals = computeSuiteBindingProposals({
+      ...sheetsFlow,
+      pendingCredentials: {},
+      credentials: [driveWithRecord, oauthGmail],
+    });
+    expect(proposals).toHaveLength(1);
+    expect(proposals[0].credentialId).toBe(20);
+    expect(proposals[0].hasDerivedRecord).toBe(true);
+    expect(proposals[0].candidateCount).toBe(2);
   });
 
   it('defers to the exact-type path when an exact-type credential exists', () => {
@@ -319,21 +363,79 @@ describe('computeSuiteBindingProposals (same OAuth provider, sibling type)', () 
   });
 });
 
-describe('computeSuiteCoverage', () => {
-  const SHEETS = 'https://www.googleapis.com/auth/spreadsheets';
-  const CALENDAR = 'https://www.googleapis.com/auth/calendar';
-  const GMAIL_SEND = 'https://www.googleapis.com/auth/gmail.send';
-  const GMAIL_MODIFY = 'https://www.googleapis.com/auth/gmail.modify';
-
-  it('reports the sibling types the recorded grant fully covers, own type excluded', () => {
+describe('getStoredSuiteCoverage (persisted derived-credential records)', () => {
+  it('maps the stored records to labeled coverage entries', () => {
     const drive = credential({
       id: 30,
       credentialType: CredentialType.GOOGLE_DRIVE_CRED,
       isOauth: true,
       oauthProvider: 'google',
-      oauthScopes: [SHEETS, CALENDAR, GMAIL_SEND],
+      derivedCredentials: [
+        derivedRecord(30, CredentialType.GOOGLE_SHEETS_CRED, 1),
+        derivedRecord(30, CredentialType.GOOGLE_CALENDAR_CRED, 2),
+      ],
     });
-    const entries = computeSuiteCoverage(drive);
+    expect(getStoredSuiteCoverage(drive)).toEqual([
+      {
+        credentialType: CredentialType.GOOGLE_SHEETS_CRED,
+        label: 'Google Sheets',
+      },
+      {
+        credentialType: CredentialType.GOOGLE_CALENDAR_CRED,
+        label: 'Google Calendar',
+      },
+    ]);
+  });
+
+  it('returns [] for credentials without records and never recomputes from scopes', () => {
+    const drive = credential({
+      id: 31,
+      credentialType: CredentialType.GOOGLE_DRIVE_CRED,
+      isOauth: true,
+      oauthProvider: 'google',
+      // Scopes that WOULD cover Sheets — but no stored record, so no coverage:
+      // the persisted record is the source of truth, not a client recompute.
+      oauthScopes: ['https://www.googleapis.com/auth/spreadsheets'],
+    });
+    expect(getStoredSuiteCoverage(drive)).toEqual([]);
+  });
+
+  it('credentialCoversTypeByRecord matches only the recorded derived types', () => {
+    const drive = credential({
+      id: 32,
+      credentialType: CredentialType.GOOGLE_DRIVE_CRED,
+      isOauth: true,
+      derivedCredentials: [
+        derivedRecord(32, CredentialType.GOOGLE_SHEETS_CRED),
+      ],
+    });
+    expect(
+      credentialCoversTypeByRecord(drive, CredentialType.GOOGLE_SHEETS_CRED)
+    ).toBe(true);
+    expect(
+      credentialCoversTypeByRecord(drive, CredentialType.GOOGLE_CALENDAR_CRED)
+    ).toBe(false);
+    expect(
+      credentialCoversTypeByRecord(
+        credential({ id: 33 }),
+        CredentialType.GOOGLE_SHEETS_CRED
+      )
+    ).toBe(false);
+  });
+});
+
+describe('computeScopeCoverage (shared-schemas — the API record derivation)', () => {
+  const SHEETS = 'https://www.googleapis.com/auth/spreadsheets';
+  const CALENDAR = 'https://www.googleapis.com/auth/calendar';
+  const GMAIL_SEND = 'https://www.googleapis.com/auth/gmail.send';
+  const GMAIL_MODIFY = 'https://www.googleapis.com/auth/gmail.modify';
+
+  it('reports the sibling types the grant fully covers, own type excluded', () => {
+    const entries = computeScopeCoverage(CredentialType.GOOGLE_DRIVE_CRED, [
+      SHEETS,
+      CALENDAR,
+      GMAIL_SEND,
+    ]);
     expect(entries.map((entry) => entry.credentialType)).not.toContain(
       CredentialType.GOOGLE_DRIVE_CRED
     );
@@ -341,12 +443,7 @@ describe('computeSuiteCoverage', () => {
       entries.map((entry) => [entry.credentialType, entry])
     );
     expect(byType.get(CredentialType.GOOGLE_SHEETS_CRED)?.covered).toBe(true);
-    expect(byType.get(CredentialType.GOOGLE_SHEETS_CRED)?.label).toBe(
-      'Google Sheets'
-    );
-    expect(byType.get(CredentialType.GOOGLE_CALENDAR_CRED)?.covered).toBe(
-      true
-    );
+    expect(byType.get(CredentialType.GOOGLE_CALENDAR_CRED)?.covered).toBe(true);
     // Gmail needs send AND modify; only send is granted.
     expect(byType.get(CredentialType.GMAIL_CRED)?.covered).toBe(false);
     expect(byType.get(CredentialType.GMAIL_CRED)?.missingScopes).toEqual([
@@ -355,44 +452,20 @@ describe('computeSuiteCoverage', () => {
   });
 
   it('is trailing-slash tolerant when comparing scopes', () => {
-    const drive = credential({
-      id: 31,
-      credentialType: CredentialType.GOOGLE_DRIVE_CRED,
-      isOauth: true,
-      oauthProvider: 'google',
-      oauthScopes: [`${SHEETS}/`],
-    });
-    const sheets = computeSuiteCoverage(drive).find(
+    const sheets = computeScopeCoverage(CredentialType.GOOGLE_DRIVE_CRED, [
+      `${SHEETS}/`,
+    ]).find(
       (entry) => entry.credentialType === CredentialType.GOOGLE_SHEETS_CRED
     );
     expect(sheets?.covered).toBe(true);
   });
 
-  it('returns [] for non-OAuth rows, empty grants, and single-type provider groups', () => {
+  it('returns [] for empty grants and single-type provider groups', () => {
+    expect(computeScopeCoverage(CredentialType.GOOGLE_DRIVE_CRED, [])).toEqual(
+      []
+    );
     expect(
-      computeSuiteCoverage(
-        credential({ id: 32, credentialType: CredentialType.GOOGLE_DRIVE_CRED })
-      )
-    ).toEqual([]);
-    expect(
-      computeSuiteCoverage(
-        credential({
-          id: 33,
-          credentialType: CredentialType.GOOGLE_DRIVE_CRED,
-          isOauth: true,
-          oauthScopes: [],
-        })
-      )
-    ).toEqual([]);
-    expect(
-      computeSuiteCoverage(
-        credential({
-          id: 34,
-          credentialType: CredentialType.SLACK_CRED,
-          isOauth: true,
-          oauthScopes: ['chat:write'],
-        })
-      )
+      computeScopeCoverage(CredentialType.SLACK_CRED, ['chat:write'])
     ).toEqual([]);
   });
 });

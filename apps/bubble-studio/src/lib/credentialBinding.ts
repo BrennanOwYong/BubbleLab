@@ -23,7 +23,6 @@ import {
   CREDENTIAL_TYPE_CONFIG,
   getOAuthProvider,
   getOAuthProviderGroupTypes,
-  getDefaultScopes,
 } from '@bubblelab/shared-schemas';
 import type {
   CredentialResponse,
@@ -191,6 +190,26 @@ export interface SuiteBindingProposal {
   sourceCredentialType: string;
   /** Sibling-type candidates available at decision time. */
   candidateCount: number;
+  /**
+   * True when the proposed credential carries a STORED derived-credential
+   * record for the required type (the API already verified and persisted the
+   * coverage) — such proposals bind on flow load without waiting for a probe.
+   */
+  hasDerivedRecord: boolean;
+}
+
+/**
+ * Whether a credential's STORED derived-credential records cover
+ * `credentialType` (the persisted parent→derived relationship the API keeps
+ * in lockstep with the granted scopes).
+ */
+export function credentialCoversTypeByRecord(
+  credential: CredentialResponse,
+  credentialType: string
+): boolean {
+  return (credential.derivedCredentials ?? []).some(
+    (record) => record.derivedCredentialType === credentialType
+  );
 }
 
 /**
@@ -246,10 +265,14 @@ export function computeSuiteBindingProposals(
         credentialType
       );
       if (candidates.length === 0) continue;
-      const chosen =
-        candidates.length === 1
-          ? candidates[0]
-          : pickDefaultCredential(candidates);
+      // Candidates whose STORED derived-credential record covers the required
+      // type come first: the persisted relationship is the source of truth, so
+      // a record-holding sibling wins over one that would need a fresh probe.
+      const withRecord = candidates.filter((candidate) =>
+        credentialCoversTypeByRecord(candidate, credentialType)
+      );
+      const pool = withRecord.length > 0 ? withRecord : candidates;
+      const chosen = pool.length === 1 ? pool[0] : pickDefaultCredential(pool);
       if (!chosen) continue;
       proposals.push({
         bubbleKey,
@@ -259,6 +282,7 @@ export function computeSuiteBindingProposals(
         credentialName: chosen.name,
         sourceCredentialType: chosen.credentialType,
         candidateCount: candidates.length,
+        hasDerivedRecord: credentialCoversTypeByRecord(chosen, credentialType),
       });
     }
   }
@@ -267,65 +291,30 @@ export function computeSuiteBindingProposals(
 
 // ── Suite coverage (credentials page provenance) ─────────────────────────────
 
-/** Scope comparison key: trailing-slash tolerant, case preserved (RFC 6749 §3.3). */
-function normalizeScope(scope: string): string {
-  const trimmed = scope.trim();
-  return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
-}
-
-/** Identity scopes ride along on every Google authorization — capability-neutral. */
-const IDENTITY_SCOPES = new Set(['openid', 'email', 'profile']);
-
 export interface SuiteCoverageEntry {
   /** The sibling credential type in the same OAuth provider group. */
   credentialType: CredentialType;
   /** Display label for the sibling type (e.g. 'Google Sheets'). */
   label: string;
-  /** True when the credential's recorded granted scopes cover every default scope of the sibling type. */
-  covered: boolean;
-  /** The sibling's default scopes the grant does not cover (empty when covered). */
-  missingScopes: string[];
 }
 
 /**
- * Which sibling types of the credential's OAuth provider group its recorded
- * granted scopes cover ("this Google Drive credential also grants Google
- * Sheets"). Legibility for the suite-binding behavior: a flow needing a
- * covered sibling type binds through this credential instead of asking for a
- * new connection. Comparison uses the STORED oauthScopes — the scope-check
- * probe syncs those with the live grant, so covered entries reflect real
- * grants; no probe happens here. Types outside a multi-type provider group
- * return [].
+ * The sibling types this credential serves, read from its STORED
+ * derived-credential records ("this Google Drive credential also grants
+ * Google Sheets"). The API materializes the records from the granted scopes
+ * on connect / scope-sync / re-consent and delivers them on GET /credentials
+ * — nothing is recomputed client-side, so the label always matches what the
+ * suite binding will use. Credentials with no records return [].
  */
-export function computeSuiteCoverage(
+export function getStoredSuiteCoverage(
   credential: CredentialResponse
 ): SuiteCoverageEntry[] {
-  if (credential.isOauth !== true) return [];
-  const ownType = credential.credentialType as CredentialType;
-  const groupTypes = getOAuthProviderGroupTypes(ownType);
-  if (groupTypes.length <= 1) return [];
-  const granted = new Set(
-    (credential.oauthScopes ?? []).map((scope) => normalizeScope(scope))
-  );
-  if (granted.size === 0) return [];
-  const entries: SuiteCoverageEntry[] = [];
-  for (const siblingType of groupTypes) {
-    if (siblingType === ownType) continue;
-    const requiredScopes = getDefaultScopes(siblingType).filter(
-      (scope) => !IDENTITY_SCOPES.has(scope)
-    );
-    if (requiredScopes.length === 0) continue;
-    const missingScopes = requiredScopes.filter(
-      (scope) => !granted.has(normalizeScope(scope))
-    );
-    entries.push({
-      credentialType: siblingType,
-      label: CREDENTIAL_TYPE_CONFIG[siblingType]?.label ?? siblingType,
-      covered: missingScopes.length === 0,
-      missingScopes,
-    });
-  }
-  return entries;
+  return (credential.derivedCredentials ?? []).map((record) => ({
+    credentialType: record.derivedCredentialType as CredentialType,
+    label:
+      CREDENTIAL_TYPE_CONFIG[record.derivedCredentialType as CredentialType]
+        ?.label ?? record.derivedCredentialType,
+  }));
 }
 
 /**

@@ -43,7 +43,7 @@ import {
   GOOGLE_SUITE_TYPES,
 } from '../lib/authMethods';
 import { emitTelemetry } from '../lib/telemetry';
-import { computeSuiteCoverage } from '../lib/credentialBinding';
+import { getStoredSuiteCoverage } from '../lib/credentialBinding';
 
 // ── Scope discovery (IR-6/7) helpers ─────────────────────────────────────────
 
@@ -244,7 +244,9 @@ export function CreateCredentialModal({
 
   // Scope discovery (IR-6/7): the flow's requirements relevant to the type being connected
   // (for Google suite, every selected service's requirements — one consent covers them all).
-  const relevantScopeRequirements = useMemo<DiscoveredScopeRequirement[]>(() => {
+  const relevantScopeRequirements = useMemo<
+    DiscoveredScopeRequirement[]
+  >(() => {
     if (!flowScopeRequirements || flowScopeRequirements.length === 0) return [];
     const targetTypes = new Set<string>([formData.credentialType]);
     if (isGoogleSuiteCredential(formData.credentialType as CredentialType)) {
@@ -1275,11 +1277,11 @@ function CredentialCard({
   );
   const logo = useMemo(() => resolveLogoByName(serviceName), [serviceName]);
 
-  // Suite coverage: which sibling types of the same OAuth provider group this
-  // credential's granted scopes cover (e.g. a Google Drive credential whose
-  // grant includes spreadsheets also serves Google Sheets steps).
+  // Suite coverage: the sibling types this credential serves, from its STORED
+  // derived-credential records (e.g. a Google Drive credential whose grant
+  // includes spreadsheets also serves Google Sheets steps).
   const coveredSiblings = useMemo(
-    () => computeSuiteCoverage(credential).filter((entry) => entry.covered),
+    () => getStoredSuiteCoverage(credential),
     [credential]
   );
   const coverageKey = coveredSiblings

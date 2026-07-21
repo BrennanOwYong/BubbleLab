@@ -24,6 +24,9 @@ import {
   oauthService,
   extractMetadataEmail,
 } from '../services/oauth-service.js';
+import { syncDerivedCredentialsForSource } from '../services/derived-credential-service.js';
+import type { DerivedCredentialRecord } from '@bubblelab/shared-schemas';
+import { getOAuthProviderGroupTypes } from '@bubblelab/shared-schemas';
 import {
   setupErrorHandler,
   validationErrorHook,
@@ -114,6 +117,32 @@ app.openapi(listCredentialsRoute, async (c) => {
     })
   );
 
+  // Stored suite coverage: attach each credential's derived-credential records
+  // (which sibling types its granted scopes serve). The sync here is the lazy
+  // backfill seam for credentials connected before the table existed — pure
+  // recomputation from stored oauth_scopes, diff-only writes, no network. Only
+  // multi-type provider groups (google) can derive anything, so other rows skip
+  // the sync entirely.
+  const derivedByParent = new Map<number, DerivedCredentialRecord[]>();
+  await Promise.all(
+    enriched.map(async (cred) => {
+      if (cred.isOauth !== true) return;
+      const groupTypes = getOAuthProviderGroupTypes(
+        cred.credentialType as CredentialType
+      );
+      if (groupTypes.length <= 1) return;
+      const records = await syncDerivedCredentialsForSource({
+        id: cred.id,
+        userId,
+        credentialType: cred.credentialType,
+        isOauth: cred.isOauth,
+        oauthProvider: cred.oauthProvider,
+        oauthScopes: cred.oauthScopes,
+      });
+      if (records.length > 0) derivedByParent.set(cred.id, records);
+    })
+  );
+
   const response: CredentialResponse[] = enriched.map((cred) => {
     const now = new Date();
     let oauthStatus: 'active' | 'expired' | 'needs_refresh' | undefined;
@@ -145,6 +174,9 @@ app.openapi(listCredentialsRoute, async (c) => {
       oauthExpiresAt: cred.oauthExpiresAt?.toISOString() || undefined,
       oauthScopes: cred.oauthScopes || undefined,
       oauthStatus,
+
+      // Stored derived-credential records (parent side of the hierarchy)
+      derivedCredentials: derivedByParent.get(cred.id),
     };
   });
 
