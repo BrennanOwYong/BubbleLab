@@ -25,7 +25,6 @@ import {
 import type {
   AuthMethodKind,
   ConnectUiMethodOption,
-  ScopeDescription,
   CredentialResponse,
 } from '@bubblelab/shared-schemas';
 
@@ -131,19 +130,6 @@ export const GOOGLE_SUITE_TYPES: CredentialType[] = [
 
 export function isGoogleSuiteCredential(type: CredentialType): boolean {
   return GOOGLE_SUITE_TYPES.includes(type);
-}
-
-/** Union of scope descriptions across the selected Google services. */
-export function getCombinedGoogleScopes(
-  selectedTypes: CredentialType[]
-): ScopeDescription[] {
-  const byScope = new Map<string, ScopeDescription>();
-  for (const type of selectedTypes) {
-    for (const desc of getScopeDescriptions(type)) {
-      if (!byScope.has(desc.scope)) byScope.set(desc.scope, desc);
-    }
-  }
-  return [...byScope.values()];
 }
 
 // ── FU-8: account dropdowns for flow inputs ─────────────────────────────────

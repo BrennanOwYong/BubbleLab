@@ -39,7 +39,6 @@ import { resolveLogoByName } from '../lib/integrations';
 import {
   getConnectUiMethods,
   isGoogleSuiteCredential,
-  getCombinedGoogleScopes,
   GOOGLE_SUITE_TYPES,
 } from '../lib/authMethods';
 import { emitTelemetry } from '../lib/telemetry';
@@ -227,30 +226,24 @@ export function CreateCredentialModal({
     debugUrl: string;
     state: string;
   } | null>(null);
-  // FU-7: which Google services this single Google sign-in should cover
-  const [selectedSuiteTypes, setSelectedSuiteTypes] = useState<
-    Set<CredentialType>
-  >(new Set());
-
   // IR-3/IR-4: every auth method the selected app supports, ranked
   const methodOptions = useMemo(
     () => getConnectUiMethods(formData.credentialType as CredentialType),
     [formData.credentialType]
   );
 
-  const isGoogleSuite = isGoogleSuiteCredential(
-    formData.credentialType as CredentialType
-  );
-
-  // Scope discovery (IR-6/7): the flow's requirements relevant to the type being connected
-  // (for Google suite, every selected service's requirements — one consent covers them all).
+  // Scope discovery (IR-6/7): the flow's requirements relevant to the type being
+  // connected. One Google sign-in serves every Google slot in the flow (suite
+  // binding), so for a Google type the CONTEXT decides the services: every
+  // Google-suite requirement the flow declares rides along in the one consent —
+  // no manual service picking.
   const relevantScopeRequirements = useMemo<
     DiscoveredScopeRequirement[]
   >(() => {
     if (!flowScopeRequirements || flowScopeRequirements.length === 0) return [];
     const targetTypes = new Set<string>([formData.credentialType]);
     if (isGoogleSuiteCredential(formData.credentialType as CredentialType)) {
-      for (const type of selectedSuiteTypes) targetTypes.add(type);
+      for (const type of GOOGLE_SUITE_TYPES) targetTypes.add(type);
     }
     const deduped = new Map<string, DiscoveredScopeRequirement>();
     for (const entry of flowScopeRequirements) {
@@ -261,18 +254,15 @@ export function CreateCredentialModal({
       }
     }
     return [...deduped.values()];
-  }, [flowScopeRequirements, formData.credentialType, selectedSuiteTypes]);
+  }, [flowScopeRequirements, formData.credentialType]);
 
-  // Scopes shown in the picker: for Google suite the union across selected
-  // services (one consent covers them all), otherwise the type's own scopes.
+  // Scopes shown in the picker: the type's own scopes, plus injected rows for
+  // flow requirements the curated scopes don't cover (e.g. the spreadsheets
+  // scope when a Gmail connect serves a flow that also reads Sheets).
   const availableScopeDescriptions = useMemo<ScopeDescription[]>(() => {
-    const base = isGoogleSuite
-      ? getCombinedGoogleScopes(
-          selectedSuiteTypes.size
-            ? [...selectedSuiteTypes]
-            : [formData.credentialType as CredentialType]
-        )
-      : getScopeDescriptions(formData.credentialType as CredentialType);
+    const base = getScopeDescriptions(
+      formData.credentialType as CredentialType
+    );
     if (relevantScopeRequirements.length === 0) return base;
     // Inject picker rows for requirements none of the curated scopes satisfy, so the
     // consent can request exactly what the flow's operations need.
@@ -292,12 +282,7 @@ export function CreateCredentialModal({
       }
     }
     return [...base, ...injected];
-  }, [
-    isGoogleSuite,
-    selectedSuiteTypes,
-    formData.credentialType,
-    relevantScopeRequirements,
-  ]);
+  }, [formData.credentialType, relevantScopeRequirements]);
 
   // The exact scopes the flow needs, resolved against the picker rows above.
   const requiredScopeSet = useMemo<Set<string>>(() => {
@@ -325,18 +310,7 @@ export function CreateCredentialModal({
     formData.credentialType as CredentialType
   );
 
-  // FU-7: entering a Google type seeds the suite selection with that service
-  useEffect(() => {
-    if (isGoogleSuite) {
-      setSelectedSuiteTypes(
-        new Set([formData.credentialType as CredentialType])
-      );
-    } else {
-      setSelectedSuiteTypes(new Set());
-    }
-  }, [formData.credentialType, isGoogleSuite]);
-
-  // Initialize selected scopes when credential type or the Google suite selection changes.
+  // Initialize selected scopes when the credential type changes.
   // With flow scope requirements present (scope discovery, IR-6/7) the picker pre-selects
   // EXACTLY the scopes the flow's operations need — the consent asks for what the tool
   // needs, no more, no guesswork. Without requirements, defaultEnabled behavior stands.
@@ -445,12 +419,6 @@ export function CreateCredentialModal({
         name: formData.name,
         credentialType: formData.credentialType,
         state,
-        // FU-7: the sibling Google services this consent covers. The backend
-        // does not yet materialize sibling credential rows; the combined
-        // scopes are on the token, so a future backend pass can create them.
-        suiteCredentialTypes: isGoogleSuite
-          ? Array.from(selectedSuiteTypes)
-          : undefined,
       };
       sessionStorage.setItem(
         'pendingOAuthCredential',
@@ -812,44 +780,6 @@ export function CreateCredentialModal({
                       </button>
                     );
                   })}
-                </div>
-              </div>
-            )}
-
-            {/* FU-7: one Google sign-in covers every selected Google service */}
-            {isGoogleSuite && (
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Google services to include
-                </label>
-                <div className="bg-[#1a1a1a] rounded-lg p-4 border border-[#30363d] space-y-2">
-                  <p className="text-xs text-gray-400 mb-2">
-                    Google uses one sign-in for all its services. Pick the
-                    services this connection should cover; you approve them in a
-                    single consent screen.
-                  </p>
-                  {GOOGLE_SUITE_TYPES.map((suiteType) => (
-                    <label
-                      key={suiteType}
-                      className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer hover:text-gray-100 transition-colors"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedSuiteTypes.has(suiteType)}
-                        onChange={(e) => {
-                          const next = new Set(selectedSuiteTypes);
-                          if (e.target.checked) {
-                            next.add(suiteType);
-                          } else if (next.size > 1) {
-                            next.delete(suiteType);
-                          }
-                          setSelectedSuiteTypes(next);
-                        }}
-                        className="w-4 h-4 rounded border-[#30363d] bg-[#1a1a1a] text-blue-600 focus:ring-2 focus:ring-blue-500/20 focus:ring-offset-0 cursor-pointer"
-                      />
-                      <span>{CREDENTIAL_TYPE_CONFIG[suiteType].label}</span>
-                    </label>
-                  ))}
                 </div>
               </div>
             )}
