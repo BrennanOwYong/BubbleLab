@@ -82,3 +82,42 @@ All in `/home/unix/bubblelab-derived`, Linux bun `~/.bun/bin/bun` (PATH bun is W
 - Killing the nohup'd parent of `bun run src/index.ts` leaves the bun CHILD serving the port — kill the pid that owns the socket (`ss -tlnp`).
 - Unstubbed Google tokeninfo with a fake token can stall >30s on this box before failing (dead-route hang despite gai.conf fix); smoke waits on that path need ~120s.
 - Concurrent bun test runs share `test.db` — serialize full-suite runs.
+
+---
+
+# Addendum — lifecycle fixes (17b7bb3 + 6bcc3d2, clone /home/unix/bubblelab-lifecycle)
+
+Two fixes added on top of 52889de. Branch stays linear; fast-forwards onto f333bab (`git merge-base --is-ancestor f333bab HEAD` passes, zero merge commits).
+
+## Fix 1 — real OAuth revocation on credential delete (17b7bb3)
+
+`OAuthService.revokeCredential` stub replaced with provider-side revocation:
+
+- Decrypts the stored token — refresh token preferred (revoking it invalidates the whole grant), access token fallback — and POSTs it to the provider's documented revocation endpoint.
+- Google: `POST https://oauth2.googleapis.com/revoke`, `Content-Type: application/x-www-form-urlencoded`, body `token=...` (doc: https://developers.google.com/identity/protocols/oauth2/web-server#tokenrevoke). Notion: `POST https://api.notion.com/v1/oauth/revoke`, Basic auth + JSON + `Notion-Version: 2025-09-03` (doc: https://developers.notion.com/reference/revoke-token). Atlassian 3LO and FollowUpBoss document no revocation endpoint (https://developer.atlassian.com/cloud/jira/platform/oauth-2-3lo-apps/) — logged, stored tokens deleted.
+- Best effort: 400 (already-invalid token) and network failures are logged and the DB row is deleted regardless. `AbortSignal.timeout(10s)` caps dead-route hangs. Doc links stored in the oauth-service.ts References block.
+- `DELETE /credentials/:id` (routes/credentials.ts) routes OAuth rows through `revokeCredential` before the row drops; API-key rows delete directly. `derived_credentials` rows cascade.
+- New test `src/routes/credentials-delete-revoke.test.ts` (5 tests, outbound fetch stubbed, revoke calls captured): refresh-token POST shape asserted byte-for-byte, access-token fallback, 400 still deletes, network failure still deletes, no revoke call for API-key credentials.
+
+## Fix 2 — Google suite service-picker removed; Connect goes straight to consent (6bcc3d2)
+
+The "Google services to include" checkbox picker (CredentialsPage.tsx `GOOGLE_SUITE_TYPES.map`, `selectedSuiteTypes` state, seeding effect) is gone. Scopes are now context-determined:
+
+- Flow setup context: `flowScopeRequirements` drives the consent. For a Google type, targetTypes = the type plus every GOOGLE_SUITE_TYPE, so every Google-suite requirement the flow declares is injected into the scope list and pre-selected exactly (suite binding lets one Google credential serve every Google slot). This closes the reported bug (Sheets picked in the picker, `spreadsheets` scope not granted): what the flow needs is what the consent requests.
+- Credentials page (no flow context): the credential type's own `defaultEnabled` scopes (the deviation-clause fallback — no separate scopes-source needed).
+- Dead code removed: `getCombinedGoogleScopes` (authMethods.ts, unreferenced after the picker), write-only `suiteCredentialTypes` in the pendingOAuthCredential session payload (OAuthCallback reads only name/credentialType/state). The permission checkbox list inside the OAuth panel stays — it displays/pre-selects the context-determined scopes; there is no service-picking step between Connect and the Google consent screen.
+
+## Verification (clone /home/unix/bubblelab-lifecycle, Linux bun ~/.bun/bin/bun)
+
+- Builds shared-schemas → bubble-core → bubble-runtime → bubble-appgen → api (`bun build`) → studio (`tsc -b && vite build`): all clean.
+- `tsc --noEmit` apps/bubblelab-api + apps/bubble-studio: clean (re-run after the pre-commit prettier hook reformatted).
+- New revoke test: 5 pass / 0 fail.
+- Credential/oauth suites (credentials-scope-check, credentials-email-backfill, derived-credential-service, credential-validation, credential-validator, credential-creation-debug): 39 pass / 0 fail.
+- Full API suite: **214 pass / 21 skip / 0 fail** (base was 209; +5 = the new revoke tests).
+- Full studio vitest: **11 files / 174 tests pass** with `--testTimeout 30000` against this clone's API on alt port :3517. Note: `flowvisualizer.integration.test.ts` needs a live API and flakes on the default 5s per-test timeout under WSL load (validate calls take ~4-5s); the untouched base clone shows the same behavior — pre-existing, unrelated to these fixes.
+- eslint on changed files: clean except the pre-existing `react-refresh/only-export-components` on CredentialsPage's `getServiceNameForCredentialType` export (present on base 52889de at line 99).
+- Dangling-ref check: `git grep selectedSuiteTypes|isGoogleSuite|getCombinedGoogleScopes` on HEAD → only `isGoogleSuiteCredential`/`GOOGLE_SUITE_TYPES` context uses remain.
+
+## Deploy note
+
+No migration, no .env change. Rebuild nothing beyond the API + studio (shared packages untouched); restart the API process and vite. Google Cloud console: no new redirect URIs or scopes to register — revocation uses the public endpoint.
