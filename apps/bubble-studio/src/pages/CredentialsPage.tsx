@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   PlusIcon,
@@ -621,7 +622,11 @@ export function CreateCredentialModal({
     }
   };
 
-  return (
+  // Portal to document.body (mirrors BubbleDetailsOverlay): call sites inside
+  // React Flow nodes sit under a CSS transform that turns position:fixed into
+  // position-relative-to-node, and the node's overflow-hidden clips the
+  // dialog. The portal makes it a true full-screen centered dialog everywhere.
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div
         className="absolute inset-0 bg-black bg-opacity-50"
@@ -1009,7 +1014,8 @@ export function CreateCredentialModal({
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

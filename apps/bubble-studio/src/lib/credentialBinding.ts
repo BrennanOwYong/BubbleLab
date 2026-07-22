@@ -392,6 +392,39 @@ export function getBubbleKeysRequiringType(
 }
 
 /**
+ * One credential per tool type: bind `credentialId` to EVERY step requiring
+ * `credentialType`, overwriting any existing per-step selection. Both the
+ * setup panel's connect/switch path and the bubble node's add-credential
+ * modal route through this, so a credential added anywhere serves every
+ * instance of the tool. Returns the bubble keys bound; callers pass the
+ * execution store's setCredential, and usePersistCredentialBindings picks
+ * the store change up and persists it (PUT /bubble-flow/:id).
+ */
+export function bindCredentialToAllSteps(
+  flow: {
+    bubbleParameters?: Record<string, ParsedBubbleWithInfo> | null;
+    requiredCredentials?: Record<string, CredentialType[] | string[]> | null;
+  },
+  credentialType: string,
+  credentialId: number,
+  setCredential: (
+    bubbleKey: string,
+    credentialType: string,
+    credentialId: number
+  ) => void
+): string[] {
+  const keys = getBubbleKeysRequiringType(
+    flow.bubbleParameters ?? {},
+    flow.requiredCredentials ?? {},
+    credentialType
+  );
+  for (const bubbleKey of keys) {
+    setCredential(bubbleKey, credentialType, credentialId);
+  }
+  return keys;
+}
+
+/**
  * The credential id currently bound for a type across the steps that need it.
  * Returns the id when every bound step agrees, null when steps disagree
  * (mixed per-step bindings), and undefined when nothing is bound yet.

@@ -140,13 +140,18 @@ export function calculateBubblePosition(
   };
 }
 
+/** Height of one row in the custom-tool static tool-call list (px). */
+export const CUSTOM_TOOL_LIST_ROW_HEIGHT = 40;
+
 /**
- * Calculate the height of a custom tool step container (scaled)
- * @param bubbleCount - Number of bubbles in the custom tool function
+ * Height of a custom tool step container: scaled header plus one compact row
+ * per tool call. Custom-tool steps render a static list (no child bubble
+ * cards), so the container fits the list rather than bubble-card slots.
+ * @param toolCallCount - Number of tool calls listed in the container
  * @param headerHeight - Optional dynamic header height (scaled if not provided)
  */
-export function calculateCustomToolContainerHeight(
-  bubbleCount: number,
+export function calculateCustomToolListHeight(
+  toolCallCount: number,
   headerHeight?: number
 ): number {
   const scale = CUSTOM_TOOL_LAYOUT.SCALE;
@@ -154,46 +159,13 @@ export function calculateCustomToolContainerHeight(
     ? Math.round(headerHeight * scale)
     : Math.round(STEP_CONTAINER_LAYOUT.HEADER_HEIGHT * scale);
 
-  if (bubbleCount === 0) {
+  if (toolCallCount === 0) {
     return actualHeaderHeight;
   }
 
-  const contentHeight =
-    CUSTOM_TOOL_LAYOUT.PADDING +
-    bubbleCount * CUSTOM_TOOL_LAYOUT.BUBBLE_HEIGHT +
-    (bubbleCount - 1) * CUSTOM_TOOL_LAYOUT.BUBBLE_SPACING +
-    CUSTOM_TOOL_LAYOUT.PADDING;
-
-  return actualHeaderHeight + contentHeight;
-}
-
-/**
- * Calculate the position of a bubble within a custom tool step container (scaled)
- * @param bubbleIndex - Zero-based index of the bubble within the custom tool
- * @param headerHeight - Optional dynamic header height (scaled if not provided)
- */
-export function calculateCustomToolBubblePosition(
-  bubbleIndex: number,
-  headerHeight?: number
-): {
-  x: number;
-  y: number;
-} {
-  const scale = CUSTOM_TOOL_LAYOUT.SCALE;
-  const actualHeaderHeight = headerHeight
-    ? Math.round(headerHeight * scale)
-    : Math.round(STEP_CONTAINER_LAYOUT.HEADER_HEIGHT * scale);
-
-  const scaledBubbleXOffset = Math.round(
-    (CUSTOM_TOOL_LAYOUT.WIDTH - CUSTOM_TOOL_LAYOUT.BUBBLE_WIDTH) / 2
+  return (
+    actualHeaderHeight +
+    CUSTOM_TOOL_LAYOUT.PADDING * 2 +
+    toolCallCount * CUSTOM_TOOL_LIST_ROW_HEIGHT
   );
-
-  return {
-    x: scaledBubbleXOffset,
-    y:
-      actualHeaderHeight +
-      CUSTOM_TOOL_LAYOUT.PADDING +
-      bubbleIndex *
-        (CUSTOM_TOOL_LAYOUT.BUBBLE_HEIGHT + CUSTOM_TOOL_LAYOUT.BUBBLE_SPACING),
-  };
 }

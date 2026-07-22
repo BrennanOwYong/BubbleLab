@@ -35,6 +35,7 @@ import { useBubbleFlow } from '../hooks/useBubbleFlow';
 import { useCredentials, useCreateCredential } from '../hooks/useCredentials';
 import { API_BASE_URL } from '../env';
 import {
+  bindCredentialToAllSteps,
   describeCredentialAccount,
   getBoundCredentialIdForType,
   getBubbleKeysRequiringType,
@@ -268,24 +269,34 @@ export function FlowSetupPanel() {
     }
   }, [flowId, entries, credentials]);
 
-  /** Rebind every step requiring the type to the chosen account. */
+  /**
+   * Rebind every step requiring the type to the chosen account (one
+   * credential per tool type — the shared helper overwrites all instances).
+   */
   const switchAccount = (
     entry: ManifestEntry,
     toCredential: CredentialResponse,
     source: 'setup_panel' | 'connect_modal'
   ) => {
-    if (!flowId || entry.stepBindingKeys.length === 0) return;
+    if (!flowId) return;
     const store = getExecutionStore(flowId);
-    for (const bubbleKey of entry.stepBindingKeys) {
-      store.setCredential(bubbleKey, entry.credentialType, toCredential.id);
-    }
+    const boundKeys = bindCredentialToAllSteps(
+      {
+        bubbleParameters: flow?.bubbleParameters,
+        requiredCredentials: flow?.requiredCredentials,
+      },
+      entry.credentialType,
+      toCredential.id,
+      store.setCredential
+    );
+    if (boundKeys.length === 0) return;
     emitTelemetry('setup.credential_switched', {
       flowId,
       credentialType: entry.credentialType,
       fromCredentialId: entry.boundCredentialId ?? null,
       toCredentialId: toCredential.id,
       toCredentialName: toCredential.name,
-      bubbleKeys: entry.stepBindingKeys,
+      bubbleKeys: boundKeys,
       source,
     });
   };
@@ -360,15 +371,7 @@ export function FlowSetupPanel() {
     );
     if (!entry) return;
     switchAccount(
-      {
-        ...entry,
-        credentialType: created.credentialType as CredentialType,
-        stepBindingKeys: getBubbleKeysRequiringType(
-          flow?.bubbleParameters ?? {},
-          flow?.requiredCredentials ?? {},
-          created.credentialType
-        ),
-      },
+      { ...entry, credentialType: created.credentialType as CredentialType },
       created,
       'connect_modal'
     );
