@@ -17,6 +17,10 @@ import {
 } from './env';
 import { dark } from '@clerk/themes';
 import { analytics } from './services/analytics';
+import {
+  TelemetryProvider,
+  TelemetryErrorBoundary,
+} from './providers/TelemetryProvider';
 import { patchDOMForGoogleTranslate } from './utils/googleTranslateFix';
 
 // Disable console.debug in dev mode (can be enabled with ENABLE_DEBUG_LOGS=true)
@@ -73,27 +77,33 @@ if (isOAuthCallback) {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <WebViewWarning />
-      {DISABLE_AUTH ? (
-        <AuthWrapper>
-          <QueryProvider>
-            <RouterProvider router={router} />
-          </QueryProvider>
-        </AuthWrapper>
-      ) : (
-        <ClerkProvider
-          publishableKey={PUBLISHABLE_KEY!}
-          afterSignOutUrl="/"
-          appearance={{
-            baseTheme: dark,
-          }}
-        >
+      <TelemetryErrorBoundary>
+        {DISABLE_AUTH ? (
           <AuthWrapper>
             <QueryProvider>
-              <RouterProvider router={router} />
+              <TelemetryProvider router={router}>
+                <RouterProvider router={router} />
+              </TelemetryProvider>
             </QueryProvider>
           </AuthWrapper>
-        </ClerkProvider>
-      )}
+        ) : (
+          <ClerkProvider
+            publishableKey={PUBLISHABLE_KEY!}
+            afterSignOutUrl="/"
+            appearance={{
+              baseTheme: dark,
+            }}
+          >
+            <AuthWrapper>
+              <QueryProvider>
+                <TelemetryProvider router={router}>
+                  <RouterProvider router={router} />
+                </TelemetryProvider>
+              </QueryProvider>
+            </AuthWrapper>
+          </ClerkProvider>
+        )}
+      </TelemetryErrorBoundary>
     </StrictMode>
   );
 }

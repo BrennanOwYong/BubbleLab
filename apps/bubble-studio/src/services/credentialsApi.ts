@@ -9,6 +9,7 @@ import type {
   CredentialScopeCheckResponse,
   ScopeCheckRequirement,
 } from '@bubblelab/shared-schemas';
+import { track } from '../lib/telemetry';
 
 export const credentialsApi = {
   getCredentials: async (): Promise<CredentialResponse[]> => {
@@ -22,6 +23,7 @@ export const credentialsApi = {
     scopes?: string[],
     credentialId?: number
   ): Promise<{ authUrl: string; state: string }> => {
+    track('credential.connect_started', { provider });
     return api.post<{ authUrl: string; state: string }>(
       `/oauth/${provider}/initiate`,
       {

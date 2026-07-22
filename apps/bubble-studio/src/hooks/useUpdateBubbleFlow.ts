@@ -6,6 +6,7 @@ import type {
 } from '@bubblelab/shared-schemas';
 import { useBubbleFlow } from '@/hooks/useBubbleFlow';
 import { toast } from 'react-toastify';
+import { track } from '../lib/telemetry';
 interface UpdateBubbleFlowParams {
   flowId: number;
   credentials: Record<string, Record<string, number>>;
@@ -26,6 +27,7 @@ export function useUpdateBubbleFlow(flowId?: number | null) {
 
   return useMutation({
     mutationFn: async ({ flowId, credentials }: UpdateBubbleFlowParams) => {
+      track('flow.save_started', { flowId });
       // Get current flow data from cache
       const flowData = queryClient.getQueryData<BubbleFlowDetailsResponse>([
         'bubbleFlow',
@@ -73,7 +75,8 @@ export function useUpdateBubbleFlow(flowId?: number | null) {
 
       return response;
     },
-    onSuccess: (response) => {
+    onSuccess: (response, variables) => {
+      track('flow.save_succeeded', { flowId: variables.flowId });
       // Update the bubble parameters in the useBubbleFlow store with the response
       if (response && response.bubbleParameters) {
         // The response contains the updated bubble parameters from the server
@@ -82,7 +85,11 @@ export function useUpdateBubbleFlow(flowId?: number | null) {
         toast.error('Failed to update bubble flow');
       }
     },
-    onError: (error) => {
+    onError: (error, variables) => {
+      track('flow.save_failed', {
+        flowId: variables.flowId,
+        error: error instanceof Error ? error.message : String(error),
+      });
       console.error('Failed to update bubble flow:', error);
     },
   });

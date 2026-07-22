@@ -10,6 +10,7 @@ import { cleanupFlattenedKeys } from '@/utils/codeParser';
 import { filterEmptyInputs } from '@/utils/inputUtils';
 import type { StreamingLogEvent } from '@bubblelab/shared-schemas';
 import { api } from '@/lib/api';
+import { track } from '@/lib/telemetry';
 import { useSubscription } from '@/hooks/useSubscription';
 import { BubbleFlowDetailsResponse } from '@bubblelab/shared-schemas';
 import { useLiveOutput } from './useLiveOutput';
@@ -241,6 +242,7 @@ export function useRunExecution(
 
               case 'stream_complete': {
                 // This is the final event - stop execution
+                track('flow.run_succeeded', { flowId: flowId ?? undefined });
                 getExecutionStore(flowId).stopExecution();
                 // Auto-jump to Results tab when streaming completes
                 selectResultsInConsole();
@@ -249,6 +251,10 @@ export function useRunExecution(
               }
 
               case 'fatal': {
+                track('flow.run_failed', {
+                  flowId: flowId ?? undefined,
+                  error: eventData.message ?? 'fatal',
+                });
                 optionsRef.current.onError?.(
                   eventData.message,
                   true,
@@ -308,6 +314,10 @@ export function useRunExecution(
         if (!abortController.signal.aborted) {
           const errorMessage =
             error instanceof Error ? error.message : 'Unknown error';
+          track('flow.run_failed', {
+            flowId: flowId ?? undefined,
+            error: errorMessage,
+          });
           getExecutionStore(flowId).setError(errorMessage);
           getExecutionStore(flowId).stopExecution();
           optionsRef.current.onError?.(errorMessage, true);
@@ -342,6 +352,7 @@ export function useRunExecution(
       } = runFlowOptions;
 
       // Start execution
+      track('flow.run_started', { flowId: flowId ?? undefined });
       getExecutionStore(flowId).startExecution();
 
       try {
