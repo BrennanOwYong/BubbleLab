@@ -17,6 +17,7 @@ const BACKFILLED_BUBBLES: BubbleName[] = [
   'gmail',
   'google-calendar',
   'google-drive',
+  'google-sheets',
   'github',
   'airtable',
 ];

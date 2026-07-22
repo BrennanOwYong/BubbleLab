@@ -1,10 +1,11 @@
 /**
- * Server-side single-match credential auto-bind (credential-auto-bind.ts):
- * the backstop that fills unbound required-credential slots when the user's
- * credentials decide them unambiguously — exactly one exact-type credential,
- * or none of the exact type and exactly one credential whose stored
- * derived-credential record covers the type. Zero or several candidates must
- * bind nothing. Runs against the real sqlite test DB.
+ * Server-side deterministic credential auto-bind (credential-auto-bind.ts):
+ * the backstop that fills unbound required-credential slots with the single
+ * BEST credential — one credential per tool type, never a refusal when a
+ * covering credential exists. Exact-type credentials beat derived coverage;
+ * within a tier the most recently connected credential wins (createdAt desc,
+ * id desc tiebreak). Only zero candidates leaves a slot unbound. Runs against
+ * the real sqlite test DB.
  */
 // @ts-expect-error - Bun test types
 import { describe, it, expect, beforeEach } from 'bun:test';
@@ -34,7 +35,8 @@ function bubble(
 
 async function seedCredential(
   credentialType: string,
-  userId: string = TEST_USER_ID
+  userId: string = TEST_USER_ID,
+  createdAt?: Date
 ): Promise<number> {
   const [row] = await db
     .insert(userCredentials)
@@ -42,6 +44,7 @@ async function seedCredential(
       userId,
       credentialType,
       name: `${credentialType} test credential`,
+      ...(createdAt ? { createdAt } : {}),
     })
     .returning({ id: userCredentials.id });
   return row.id;
@@ -107,15 +110,54 @@ describe('autoBindMissingCredentials', () => {
     });
   });
 
-  it('binds nothing when several exact-type credentials exist (no guessing)', async () => {
-    await seedCredential('TELEGRAM_BOT_TOKEN');
-    await seedCredential('TELEGRAM_BOT_TOKEN');
+  it('binds the most recently connected credential when several exact-type credentials exist', async () => {
+    const newerId = await seedCredential(
+      'TELEGRAM_BOT_TOKEN',
+      TEST_USER_ID,
+      new Date('2026-02-01T00:00:00Z')
+    );
+    await seedCredential(
+      'TELEGRAM_BOT_TOKEN',
+      TEST_USER_ID,
+      new Date('2026-01-01T00:00:00Z')
+    );
     const params = { '1': bubble(1, 'telegram') };
 
     const result = await autoBindMissingCredentials(TEST_USER_ID, params);
 
-    expect(result.bound).toEqual([]);
-    expect(boundCredentials(result.bubbleParameters, '1')).toBeUndefined();
+    expect(result.bound).toEqual([
+      {
+        bubbleKey: '1',
+        credentialType: 'TELEGRAM_BOT_TOKEN',
+        credentialId: newerId,
+        match: 'exact_type',
+      },
+    ]);
+    expect(boundCredentials(result.bubbleParameters, '1')).toEqual({
+      TELEGRAM_BOT_TOKEN: newerId,
+    });
+  });
+
+  it('breaks a created-at tie between exact-type credentials by highest id (deterministic)', async () => {
+    const sameInstant = new Date('2026-03-01T00:00:00Z');
+    const firstId = await seedCredential(
+      'TELEGRAM_BOT_TOKEN',
+      TEST_USER_ID,
+      sameInstant
+    );
+    const secondId = await seedCredential(
+      'TELEGRAM_BOT_TOKEN',
+      TEST_USER_ID,
+      sameInstant
+    );
+    const params = { '1': bubble(1, 'telegram') };
+
+    const result = await autoBindMissingCredentials(TEST_USER_ID, params);
+
+    expect(secondId).toBeGreaterThan(firstId);
+    expect(boundCredentials(result.bubbleParameters, '1')).toEqual({
+      TELEGRAM_BOT_TOKEN: secondId,
+    });
   });
 
   it('binds the single derived-record parent when no exact-type credential exists', async () => {
@@ -156,16 +198,58 @@ describe('autoBindMissingCredentials', () => {
     ]);
   });
 
-  it('binds nothing when several derived-record parents cover the type', async () => {
-    const gmailId = await seedCredential('GMAIL_CRED');
-    const driveId = await seedCredential('GOOGLE_DRIVE_CRED');
+  it('multi-cover: binds the most recently connected covering parent (Gmail + Drive both cover Sheets)', async () => {
+    const gmailId = await seedCredential(
+      'GMAIL_CRED',
+      TEST_USER_ID,
+      new Date('2026-01-01T00:00:00Z')
+    );
+    const driveId = await seedCredential(
+      'GOOGLE_DRIVE_CRED',
+      TEST_USER_ID,
+      new Date('2026-02-01T00:00:00Z')
+    );
     await seedDerivedRecord(gmailId, 'GOOGLE_SHEETS_CRED');
     await seedDerivedRecord(driveId, 'GOOGLE_SHEETS_CRED');
     const params = { '2': bubble(2, 'google-sheets') };
 
     const result = await autoBindMissingCredentials(TEST_USER_ID, params);
 
-    expect(result.bound).toEqual([]);
+    expect(result.bound).toEqual([
+      {
+        bubbleKey: '2',
+        credentialType: 'GOOGLE_SHEETS_CRED',
+        credentialId: driveId,
+        match: 'derived_record',
+      },
+    ]);
+    // The bound id is the token-holding PARENT credential, never a derived row.
+    expect(boundCredentials(result.bubbleParameters, '2')).toEqual({
+      GOOGLE_SHEETS_CRED: driveId,
+    });
+  });
+
+  it('multi-cover recency follows the parent connect time regardless of insert order', async () => {
+    // Insert the NEWER parent first so row order cannot masquerade as recency.
+    const driveId = await seedCredential(
+      'GOOGLE_DRIVE_CRED',
+      TEST_USER_ID,
+      new Date('2026-02-01T00:00:00Z')
+    );
+    const gmailId = await seedCredential(
+      'GMAIL_CRED',
+      TEST_USER_ID,
+      new Date('2026-01-01T00:00:00Z')
+    );
+    await seedDerivedRecord(gmailId, 'GOOGLE_SHEETS_CRED');
+    await seedDerivedRecord(driveId, 'GOOGLE_SHEETS_CRED');
+    const params = { '2': bubble(2, 'google-sheets') };
+
+    const result = await autoBindMissingCredentials(TEST_USER_ID, params);
+
+    expect(boundCredentials(result.bubbleParameters, '2')).toEqual({
+      GOOGLE_SHEETS_CRED: driveId,
+    });
   });
 
   it('leaves already-bound slots untouched', async () => {

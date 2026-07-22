@@ -1,23 +1,28 @@
 /**
- * Server-side single-match credential auto-bind: the durable backstop that
+ * Server-side deterministic credential auto-bind: the durable backstop that
  * makes auto-selected credentials correct on EVERY code path (create,
- * validation sync, Pearl generation save, manual run, webhook, cron), not just
- * an editor-mounted flow.
+ * validation sync, Pearl generation save, manual run, webhook, cron, editor
+ * load), not just an editor-mounted flow.
  *
- * For each required-credential slot in bubbleParameters with no binding, the
- * user's connected credentials decide:
- * - exactly ONE credential of the exact type -> bind it,
- * - no exact-type credential but exactly ONE credential whose STORED
- *   derived-credential record covers the type (e.g. a Gmail credential whose
- *   granted scopes serve Google Sheets) -> bind that parent credential,
- * - zero or several candidates -> leave the slot unbound (the studio's
- *   chooser / Connect affordance owns ambiguity; the server never guesses).
+ * Product rule: ONE credential per tool type — a flow that uses a tool
+ * auto-uses the user's matching credential. For each required-credential slot
+ * in bubbleParameters with no binding, the single BEST credential is chosen
+ * deterministically:
+ * 1. exact-type credentials win over derived coverage; among several, the
+ *    most recently connected one (createdAt desc, id desc as the tiebreak),
+ * 2. else credentials whose STORED derived-credential record covers the type
+ *    (e.g. a Gmail credential whose granted scopes serve Google Sheets);
+ *    among several covering parents (Gmail + Drive both covering Sheets), the
+ *    most recently connected parent,
+ * 3. zero candidates -> the slot stays unbound (nothing to bind; the studio's
+ *    Connect affordance takes over).
  *
- * The single-match rule is deliberately stricter than the studio's
- * default-of-many recency rule: a server-side guess between accounts would be
- * invisible until an execution used the wrong one.
+ * The bound credential_id ALWAYS points at the token-holding credential row
+ * (the parent), never a derived record — execution resolves tokens by id.
+ * Recency mirrors the studio's default-of-many rule, so the server and the
+ * editor pick the same credential for the same state.
  */
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { derivedCredentials, userCredentials } from '../db/schema.js';
 import {
@@ -97,9 +102,10 @@ function bindCredentialOnBubble(
 }
 
 /**
- * Fill every unbound required-credential slot the user's credentials decide
- * unambiguously (see module doc). Reads the database only when at least one
- * slot is missing, so bound-through flows cost nothing extra.
+ * Fill every unbound required-credential slot that has at least one covering
+ * credential, picking the single best deterministically (see module doc).
+ * Reads the database only when at least one slot is missing, so bound-through
+ * flows cost nothing extra.
  */
 export async function autoBindMissingCredentials(
   userId: string,
@@ -133,7 +139,9 @@ export async function autoBindMissingCredentials(
     ...new Set(missingSlots.map((slot) => slot.credentialType as string)),
   ];
 
-  // Exact-type candidates: the user's credential rows of the missing types.
+  // Exact-type candidates: the user's credential rows of the missing types,
+  // most recently connected first (id desc breaks same-timestamp ties, so the
+  // pick is total and deterministic).
   const exactRows = await db
     .select({
       id: userCredentials.id,
@@ -145,56 +153,65 @@ export async function autoBindMissingCredentials(
         eq(userCredentials.userId, userId),
         inArray(userCredentials.credentialType, missingTypes)
       )
-    );
-  const exactByType = new Map<string, number[]>();
+    )
+    .orderBy(desc(userCredentials.createdAt), desc(userCredentials.id));
+  // First row seen per type = the most recently connected credential.
+  const exactByType = new Map<string, number>();
   for (const row of exactRows) {
-    const ids = exactByType.get(row.credentialType) ?? [];
-    ids.push(row.id);
-    exactByType.set(row.credentialType, ids);
+    if (!exactByType.has(row.credentialType)) {
+      exactByType.set(row.credentialType, row.id);
+    }
   }
 
   // Derived-record candidates: parent credentials whose STORED records cover
   // the missing types (the API keeps these rows in lockstep with the granted
-  // scopes, so no live probe is needed here).
+  // scopes, so no live probe is needed here). Ordered by the PARENT
+  // credential's connect time, so when several parents cover the same type
+  // (e.g. Gmail + Drive both covering Sheets) the most recently connected
+  // parent wins — one credential per tool, never a refusal.
   const derivedRows = await db
     .select({
       parentCredentialId: derivedCredentials.parentCredentialId,
       derivedCredentialType: derivedCredentials.derivedCredentialType,
     })
     .from(derivedCredentials)
+    .innerJoin(
+      userCredentials,
+      eq(derivedCredentials.parentCredentialId, userCredentials.id)
+    )
     .where(
       and(
         eq(derivedCredentials.userId, userId),
         inArray(derivedCredentials.derivedCredentialType, missingTypes)
       )
-    );
-  const derivedByType = new Map<string, number[]>();
+    )
+    .orderBy(desc(userCredentials.createdAt), desc(userCredentials.id));
+  const derivedByType = new Map<string, number>();
   for (const row of derivedRows) {
-    const ids = derivedByType.get(row.derivedCredentialType) ?? [];
-    if (!ids.includes(row.parentCredentialId)) ids.push(row.parentCredentialId);
-    derivedByType.set(row.derivedCredentialType, ids);
+    if (!derivedByType.has(row.derivedCredentialType)) {
+      derivedByType.set(row.derivedCredentialType, row.parentCredentialId);
+    }
   }
 
   for (const slot of missingSlots) {
-    const exact = exactByType.get(slot.credentialType) ?? [];
-    if (exact.length === 1) {
-      bindCredentialOnBubble(slot.bubble, slot.credentialType, exact[0]);
+    const exactId = exactByType.get(slot.credentialType);
+    if (exactId !== undefined) {
+      bindCredentialOnBubble(slot.bubble, slot.credentialType, exactId);
       bound.push({
         bubbleKey: slot.bubbleKey,
         credentialType: slot.credentialType,
-        credentialId: exact[0],
+        credentialId: exactId,
         match: 'exact_type',
       });
       continue;
     }
-    if (exact.length > 1) continue;
-    const derived = derivedByType.get(slot.credentialType) ?? [];
-    if (derived.length === 1) {
-      bindCredentialOnBubble(slot.bubble, slot.credentialType, derived[0]);
+    const parentId = derivedByType.get(slot.credentialType);
+    if (parentId !== undefined) {
+      bindCredentialOnBubble(slot.bubble, slot.credentialType, parentId);
       bound.push({
         bubbleKey: slot.bubbleKey,
         credentialType: slot.credentialType,
-        credentialId: derived[0],
+        credentialId: parentId,
         match: 'derived_record',
       });
     }

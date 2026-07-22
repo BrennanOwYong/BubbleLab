@@ -982,11 +982,16 @@ export const OAUTH_PROVIDERS: Record<OAuthProvider, OAuthProviderConfig> = {
     credentialTypes: {
       [CredentialType.GOOGLE_DRIVE_CRED]: {
         displayName: 'Google Drive',
+        // Kept in lockstep with scopeDescriptions below: these are the scopes the
+        // Connect UI offers, and computeScopeCoverage treats this exact set as the
+        // requirement for a sibling grant to cover a GOOGLE_DRIVE_CRED target. The
+        // full-control 'auth/drive' scope was listed here while the UI offered
+        // 'drive.readonly', so no obtainable grant could ever cover a Drive target.
         defaultScopes: [
           'https://www.googleapis.com/auth/drive.file',
           'https://www.googleapis.com/auth/documents',
           'https://www.googleapis.com/auth/spreadsheets',
-          'https://www.googleapis.com/auth/drive',
+          'https://www.googleapis.com/auth/drive.readonly',
         ],
         description: 'Access Google Drive files and folders',
         scopeDescriptions: [
@@ -1009,7 +1014,7 @@ export const OAUTH_PROVIDERS: Record<OAuthProvider, OAuthProviderConfig> = {
           {
             scope: 'https://www.googleapis.com/auth/drive.readonly',
             description:
-              'View and manage all of your Google Drive files and folders',
+              'View all of your Google Drive files and folders (read-only)',
             defaultEnabled: true,
           },
         ],
@@ -2805,6 +2810,43 @@ export function getOAuthProviderGroupTypes(
 }
 
 /**
+ * Whether the scopes ACTUALLY granted on a credential of this type can be
+ * read back after connect — the scope-education signal for the studio:
+ * - 'live': a live introspection endpoint reports granted scopes (Google's
+ *   tokeninfo probe; the stored oauth_scopes are verified grants).
+ * - 'detectable-unimplemented': the provider issues scoped grants and exposes
+ *   them (e.g. Atlassian token responses carry `scope`), but no capture is
+ *   wired yet — stored scopes are the REQUESTED set, unverified.
+ * - 'none': the credential carries no OAuth scopes at all (API keys, and
+ *   OAuth providers like Notion whose grant is capability-based, not scoped)
+ *   — the UI must educate instead of listing scopes.
+ */
+export type ScopeDetectability = 'live' | 'detectable-unimplemented' | 'none';
+
+export const SCOPE_DETECTABILITY_VALUES = [
+  'live',
+  'detectable-unimplemented',
+  'none',
+] as const satisfies readonly ScopeDetectability[];
+
+/** OAuth providers with a wired live granted-scope probe (tokeninfo). */
+const LIVE_SCOPE_PROBE_PROVIDERS: ReadonlySet<OAuthProvider> = new Set([
+  'google',
+]);
+
+export function getScopeDetectability(
+  credentialType: CredentialType
+): ScopeDetectability {
+  const provider = getOAuthProvider(credentialType);
+  if (!provider) return 'none'; // API keys / tokens: no scopes exist
+  if (LIVE_SCOPE_PROBE_PROVIDERS.has(provider)) return 'live';
+  // OAuth types configured with NO scopes (Notion, Follow Up Boss) have
+  // nothing to detect: the provider's consent is capability-based.
+  if (getDefaultScopes(credentialType).length === 0) return 'none';
+  return 'detectable-unimplemented';
+}
+
+/**
  * Scope comparison key: trims whitespace and a trailing '/' so
  * 'https://mail.google.com/' equals 'https://mail.google.com'. Case is
  * preserved — OAuth scope strings are case-sensitive per RFC 6749 §3.3.
@@ -3450,6 +3492,10 @@ export const credentialResponseSchema = z
       .enum(['active', 'expired', 'needs_refresh'])
       .optional()
       .openapi({ description: 'OAuth token status' }),
+    scopeDetectability: z.enum(SCOPE_DETECTABILITY_VALUES).optional().openapi({
+      description:
+        "Whether granted scopes are knowable for this credential type: 'live' (verified via provider introspection, e.g. Google tokeninfo), 'detectable-unimplemented' (provider exposes grants but capture is not wired; stored scopes are the requested set), 'none' (no scopes exist — API keys and unscoped OAuth like Notion; the UI educates instead of listing scopes)",
+    }),
 
     // Browser session-specific fields
     isBrowserSession: z

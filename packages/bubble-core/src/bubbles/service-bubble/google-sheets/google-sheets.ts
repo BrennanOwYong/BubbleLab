@@ -9,6 +9,7 @@ import {
   type GoogleSheetsResult,
 } from './google-sheets.schema.js';
 import { enhanceErrorMessage } from './google-sheets.utils.js';
+import { GOOGLE_SHEETS_OPERATION_METADATA } from './google-sheets.metadata.js';
 
 /**
  * Google Sheets Service Bubble
@@ -44,6 +45,10 @@ export class GoogleSheetsBubble<
   static readonly service = 'google-sheets';
   static readonly authType = 'oauth' as const;
   static readonly bubbleName = 'google-sheets';
+  // Doc-grounded per-operation side-effect + scope classifications (IR-8);
+  // hand-authored against the live Sheets API method pages — see the
+  // References block in google-sheets.metadata.ts
+  static readonly operationMetadata = GOOGLE_SHEETS_OPERATION_METADATA;
   static readonly schema = GoogleSheetsParamsSchema;
   static readonly resultSchema = GoogleSheetsResultSchema;
   static readonly shortDescription =

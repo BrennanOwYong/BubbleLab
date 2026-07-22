@@ -347,6 +347,10 @@ export const bubbleFlowDetailsResponseSchema = z
       description:
         'Per-credential-type OAuth scope requirements discovered from the operations this flow calls (IR-6/7); lets the Connect UI request exactly the scopes the flow needs',
     }),
+    accountEmailDefaults: z.record(z.string(), z.string()).optional().openapi({
+      description:
+        "Per required credential type, the account email a setup field (e.g. gmailAccountEmail) should default to: present only when the user has EXACTLY ONE credential of that type and it carries metadata.email — zero or several credentials leave the field blank for the user to pick. Keys are credential types (e.g. 'GMAIL_CRED').",
+    }),
     usedCredentials: z.array(usedCredentialSchema).optional().openapi({
       description:
         'Credentials used in this flow with metadata (for shared workflow visibility)',

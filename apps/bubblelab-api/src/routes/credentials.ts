@@ -26,7 +26,10 @@ import {
 } from '../services/oauth-service.js';
 import { syncDerivedCredentialsForSource } from '../services/derived-credential-service.js';
 import type { DerivedCredentialRecord } from '@bubblelab/shared-schemas';
-import { getOAuthProviderGroupTypes } from '@bubblelab/shared-schemas';
+import {
+  getOAuthProviderGroupTypes,
+  getScopeDetectability,
+} from '@bubblelab/shared-schemas';
 import {
   setupErrorHandler,
   validationErrorHook,
@@ -174,6 +177,14 @@ app.openapi(listCredentialsRoute, async (c) => {
       oauthExpiresAt: cred.oauthExpiresAt?.toISOString() || undefined,
       oauthScopes: cred.oauthScopes || undefined,
       oauthStatus,
+
+      // Scope education: whether granted scopes are knowable for this type —
+      // 'live' (Google tokeninfo-verified), 'detectable-unimplemented'
+      // (scoped provider, capture not wired; stored scopes = requested), or
+      // 'none' (API keys / unscoped OAuth like Notion; UI educates).
+      scopeDetectability: getScopeDetectability(
+        cred.credentialType as CredentialType
+      ),
 
       // Stored derived-credential records (parent side of the hierarchy)
       derivedCredentials: derivedByParent.get(cred.id),

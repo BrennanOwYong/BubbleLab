@@ -61,6 +61,7 @@ import {
 import { getCurrentWebhookUsage } from '../services/subscription-validation.js';
 import { executeBubbleFlowWithTracking } from '../services/bubble-flow-execution.js';
 import { autoBindMissingCredentials } from '../services/credential-auto-bind.js';
+import { resolveAccountEmailDefaults } from '../services/account-email-defaults.js';
 import { runBubbleFlow } from '../services/execution.js';
 import {
   BubbleScript,
@@ -648,10 +649,34 @@ app.openapi(getBubbleFlowRoute, async (c) => {
       .where(eq(bubbleFlows.id, flow.id));
   }
 
+  // Retroactive one-cred-per-tool auto-bind: flows created before server-side
+  // auto-binding existed load with null required-credential slots; fill and
+  // persist them here so the flow binds without an editor session ever
+  // mounting it. autoBindMissingCredentials returns without touching the DB
+  // when no slot is unbound, so bound-through flows pay nothing.
+  const autoBind = await autoBindMissingCredentials(userId, bubbleParameters);
+  if (autoBind.bound.length > 0) {
+    bubbleParameters = autoBind.bubbleParameters;
+    await db
+      .update(bubbleFlows)
+      .set({ bubbleParameters })
+      .where(eq(bubbleFlows.id, flow.id));
+  }
+
   // Pre-connect scope discovery (IR-6/7): which scopes the flow's operations need per
   // credential type, so the Connect UI requests exactly those and can show what needs what.
   const scopeRequirements =
     await discoverFlowScopeRequirements(bubbleParameters);
+
+  const requiredCredentials = extractRequiredCredentials(bubbleParameters);
+
+  // Account-email defaults (gmailAccountEmail 0/1/many rule): per required
+  // credential type, the email a setup field defaults to when the user has
+  // exactly one credential of that type carrying metadata.email.
+  const accountEmailDefaults = await resolveAccountEmailDefaults(
+    userId,
+    requiredCredentials
+  );
 
   const response = {
     id: flow.id,
@@ -659,8 +684,9 @@ app.openapi(getBubbleFlowRoute, async (c) => {
     description: flow.description || undefined,
     prompt: flow.prompt || undefined,
     eventType: flow.eventType,
-    requiredCredentials: extractRequiredCredentials(bubbleParameters),
+    requiredCredentials,
     scopeRequirements,
+    accountEmailDefaults,
     code: flow.originalCode ?? '', // Return empty string if null/undefined, preserve empty string
     generationError: flow.generationError || undefined,
     displayedBubbleParameters:
