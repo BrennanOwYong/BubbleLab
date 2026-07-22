@@ -2025,8 +2025,13 @@ export class BubbleParser {
     const parameters: BubbleParameter[] = [];
     if (newExpr.arguments && newExpr.arguments.length > 0) {
       let firstArg = newExpr.arguments[0];
-      // Unwrap TSAsExpression to get the underlying expression (e.g., { ... } as any)
-      if (firstArg.type === 'TSAsExpression') {
+      // Unwrap ALL nested TSAsExpression layers to reach the underlying expression.
+      // A single `if` only peeled one cast; a double cast (`{ ... } as unknown as T`,
+      // the shape LLM codegen emits) left an inner TSAsExpression that is not an
+      // ObjectExpression, so the whole first argument was blobbed as an `arg0`
+      // expression param and lost its discrete fields (e.g. `operation`), which the
+      // runtime formatter then nested instead of spreading -> discriminator failure.
+      while (firstArg.type === 'TSAsExpression') {
         firstArg = (firstArg as TSESTree.TSAsExpression).expression;
       }
       if (firstArg.type === 'ObjectExpression') {
