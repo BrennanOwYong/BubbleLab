@@ -34,6 +34,13 @@ import { isValidBubbleTriggerEvent } from '@bubblelab/shared-schemas';
 import { runBoba } from '../services/ai/boba.js';
 import { runCoffee } from '../services/ai/coffee.js';
 import {
+  persistConversationThread,
+  buildThreadFromRequest,
+  coffeeResponseToMessage,
+  interruptedGenerationMessage,
+} from '../services/conversation-thread.js';
+import type { CoffeeResponse } from '@bubblelab/shared-schemas';
+import {
   createBubbleFlowRoute,
   createEmptyBubbleFlowRoute,
   executeBubbleFlowRoute,
@@ -1532,53 +1539,42 @@ app.openapi(generateBubbleFlowCodeRoute, async (c) => {
       try {
         // PLANNING PHASE: Run Coffee agent for clarification and plan generation
         if (phase === 'planning') {
-          const coffeeResult = await runCoffee(
-            {
-              prompt,
-              flowId,
-              messages,
-            },
-            credentials,
-            streamingCallback
-          );
+          // Persist the incoming thread BEFORE the agent runs so a crash,
+          // stream drop, or abandoned tab still leaves the user's side of
+          // the conversation on the flow record.
+          const thread = buildThreadFromRequest(prompt, messages);
+          if (flowId) {
+            await persistConversationThread(userId, flowId, thread, 'planning');
+          }
 
-          // Save conversation messages to flow metadata for persistence
-          if (flowId && messages && messages.length > 0) {
-            try {
-              // Fetch current metadata to merge with existing data
-              const currentFlow = await db.query.bubbleFlows.findFirst({
-                where: and(
-                  eq(bubbleFlows.id, flowId),
-                  eq(bubbleFlows.userId, userId)
-                ),
-                columns: { metadata: true },
-              });
-
-              const existingMetadata =
-                (currentFlow?.metadata as Record<string, unknown>) || {};
-
-              await db
-                .update(bubbleFlows)
-                .set({
-                  metadata: {
-                    ...existingMetadata,
-                    conversationMessages: messages,
-                    lastUpdatedPhase: 'planning',
-                  },
-                  updatedAt: new Date(),
-                })
-                .where(
-                  and(
-                    eq(bubbleFlows.id, flowId),
-                    eq(bubbleFlows.userId, userId)
-                  )
-                );
-            } catch (saveError) {
-              console.error(
-                `[API] Error saving conversation messages to flow ${flowId}:`,
-                saveError
+          let coffeeResult: CoffeeResponse | undefined;
+          try {
+            coffeeResult = await runCoffee(
+              {
+                prompt,
+                flowId,
+                messages,
+              },
+              credentials,
+              streamingCallback
+            );
+          } finally {
+            // Persist the round's outcome (clarification questions / plan /
+            // context request, or an interruption marker when runCoffee
+            // threw) so an incomplete run keeps a resumable thread.
+            if (flowId) {
+              const outcome = coffeeResult
+                ? coffeeResponseToMessage(coffeeResult)
+                : interruptedGenerationMessage('planning');
+              if (outcome) {
+                thread.push(outcome);
+              }
+              await persistConversationThread(
+                userId,
+                flowId,
+                thread,
+                'planning'
               );
-              // Non-blocking: continue even if save fails
             }
           }
 
@@ -1598,6 +1594,19 @@ app.openapi(generateBubbleFlowCodeRoute, async (c) => {
         }
 
         // BUILDING PHASE: Run Boba agent for code generation
+        // Persist the incoming thread (user prompt, clarification Q&A, plan,
+        // plan_approval) BEFORE Boba runs — a failed or abandoned build must
+        // still leave the conversation on the flow record. The successful
+        // path re-writes the same messages inside its own flow update below.
+        if (flowId) {
+          await persistConversationThread(
+            userId,
+            flowId,
+            buildThreadFromRequest(prompt, messages),
+            'building'
+          );
+        }
+
         // Pass messages and planContext to runBoba - it will build the full context internally
         const generationResult = await runBoba(
           {
@@ -1853,6 +1862,7 @@ app.openapi(generateBubbleFlowCodeRoute, async (c) => {
           }
         }
       } catch (error) {
+        clearInterval(heartbeatInterval);
         console.error('[API] Streaming generation error:', error);
         posthog.captureErrorEvent(
           error,
