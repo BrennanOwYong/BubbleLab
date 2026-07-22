@@ -3,12 +3,22 @@ import { Handle, Position } from '@xyflow/react';
 import {
   STEP_CONTAINER_LAYOUT,
   CUSTOM_TOOL_LAYOUT,
+  CUSTOM_TOOL_LIST_ROW_HEIGHT,
   calculateStepContainerHeight,
   calculateHeaderHeight,
-  calculateCustomToolContainerHeight,
+  calculateCustomToolListHeight,
 } from '@/components/flow_visualizer/stepContainerUtils';
 import { useExecutionStore } from '@/stores/executionStore';
 import { BUBBLE_COLORS } from '@/components/flow_visualizer/BubbleColors';
+import { findLogoForBubble } from '@/lib/integrations';
+
+/** One inner bubble call of a custom-tool step, listed statically. */
+export interface StepToolCall {
+  variableId: number;
+  variableName?: string;
+  bubbleName?: string;
+  className?: string;
+}
 
 export interface StepContainerNodeData {
   flowId: number;
@@ -21,6 +31,7 @@ export interface StepContainerNodeData {
   };
   bubbleIds: string[]; // IDs of bubbles inside this step
   isCustomTool?: boolean; // Whether this is a custom tool function call (rendered smaller)
+  toolCalls?: StepToolCall[]; // Custom-tool steps: the inner calls, rendered as a static list
   usedHandles?: {
     top?: boolean;
     bottom?: boolean;
@@ -40,6 +51,7 @@ function StepContainerNode({ data }: StepContainerNodeProps) {
     stepInfo,
     bubbleIds,
     isCustomTool = false,
+    toolCalls = [],
     usedHandles = {},
   } = data;
   const { functionName, description } = stepInfo;
@@ -68,17 +80,20 @@ function StepContainerNode({ data }: StepContainerNodeProps) {
     ? Math.round(baseHeaderHeight * CUSTOM_TOOL_LAYOUT.SCALE)
     : baseHeaderHeight;
   const calculatedHeight = isCustomTool
-    ? calculateCustomToolContainerHeight(bubbleIds.length, baseHeaderHeight)
+    ? calculateCustomToolListHeight(toolCalls.length, baseHeaderHeight)
     : calculateStepContainerHeight(bubbleIds.length, baseHeaderHeight);
 
   return (
     <div
-      className={`relative backdrop-blur-sm rounded-lg border shadow-xl cursor-pointer ${
+      // No backdrop-filter here: inside React Flow's transformed viewport,
+      // Chromium samples stale GPU surface memory for the backdrop and renders
+      // other windows / the tab strip into the card. Opaque fill instead.
+      className={`relative rounded-lg border shadow-xl cursor-pointer ${
         isExecuting
-          ? 'bg-neutral-800/60'
+          ? 'bg-neutral-800'
           : isHighlighted
             ? `${BUBBLE_COLORS.SELECTED.border} ${BUBBLE_COLORS.SELECTED.background}`
-            : 'border-neutral-600/60 bg-neutral-800/60 hover:border-neutral-500/80'
+            : 'border-neutral-600/60 bg-neutral-800 hover:border-neutral-500/80'
       }`}
       style={{
         width: `${layout.WIDTH}px`,
@@ -156,7 +171,9 @@ function StepContainerNode({ data }: StepContainerNodeProps) {
         )}
       </div>
 
-      {/* Content Area - Draggable zone for bubbles */}
+      {/* Content Area: custom-tool steps list their inner calls statically
+          (no drag-and-drop, no interactivity — credential needs surface in
+          the Setup tab); regular steps position child bubble nodes here. */}
       <div
         className="relative flex-shrink-0"
         style={{
@@ -164,7 +181,35 @@ function StepContainerNode({ data }: StepContainerNodeProps) {
           padding: `${layout.PADDING}px`,
         }}
       >
-        {/* Bubbles will be positioned here */}
+        {isCustomTool && toolCalls.length > 0 && (
+          <ul className="pointer-events-none select-none space-y-0 list-none m-0 p-0">
+            {toolCalls.map((toolCall) => {
+              const logo = findLogoForBubble(toolCall);
+              return (
+                <li
+                  key={toolCall.variableId}
+                  className="flex items-center gap-2 px-2"
+                  style={{ height: `${CUSTOM_TOOL_LIST_ROW_HEIGHT}px` }}
+                >
+                  {logo ? (
+                    <img
+                      src={logo.file}
+                      alt={`${logo.name} logo`}
+                      className="w-5 h-5 object-contain flex-shrink-0"
+                    />
+                  ) : (
+                    <span className="w-5 h-5 rounded bg-neutral-700 flex-shrink-0" />
+                  )}
+                  <span className="text-xs text-neutral-200 truncate">
+                    {toolCall.variableName ||
+                      toolCall.bubbleName ||
+                      String(toolCall.variableId)}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </div>
     </div>
   );

@@ -3,9 +3,10 @@
  *
  * A setup input that names an account (e.g. `gmailAccountEmail`) REFERENCES the
  * credential serving that account: the field pre-fills from the credential the
- * flow's steps are bound to (falling back to any connected credential of the
- * matching types), so it is never blank while a credential is bound — still
- * editable, defaulted.
+ * flow's steps are bound to, or — with nothing bound — from the SINGLE
+ * connected credential of the matching types (several unbound candidates
+ * leave the field to the user), so it is never blank while a credential is
+ * bound — still editable, defaulted.
  *
  * Value precedence per credential: the account email recorded on the row
  * (`metadata.email`, persisted by the API's Google OAuth callback / backfill
@@ -55,16 +56,22 @@ function metadataEmail(credential: CredentialResponse): string | undefined {
 /**
  * The credential a field should reference, among those whose type matches the
  * field's account types: a step-bound credential wins (the field then mirrors
- * what the flow will run with), email-carrying rows break ties, connected
- * order breaks the rest.
+ * what the flow will run with — the backend resolves the account email from
+ * the bound credential), email-carrying rows break ties among bound rows.
+ * With nothing bound, only an unambiguous single candidate fills the field;
+ * several unbound candidates leave the choice to the user (no guessing which
+ * account the flow should reference).
  */
 export function pickReferenceCredential(
   candidates: readonly CredentialResponse[],
   boundCredentialIds: ReadonlySet<number>
 ): CredentialResponse | undefined {
   const bound = candidates.filter((cred) => boundCredentialIds.has(cred.id));
-  const pool = bound.length > 0 ? bound : candidates;
-  return pool.find((cred) => metadataEmail(cred) !== undefined) ?? pool[0];
+  if (bound.length > 0) {
+    return bound.find((cred) => metadataEmail(cred) !== undefined) ?? bound[0];
+  }
+  if (candidates.length === 1) return candidates[0];
+  return undefined;
 }
 
 /**

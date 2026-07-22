@@ -9,6 +9,7 @@ import type {
   ParsedBubbleWithInfo,
 } from '@bubblelab/shared-schemas';
 import {
+  bindCredentialToAllSteps,
   computeAutoBindings,
   computeSuiteBindingProposals,
   credentialCoversTypeByRecord,
@@ -298,6 +299,69 @@ describe('setup-panel binding helpers', () => {
         CredentialType.GMAIL_CRED
       )
     ).toBeNull();
+  });
+});
+
+describe('bindCredentialToAllSteps (one credential per tool type)', () => {
+  const flow = {
+    bubbleParameters: { '5': bubble(5), '6': bubble(6), '7': bubble(7) },
+    requiredCredentials: {
+      '5': [CredentialType.GMAIL_CRED],
+      '6': [CredentialType.GMAIL_CRED],
+      '7': [CredentialType.SLACK_API],
+    },
+  };
+
+  it('binds every step requiring the type and returns the bound keys', () => {
+    const calls: Array<[string, string, number]> = [];
+    const boundKeys = bindCredentialToAllSteps(
+      flow,
+      CredentialType.GMAIL_CRED,
+      2,
+      (bubbleKey, credentialType, credentialId) =>
+        calls.push([bubbleKey, credentialType, credentialId])
+    );
+    expect(boundKeys).toEqual(['5', '6']);
+    expect(calls).toEqual([
+      ['5', CredentialType.GMAIL_CRED, 2],
+      ['6', CredentialType.GMAIL_CRED, 2],
+    ]);
+  });
+
+  it('overwrites existing selections (no per-step exceptions)', () => {
+    // The helper takes no pendingCredentials: rebinding EVERY key of the
+    // type is the contract, so a step previously bound to another account is
+    // overwritten by the same setCredential calls as an unbound one.
+    const bound: Record<string, number> = { '5': 1 };
+    bindCredentialToAllSteps(
+      flow,
+      CredentialType.GMAIL_CRED,
+      2,
+      (bubbleKey, _credentialType, credentialId) => {
+        bound[bubbleKey] = credentialId;
+      }
+    );
+    expect(bound).toEqual({ '5': 2, '6': 2 });
+  });
+
+  it('binds nothing (and returns []) when no step requires the type', () => {
+    const calls: string[] = [];
+    const boundKeys = bindCredentialToAllSteps(
+      flow,
+      CredentialType.RESEND_CRED,
+      9,
+      (bubbleKey) => calls.push(bubbleKey)
+    );
+    expect(boundKeys).toEqual([]);
+    expect(calls).toEqual([]);
+  });
+
+  it('tolerates missing flow metadata', () => {
+    expect(
+      bindCredentialToAllSteps({}, CredentialType.GMAIL_CRED, 2, () => {
+        throw new Error('must not bind');
+      })
+    ).toEqual([]);
   });
 });
 

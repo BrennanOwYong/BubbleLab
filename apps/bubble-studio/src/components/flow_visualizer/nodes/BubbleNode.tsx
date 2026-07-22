@@ -7,8 +7,12 @@ import {
   AvailableModels,
   BubbleParameterType,
 } from '@bubblelab/shared-schemas';
-import type { BubbleParameter } from '@bubblelab/shared-schemas';
+import type {
+  BubbleParameter,
+  CredentialResponse,
+} from '@bubblelab/shared-schemas';
 import { CreateCredentialModal } from '@/pages/CredentialsPage';
+import { bindCredentialToAllSteps } from '@/lib/credentialBinding';
 import { useCreateCredential } from '@/hooks/useCredentials';
 import { findLogoForBubble, findDocsUrlForBubble } from '@/lib/integrations';
 import {
@@ -448,6 +452,40 @@ function BubbleNode({ data }: BubbleNodeProps) {
     return selectedId === undefined || selectedId === null;
   });
 
+  /**
+   * Keys of this bubble's ORIGINAL/CLONE partners in bubbleParameters: the
+   * original when this is a clone (invocationCallSiteKey set), every clone
+   * when this is the original. Partners share one credential selection.
+   */
+  const getClonePartnerKeys = (): string[] => {
+    const bubbleParameters = currentFlow?.bubbleParameters;
+    if (!bubbleParameters) return [];
+    const partnerKeys: string[] = [];
+    if (
+      bubble.invocationCallSiteKey &&
+      bubble.clonedFromVariableId !== undefined
+    ) {
+      // This is a clone - find the original bubble
+      Object.entries(bubbleParameters).forEach(([key, otherBubble]) => {
+        if (otherBubble.variableId === bubble.clonedFromVariableId) {
+          partnerKeys.push(key);
+        }
+      });
+    }
+    if (!bubble.invocationCallSiteKey) {
+      // This is an original - find all its clones
+      Object.entries(bubbleParameters).forEach(([key, otherBubble]) => {
+        if (
+          otherBubble.invocationCallSiteKey &&
+          otherBubble.clonedFromVariableId === bubble.variableId
+        ) {
+          partnerKeys.push(key);
+        }
+      });
+    }
+    return partnerKeys;
+  };
+
   const handleCredentialChange = (credType: string, credId: number | null) => {
     const previousId = selectedBubbleCredentials[credType] ?? null;
     if (credId !== null && credId !== previousId) {
@@ -460,40 +498,49 @@ function BubbleNode({ data }: BubbleNodeProps) {
         source: 'bubble_node',
       });
     }
-    // Update credential for this bubble
+    // Update credential for this bubble and its clone partners
     setCredential(credentialsKey, credType, credId);
-
-    if (!currentFlow?.bubbleParameters) return;
-
-    const bubbleParameters = currentFlow.bubbleParameters;
-
-    // If this is a clone (has invocationCallSiteKey), also update the original
-    if (
-      bubble.invocationCallSiteKey &&
-      bubble.clonedFromVariableId !== undefined
-    ) {
-      // Find the original bubble (where variableId matches clonedFromVariableId)
-      Object.entries(bubbleParameters).forEach(([key, otherBubble]) => {
-        if (otherBubble.variableId === bubble.clonedFromVariableId) {
-          // This is the original - update its credential too
-          setCredential(key, credType, credId);
-        }
-      });
+    for (const key of getClonePartnerKeys()) {
+      setCredential(key, credType, credId);
     }
+  };
 
-    // If this is an original bubble (no invocationCallSiteKey), also update all its clones
-    if (!bubble.invocationCallSiteKey) {
-      // Find all clones of this bubble (clones have clonedFromVariableId matching this bubble's variableId)
-      Object.entries(bubbleParameters).forEach(([key, otherBubble]) => {
-        if (
-          otherBubble.invocationCallSiteKey &&
-          otherBubble.clonedFromVariableId === bubble.variableId
-        ) {
-          // This is a clone - update its credential too
-          setCredential(key, credType, credId);
-        }
-      });
+  /**
+   * One credential per tool type: a credential added from this node binds to
+   * EVERY step requiring the type, not only the clicked slot. The clicked
+   * slot and its clone partners are also bound directly, covering bubbles
+   * whose keys are absent from the flow's requiredCredentials (fallback-typed
+   * slots). usePersistCredentialBindings persists the store changes.
+   */
+  const handleCredentialCreated = (
+    credType: string,
+    created: CredentialResponse
+  ) => {
+    const previousId = selectedBubbleCredentials[credType] ?? null;
+    const boundKeys = new Set(
+      bindCredentialToAllSteps(
+        {
+          bubbleParameters: currentFlow?.bubbleParameters,
+          requiredCredentials: currentFlow?.requiredCredentials,
+        },
+        credType,
+        created.id,
+        setCredential
+      )
+    );
+    for (const key of [credentialsKey, ...getClonePartnerKeys()]) {
+      if (boundKeys.has(key)) continue;
+      setCredential(key, credType, created.id);
+      boundKeys.add(key);
     }
+    emitTelemetry('setup.credential_switched', {
+      flowId,
+      credentialType: credType,
+      fromCredentialId: previousId,
+      toCredentialId: created.id,
+      bubbleKeys: [...boundKeys],
+      source: 'bubble_node',
+    });
   };
 
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
@@ -590,7 +637,7 @@ function BubbleNode({ data }: BubbleNodeProps) {
           />
           {isCompleted && (
             <div
-              className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-[10px] font-semibold whitespace-nowrap shadow-lg border transition-all duration-300 hover:scale-105 cursor-pointer backdrop-blur-sm"
+              className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-[10px] font-semibold whitespace-nowrap shadow-lg border transition-all duration-300 hover:scale-105 cursor-pointer"
               style={{
                 left: '0',
                 backgroundColor: hasError
@@ -638,7 +685,7 @@ function BubbleNode({ data }: BubbleNodeProps) {
           />
           {isCompleted && (
             <div
-              className="absolute top-1/2 -translate-y-1/2 translate-x-1/2 px-3 py-1 rounded-full text-[10px] font-semibold whitespace-nowrap shadow-lg border transition-all duration-300 hover:scale-105 cursor-pointer backdrop-blur-sm"
+              className="absolute top-1/2 -translate-y-1/2 translate-x-1/2 px-3 py-1 rounded-full text-[10px] font-semibold whitespace-nowrap shadow-lg border transition-all duration-300 hover:scale-105 cursor-pointer"
               style={{
                 right: '0',
                 backgroundColor: hasError
@@ -1015,7 +1062,7 @@ function BubbleNode({ data }: BubbleNodeProps) {
           lockType
           onSuccess={(created) => {
             if (createModalForType) {
-              handleCredentialChange(createModalForType, created.id);
+              handleCredentialCreated(createModalForType, created);
             }
             setCreateModalForType(null);
           }}

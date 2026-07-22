@@ -19,8 +19,7 @@ import {
   calculateBubblePosition,
   calculateStepContainerHeight,
   calculateHeaderHeight,
-  calculateCustomToolContainerHeight,
-  calculateCustomToolBubblePosition,
+  calculateCustomToolListHeight,
   STEP_CONTAINER_LAYOUT,
 } from './stepContainerUtils';
 import { calculateSubbubblePositionWithContext } from './nodePositioning';
@@ -1847,16 +1846,38 @@ function FlowVisualizerInner({
               persistedPositions.current.get(stepNodeId)
             );
 
-            // Calculate step container height based on number of bubbles (scaled for custom tools)
-            const stepHeight = calculateCustomToolContainerHeight(
-              customToolBubbleIds.length
+            // Inner tool-call metadata for the static list StepContainerNode
+            // renders (custom-tool steps emit no child bubbleNode cards; the
+            // container itself lists the calls, and credential needs surface
+            // in the Setup tab).
+            const toolCalls = customToolBubbleIds.flatMap((ctBubbleId) => {
+              const ctBubbleEntry = Object.entries(
+                currentFlow?.bubbleParameters || {}
+              ).find(([, b]) => b.variableId === ctBubbleId);
+              if (!ctBubbleEntry) return [];
+              const [, ctBubbleData] = ctBubbleEntry;
+              return [
+                {
+                  variableId: ctBubbleId,
+                  variableName: ctBubbleData.variableName,
+                  bubbleName: ctBubbleData.bubbleName,
+                  className: ctBubbleData.className,
+                },
+              ];
+            });
+
+            // Container height fits the static tool-call list (scaled header +
+            // one compact row per call)
+            const stepHeight = calculateCustomToolListHeight(
+              toolCalls.length,
+              calculateHeaderHeight(funcCall.functionName, funcCall.description)
             );
 
             const customToolStepNode: Node = {
               id: stepNodeId,
               type: 'stepContainerNode',
               position: stepPosition,
-              draggable: true,
+              draggable: false,
               data: {
                 flowId: currentFlow?.id || flowId,
                 stepId: stepNodeId,
@@ -1868,6 +1889,7 @@ function FlowVisualizerInner({
                 },
                 bubbleIds: customToolBubbleIds,
                 isCustomTool: true,
+                toolCalls,
                 usedHandles: usedHandlesMap.get(stepNodeId),
               },
               style: {
@@ -1891,75 +1913,6 @@ function FlowVisualizerInner({
                 stroke: '#9ca3af',
                 strokeWidth: 2,
               },
-            });
-
-            // Create bubble nodes inside the step container (scaled for custom tools)
-            customToolBubbleIds.forEach((ctBubbleId, ctBubbleIdx) => {
-              const ctBubbleNodeId = String(ctBubbleId);
-              const ctHeaderHeight = calculateHeaderHeight(
-                funcCall.functionName,
-                funcCall.description
-              );
-              const ctBubblePosition = calculateCustomToolBubblePosition(
-                ctBubbleIdx,
-                ctHeaderHeight
-              );
-
-              // Get bubble data from bubbleParameters
-              const ctBubbleEntry = Object.entries(
-                currentFlow?.bubbleParameters || {}
-              ).find(([, b]) => b.variableId === ctBubbleId);
-
-              if (ctBubbleEntry) {
-                const [, ctBubbleData] = ctBubbleEntry;
-                const ctBubbleNode: Node = {
-                  id: ctBubbleNodeId,
-                  type: 'bubbleNode',
-                  position: ctBubblePosition,
-                  parentId: stepNodeId,
-                  extent: 'parent',
-                  draggable: false,
-                  data: {
-                    flowId: currentFlow?.id || flowId,
-                    bubble: ctBubbleData,
-                    bubbleKey: ctBubbleNodeId,
-                    requiredCredentialTypes: (() => {
-                      const keyCandidates = [
-                        String(ctBubbleData.variableId),
-                        ctBubbleData.variableName,
-                        ctBubbleData.bubbleName,
-                      ];
-                      const credentialsKeyForBubble =
-                        keyCandidates.find(
-                          (k) =>
-                            k &&
-                            Array.isArray(
-                              (requiredCredentials as Record<string, unknown>)[
-                                k
-                              ]
-                            )
-                        ) || ctBubbleData.bubbleName;
-                      return (
-                        (requiredCredentials as Record<string, string[]>)[
-                          credentialsKeyForBubble
-                        ] || []
-                      );
-                    })(),
-                    onHighlightChange: () => {},
-                    onBubbleClick: () => {
-                      // Show editor and highlight the bubble's code location
-                      useUIStore.getState().showEditorPanel();
-                      setExecutionHighlight({
-                        startLine: ctBubbleData.location.startLine,
-                        endLine: ctBubbleData.location.endLine,
-                      });
-                    },
-                    isCustomToolBubble: true, // Render smaller inside custom tool containers
-                    usedHandles: usedHandlesMap.get(ctBubbleNodeId),
-                  },
-                };
-                nodes.push(ctBubbleNode);
-              }
             });
           });
         }

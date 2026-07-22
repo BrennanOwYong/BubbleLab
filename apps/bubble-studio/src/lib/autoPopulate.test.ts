@@ -78,11 +78,21 @@ describe('setup-field auto-population from saved credentials', () => {
     expect(populated[0].source).toBe('credential_name');
   });
 
-  it('prefers email-carrying rows when nothing is bound', () => {
+  it('leaves the field to the user when several credentials exist and none is bound', () => {
     const populated = computeAutoPopulatedFields(
       [{ name: 'gmailAccountEmail' }],
       [gmailCredentialWithoutEmail, gmailCredential],
       {}
+    );
+    expect(populated).toEqual([]);
+  });
+
+  it('fills from the bound credential even when several credentials exist', () => {
+    const populated = computeAutoPopulatedFields(
+      [{ name: 'gmailAccountEmail' }],
+      [gmailCredentialWithoutEmail, gmailCredential],
+      {},
+      new Set([42])
     );
     expect(populated).toHaveLength(1);
     expect(populated[0].credentialId).toBe(42);
