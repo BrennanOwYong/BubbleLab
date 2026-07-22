@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { useAuth } from './useAuth';
+import { track } from '../lib/telemetry';
 import type {
   CreateBubbleFlowResponse,
   BubbleFlowListResponse,
@@ -89,6 +90,7 @@ export function useCreateBubbleFlow(options?: {
       // Remove optimistic data before sending to server
       const { _optimisticBubbles: _, ...serverRequest } = request;
       void _; // Silence unused variable warning
+      track('flow.create_started', { source: isEmpty ? 'empty' : 'new' });
 
       const endpoint = isEmpty ? '/bubble-flow/empty' : '/bubble-flow';
       const response = await api.post<CreateBubbleFlowResponse>(
@@ -173,6 +175,7 @@ export function useCreateBubbleFlow(options?: {
       return { previousFlowList, tempId };
     },
     onSuccess: (data, variables, context) => {
+      track('flow.create_succeeded', { flowId: data.id });
       console.log('[useCreateBubbleFlow] Flow creation succeeded:', data);
 
       // Update the flow list with the real data from server
@@ -276,6 +279,9 @@ export function useCreateBubbleFlow(options?: {
       queryClient.invalidateQueries({ queryKey: ['bubbleFlow', data.id] });
     },
     onError: (error, _variables, context) => {
+      track('flow.create_failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       console.error('[useCreateBubbleFlow] Flow creation failed:', error);
 
       // Rollback optimistic updates

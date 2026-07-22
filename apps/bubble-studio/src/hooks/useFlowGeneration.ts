@@ -3,6 +3,7 @@ import {
   hasTemplate,
 } from '@/components/templates/templateLoader';
 import { trackWorkflowGeneration } from '@/services/analytics';
+import { track } from '@/lib/telemetry';
 import { useState, useRef } from 'react';
 import { useGenerationStore } from '@/stores/generationStore';
 import { useOutputStore } from '@/stores/outputStore';
@@ -116,11 +117,18 @@ export const useFlowGeneration = () => {
         }
       }
 
+      track('flow.generate_succeeded', {
+        flowId: bubbleFlowId,
+        durationMs: generationStartTimeRef.current
+          ? Date.now() - generationStartTimeRef.current
+          : undefined,
+      });
       // Return the flow ID
       return bubbleFlowId;
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
+      track('flow.generate_failed', { error: errorMessage });
       console.error(
         '❌ [createFlowFromGeneration] Error creating flow:',
         error
@@ -153,6 +161,9 @@ export const useFlowGeneration = () => {
       return;
     }
     startGenerationFlow();
+    track('flow.generate_started', {
+      promptLength: generationPrompt.trim().length,
+    });
     // Check if this is a preset template that should skip flow generation
     if (selectedPreset !== undefined && hasTemplate(selectedPreset)) {
       try {

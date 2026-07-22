@@ -16,6 +16,7 @@ import { logger } from 'hono/logger';
 import { cors } from 'hono/cors';
 import { type HealthCheckResponse } from './schemas/index.js';
 import { authMiddleware } from './middleware/auth.js';
+import { telemetryMiddleware } from './middleware/telemetry.js';
 import {
   setupErrorHandler,
   validationErrorHook,
@@ -52,6 +53,9 @@ setupErrorHandler(app);
 // Middleware
 app.use('*', logger());
 app.use('*', cors());
+// Centralized request telemetry (structured [TELEMETRY] sink + PostHog when enabled).
+// Registered before auth so it wraps every route; userId is read after next().
+app.use('*', telemetryMiddleware);
 
 // Apply auth middleware to specific routes that need it
 app.use('/bubble-flow/*', authMiddleware);

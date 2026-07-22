@@ -5,6 +5,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { track } from '../lib/telemetry';
 import {
   ArrowUpTrayIcon,
   CheckCircleIcon,
@@ -232,6 +233,18 @@ export function AddToolPage() {
         next.type === 'generation_complete' ||
         next.type === 'generation_error'
       ) {
+        if (next.type === 'generation_complete') {
+          track('tool.add_succeeded', {});
+        } else {
+          track('tool.add_failed', {
+            error:
+              'data' in next && next.data && typeof next.data === 'object'
+                ? String(
+                    (next.data as { message?: string }).message ?? 'unknown'
+                  )
+                : 'unknown',
+          });
+        }
         drainingRef.current = false;
       }
     }, 350);
@@ -248,6 +261,9 @@ export function AddToolPage() {
       if (!specUrl.trim()) return;
       body = { specUrl: specUrl.trim() };
     }
+    track('tool.add_started', {
+      toolName: mode === 'upload' ? specFile?.name : specUrl.trim(),
+    });
     queueRef.current = [];
     drainingRef.current = true;
     setActiveContract(0);
