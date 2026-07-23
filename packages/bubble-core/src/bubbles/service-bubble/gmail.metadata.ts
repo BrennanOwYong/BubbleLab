@@ -15,190 +15,217 @@ import type { BubbleOperationMetadata } from '@bubblelab/shared-schemas';
 
 export const GMAIL_OPERATION_METADATA: BubbleOperationMetadata = {
   send_email: {
-    sideEffect: "write",
+    sideEffect: 'write',
     destructive: false,
     idempotent: false,
     confidence: 0.6,
-    source: "prose",
-    citation: "https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/send — \"Sends the specified message to the recipients in the To, Cc, and Bcc headers.\"",
+    source: 'prose',
+    citation:
+      'https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/send — "Sends the specified message to the recipients in the To, Cc, and Bcc headers."',
     requiredScopes: [
-      "https://mail.google.com/|https://www.googleapis.com/auth/gmail.modify|https://www.googleapis.com/auth/gmail.compose|https://www.googleapis.com/auth/gmail.send"
-    ]
+      'https://mail.google.com/|https://www.googleapis.com/auth/gmail.modify|https://www.googleapis.com/auth/gmail.compose|https://www.googleapis.com/auth/gmail.send',
+    ],
   },
   list_emails: {
-    sideEffect: "read",
+    sideEffect: 'read',
     destructive: false,
     idempotent: true,
     confidence: 0.6,
-    source: "prose",
-    citation: "https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/list — \"Lists the messages in the user's mailbox.\"",
+    source: 'prose',
+    citation:
+      'https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/list — "Lists the messages in the user\'s mailbox."',
     requiredScopes: [
-      "https://mail.google.com/|https://www.googleapis.com/auth/gmail.modify|https://www.googleapis.com/auth/gmail.readonly|https://www.googleapis.com/auth/gmail.metadata"
-    ]
+      'https://mail.google.com/|https://www.googleapis.com/auth/gmail.modify|https://www.googleapis.com/auth/gmail.readonly|https://www.googleapis.com/auth/gmail.metadata',
+    ],
   },
   get_email: {
-    sideEffect: "read",
+    sideEffect: 'read',
     destructive: false,
     idempotent: true,
     confidence: 0.6,
-    source: "prose",
-    citation: "https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/get — \"Gets the specified message.\"",
+    source: 'prose',
+    citation:
+      'https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/get — "Gets the specified message."',
     requiredScopes: [
-      "https://mail.google.com/|https://www.googleapis.com/auth/gmail.modify|https://www.googleapis.com/auth/gmail.readonly|https://www.googleapis.com/auth/gmail.metadata"
-    ]
+      'https://mail.google.com/|https://www.googleapis.com/auth/gmail.modify|https://www.googleapis.com/auth/gmail.readonly|https://www.googleapis.com/auth/gmail.metadata',
+    ],
   },
   search_emails: {
-    sideEffect: "read",
+    sideEffect: 'read',
     destructive: false,
     idempotent: true,
     confidence: 0.6,
-    source: "prose",
-    citation: "https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/list — \"Lists the messages in the user's mailbox.\"",
+    source: 'prose',
+    citation:
+      'https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/list — "Lists the messages in the user\'s mailbox."',
     requiredScopes: [
-      "https://mail.google.com/|https://www.googleapis.com/auth/gmail.modify|https://www.googleapis.com/auth/gmail.readonly|https://www.googleapis.com/auth/gmail.metadata"
-    ]
+      'https://mail.google.com/|https://www.googleapis.com/auth/gmail.modify|https://www.googleapis.com/auth/gmail.readonly|https://www.googleapis.com/auth/gmail.metadata',
+    ],
   },
   mark_as_read: {
-    sideEffect: "read_with_side_effects",
+    sideEffect: 'read_with_side_effects',
     destructive: false,
     idempotent: true,
     confidence: 0.6,
-    source: "prose",
-    citation: "https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/modify — \"Modifies the labels on the specified message.\"",
+    source: 'prose',
+    citation:
+      'https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/modify — "Modifies the labels on the specified message."',
     requiredScopes: [
-      "https://mail.google.com/|https://www.googleapis.com/auth/gmail.modify|https://www.googleapis.com/auth/gmail.modify.restricted"
-    ]
+      'https://mail.google.com/|https://www.googleapis.com/auth/gmail.modify|https://www.googleapis.com/auth/gmail.modify.restricted',
+    ],
   },
   mark_as_unread: {
-    sideEffect: "read_with_side_effects",
+    sideEffect: 'read_with_side_effects',
     destructive: false,
     idempotent: true,
     confidence: 0.6,
-    source: "prose",
-    citation: "https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/modify — \"Modifies the labels on the specified message.\"",
+    source: 'prose',
+    citation:
+      'https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/modify — "Modifies the labels on the specified message."',
     requiredScopes: [
-      "https://mail.google.com/|https://www.googleapis.com/auth/gmail.modify|https://www.googleapis.com/auth/gmail.modify.restricted"
-    ]
+      'https://mail.google.com/|https://www.googleapis.com/auth/gmail.modify|https://www.googleapis.com/auth/gmail.modify.restricted',
+    ],
   },
   create_draft: {
-    sideEffect: "write",
+    sideEffect: 'write',
     destructive: false,
     idempotent: false,
     confidence: 0.6,
-    source: "prose",
-    citation: "https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.drafts/create — \"Creates a new draft with the DRAFT label.\"",
+    source: 'prose',
+    citation:
+      'https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.drafts/create — "Creates a new draft with the DRAFT label."',
     requiredScopes: [
-      "https://mail.google.com/|https://www.googleapis.com/auth/gmail.modify|https://www.googleapis.com/auth/gmail.compose"
-    ]
+      'https://mail.google.com/|https://www.googleapis.com/auth/gmail.modify|https://www.googleapis.com/auth/gmail.compose',
+    ],
   },
   send_draft: {
-    sideEffect: "write",
+    sideEffect: 'write',
     destructive: false,
     idempotent: false,
     confidence: 0.6,
-    source: "prose",
-    citation: "https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.drafts/send — \"Sends the specified, existing draft to the recipients in the To, Cc, and Bcc headers.\"",
+    source: 'prose',
+    citation:
+      'https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.drafts/send — "Sends the specified, existing draft to the recipients in the To, Cc, and Bcc headers."',
     requiredScopes: [
-      "https://mail.google.com/|https://www.googleapis.com/auth/gmail.modify|https://www.googleapis.com/auth/gmail.compose"
-    ]
+      'https://mail.google.com/|https://www.googleapis.com/auth/gmail.modify|https://www.googleapis.com/auth/gmail.compose',
+    ],
   },
   list_drafts: {
-    sideEffect: "read",
+    sideEffect: 'read',
     destructive: false,
     idempotent: true,
     confidence: 0.6,
-    source: "prose",
-    citation: "https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.drafts/list — \"Lists the drafts in the user's mailbox.\"",
+    source: 'prose',
+    citation:
+      'https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.drafts/list — "Lists the drafts in the user\'s mailbox."',
     requiredScopes: [
-      "https://mail.google.com/|https://www.googleapis.com/auth/gmail.modify|https://www.googleapis.com/auth/gmail.compose|https://www.googleapis.com/auth/gmail.readonly"
-    ]
+      'https://mail.google.com/|https://www.googleapis.com/auth/gmail.modify|https://www.googleapis.com/auth/gmail.compose|https://www.googleapis.com/auth/gmail.readonly',
+    ],
   },
   delete_email: {
-    sideEffect: "read_with_side_effects",
+    sideEffect: 'read_with_side_effects',
     destructive: true,
     idempotent: true,
     confidence: 0.6,
-    source: "prose",
-    citation: "https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/delete — \"Immediately and permanently deletes the specified message. This operation cannot be undone.\"",
-    requiredScopes: [
-      "https://mail.google.com/"
-    ]
+    source: 'prose',
+    citation:
+      'https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/delete — "Immediately and permanently deletes the specified message. This operation cannot be undone."',
+    requiredScopes: ['https://mail.google.com/'],
   },
   trash_email: {
-    sideEffect: "read_with_side_effects",
+    sideEffect: 'read_with_side_effects',
     destructive: false,
     idempotent: true,
     confidence: 0.6,
-    source: "prose",
-    citation: "https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/trash — \"Moves the specified message to the trash.\"",
+    source: 'prose',
+    citation:
+      'https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/trash — "Moves the specified message to the trash."',
     requiredScopes: [
-      "https://mail.google.com/|https://www.googleapis.com/auth/gmail.modify"
-    ]
+      'https://mail.google.com/|https://www.googleapis.com/auth/gmail.modify',
+    ],
   },
   list_threads: {
-    sideEffect: "read",
+    sideEffect: 'read',
     destructive: false,
     idempotent: true,
     confidence: 0.6,
-    source: "prose",
-    citation: "https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.threads/list — \"Lists the threads in the user's mailbox.\"",
+    source: 'prose',
+    citation:
+      'https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.threads/list — "Lists the threads in the user\'s mailbox."',
     requiredScopes: [
-      "https://mail.google.com/|https://www.googleapis.com/auth/gmail.modify|https://www.googleapis.com/auth/gmail.readonly|https://www.googleapis.com/auth/gmail.metadata"
-    ]
+      'https://mail.google.com/|https://www.googleapis.com/auth/gmail.modify|https://www.googleapis.com/auth/gmail.readonly|https://www.googleapis.com/auth/gmail.metadata',
+    ],
+  },
+  get_thread: {
+    sideEffect: 'read',
+    destructive: false,
+    idempotent: true,
+    confidence: 0.6,
+    source: 'prose',
+    citation:
+      'https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.threads/get — "Gets the specified thread."',
+    requiredScopes: [
+      'https://mail.google.com/|https://www.googleapis.com/auth/gmail.modify|https://www.googleapis.com/auth/gmail.readonly|https://www.googleapis.com/auth/gmail.metadata',
+    ],
   },
   list_labels: {
-    sideEffect: "read",
+    sideEffect: 'read',
     destructive: false,
     idempotent: true,
     confidence: 0.6,
-    source: "prose",
-    citation: "https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.labels/list — \"Lists all labels in the user's mailbox.\"",
+    source: 'prose',
+    citation:
+      'https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.labels/list — "Lists all labels in the user\'s mailbox."',
     requiredScopes: [
-      "https://mail.google.com/|https://www.googleapis.com/auth/gmail.modify|https://www.googleapis.com/auth/gmail.readonly|https://www.googleapis.com/auth/gmail.labels|https://www.googleapis.com/auth/gmail.metadata"
-    ]
+      'https://mail.google.com/|https://www.googleapis.com/auth/gmail.modify|https://www.googleapis.com/auth/gmail.readonly|https://www.googleapis.com/auth/gmail.labels|https://www.googleapis.com/auth/gmail.metadata',
+    ],
   },
   create_label: {
-    sideEffect: "write",
+    sideEffect: 'write',
     destructive: false,
     idempotent: false,
     confidence: 0.6,
-    source: "prose",
-    citation: "https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.labels/create — \"Creates a new label.\"",
+    source: 'prose',
+    citation:
+      'https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.labels/create — "Creates a new label."',
     requiredScopes: [
-      "https://mail.google.com/|https://www.googleapis.com/auth/gmail.modify|https://www.googleapis.com/auth/gmail.labels"
-    ]
+      'https://mail.google.com/|https://www.googleapis.com/auth/gmail.modify|https://www.googleapis.com/auth/gmail.labels',
+    ],
   },
   modify_message_labels: {
-    sideEffect: "read_with_side_effects",
+    sideEffect: 'read_with_side_effects',
     destructive: false,
     idempotent: true,
     confidence: 0.6,
-    source: "prose",
-    citation: "https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/modify — \"Modifies the labels on the specified message.\"",
+    source: 'prose',
+    citation:
+      'https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/modify — "Modifies the labels on the specified message."',
     requiredScopes: [
-      "https://mail.google.com/|https://www.googleapis.com/auth/gmail.modify|https://www.googleapis.com/auth/gmail.modify.restricted"
-    ]
+      'https://mail.google.com/|https://www.googleapis.com/auth/gmail.modify|https://www.googleapis.com/auth/gmail.modify.restricted',
+    ],
   },
   modify_thread_labels: {
-    sideEffect: "read_with_side_effects",
+    sideEffect: 'read_with_side_effects',
     destructive: false,
     idempotent: true,
     confidence: 0.6,
-    source: "prose",
-    citation: "https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.threads/modify — \"Modifies the labels applied to the thread. This applies to all messages in the thread.\"",
+    source: 'prose',
+    citation:
+      'https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.threads/modify — "Modifies the labels applied to the thread. This applies to all messages in the thread."',
     requiredScopes: [
-      "https://mail.google.com/|https://www.googleapis.com/auth/gmail.modify"
-    ]
+      'https://mail.google.com/|https://www.googleapis.com/auth/gmail.modify',
+    ],
   },
   get_attachment: {
-    sideEffect: "read",
+    sideEffect: 'read',
     destructive: false,
     idempotent: true,
     confidence: 0.6,
-    source: "prose",
-    citation: "https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages.attachments/get — \"Gets the specified message attachment.\"",
+    source: 'prose',
+    citation:
+      'https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages.attachments/get — "Gets the specified message attachment."',
     requiredScopes: [
-      "https://mail.google.com/|https://www.googleapis.com/auth/gmail.modify|https://www.googleapis.com/auth/gmail.readonly"
-    ]
-  }
+      'https://mail.google.com/|https://www.googleapis.com/auth/gmail.modify|https://www.googleapis.com/auth/gmail.readonly',
+    ],
+  },
 };

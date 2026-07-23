@@ -18,6 +18,32 @@ function encodeRFC2047(str: string): string {
   return `=?UTF-8?B?${encoded}?=`;
 }
 
+/**
+ * Wrap an RFC 2822 Message-ID value in angle brackets when they are missing.
+ * Gmail threads replies across mail clients via In-Reply-To/References, and
+ * both headers require bracketed Message-ID values.
+ */
+function ensureAngleBrackets(messageId: string): string {
+  const trimmed = messageId.trim();
+  if (!trimmed) return trimmed;
+  const withOpen = trimmed.startsWith('<') ? trimmed : `<${trimmed}`;
+  return withOpen.endsWith('>') ? withOpen : `${withOpen}>`;
+}
+
+/**
+ * Normalize base64 or base64url input to standard padded base64, wrapped at
+ * 76 characters per line as required for a Content-Transfer-Encoding: base64
+ * MIME body (RFC 2045 section 6.8).
+ */
+function normalizeBase64ForMime(data: string): string {
+  const standard = data
+    .replace(/\s+/g, '')
+    .replace(/-/g, '+')
+    .replace(/_/g, '/');
+  const padded = standard + '='.repeat((4 - (standard.length % 4)) % 4);
+  return padded.replace(/(.{76})/g, '$1\r\n').replace(/\r\n$/, '');
+}
+
 // Essential headers that users typically care about
 const ESSENTIAL_HEADERS = [
   'Subject',
@@ -39,6 +65,24 @@ const EmailHeaderSchema = z
     value: z.string().describe('Header value'),
   })
   .describe('Email header key-value pair');
+
+// Define outgoing attachment schema
+const EmailAttachmentSchema = z
+  .object({
+    filename: z
+      .string()
+      .min(1, 'Attachment filename is required')
+      .describe('File name shown to the recipient (e.g., "invoice.pdf")'),
+    mime_type: z
+      .string()
+      .min(1, 'Attachment MIME type is required')
+      .describe('MIME type of the file (e.g., "application/pdf")'),
+    data: z
+      .string()
+      .min(1, 'Attachment data is required')
+      .describe('File content encoded as base64 or base64url'),
+  })
+  .describe('File attachment for an outgoing email');
 
 // Define email message schema
 const GmailMessageSchema = z
@@ -192,7 +236,27 @@ const GmailParamsSchema = z.discriminatedUnion('operation', [
     thread_id: z
       .string()
       .optional()
-      .describe('Thread ID to reply to (for threaded conversations)'),
+      .describe(
+        'Gmail thread ID to reply into. Threading headers (In-Reply-To/References) are auto-resolved from the thread when in_reply_to is not set.'
+      ),
+    in_reply_to: z
+      .string()
+      .optional()
+      .describe(
+        'RFC 2822 Message-ID of the message being replied to (e.g., "<abc@mail.gmail.com>"). Auto-resolved from thread_id when omitted.'
+      ),
+    references: z
+      .string()
+      .optional()
+      .describe(
+        'RFC 2822 References header value (space-separated Message-IDs). Auto-resolved from thread_id when omitted.'
+      ),
+    attachments: z
+      .array(EmailAttachmentSchema)
+      .optional()
+      .describe(
+        'Files to attach (sent as multipart/mixed MIME parts; keep total size under the ~35 MB Gmail message limit)'
+      ),
     credentials: z
       .record(z.nativeEnum(CredentialType), z.string())
       .optional()
@@ -282,6 +346,12 @@ const GmailParamsSchema = z.discriminatedUnion('operation', [
       .optional()
       .default(50)
       .describe('Maximum number of results to return'),
+    page_token: z
+      .string()
+      .optional()
+      .describe(
+        'Token for pagination to get the next page (next_page_token from a prior search)'
+      ),
     include_spam_trash: z
       .boolean()
       .optional()
@@ -364,7 +434,27 @@ const GmailParamsSchema = z.discriminatedUnion('operation', [
     thread_id: z
       .string()
       .optional()
-      .describe('Thread ID to reply to (for threaded conversations)'),
+      .describe(
+        'Gmail thread ID to reply into. Threading headers (In-Reply-To/References) are auto-resolved from the thread when in_reply_to is not set.'
+      ),
+    in_reply_to: z
+      .string()
+      .optional()
+      .describe(
+        'RFC 2822 Message-ID of the message being replied to (e.g., "<abc@mail.gmail.com>"). Auto-resolved from thread_id when omitted.'
+      ),
+    references: z
+      .string()
+      .optional()
+      .describe(
+        'RFC 2822 References header value (space-separated Message-IDs). Auto-resolved from thread_id when omitted.'
+      ),
+    attachments: z
+      .array(EmailAttachmentSchema)
+      .optional()
+      .describe(
+        'Files to attach (sent as multipart/mixed MIME parts; keep total size under the ~35 MB Gmail message limit)'
+      ),
     credentials: z
       .record(z.nativeEnum(CredentialType), z.string())
       .optional()
@@ -477,6 +567,38 @@ const GmailParamsSchema = z.discriminatedUnion('operation', [
       .string()
       .optional()
       .describe('Token for pagination to get next page'),
+    credentials: z
+      .record(z.nativeEnum(CredentialType), z.string())
+      .optional()
+      .describe(
+        'Object mapping credential types to values (injected at runtime)'
+      ),
+  }),
+
+  // Get thread operation
+  z.object({
+    operation: z
+      .literal('get_thread')
+      .describe(
+        'Get a full email thread with all of its messages (headers and decoded body text)'
+      ),
+    thread_id: z
+      .string()
+      .min(1, 'Thread ID is required')
+      .describe(
+        'Gmail thread ID to retrieve (from list_threads or a message threadId)'
+      ),
+    format: z
+      .enum(['minimal', 'full', 'metadata'])
+      .optional()
+      .default('full')
+      .describe(
+        'Format for the thread messages: full (parsed body content), metadata (IDs, labels, headers), minimal (IDs and labels only)'
+      ),
+    metadata_headers: z
+      .array(z.string())
+      .optional()
+      .describe('List of headers to include when format is metadata'),
     credentials: z
       .record(z.nativeEnum(CredentialType), z.string())
       .optional()
@@ -655,6 +777,12 @@ const GmailResultSchema = z.discriminatedUnion('operation', [
       .array(GmailMessageSchema)
       .optional()
       .describe('List of matching email messages'),
+    next_page_token: z
+      .string()
+      .optional()
+      .describe(
+        'Token for fetching the next page of results (pass as page_token)'
+      ),
     result_size_estimate: z
       .number()
       .optional()
@@ -769,6 +897,21 @@ const GmailResultSchema = z.discriminatedUnion('operation', [
   }),
 
   z.object({
+    operation: z
+      .literal('get_thread')
+      .describe(
+        'Get a full email thread with all of its messages (headers and decoded body text)'
+      ),
+    success: z
+      .boolean()
+      .describe('Whether the thread was retrieved successfully'),
+    thread: GmailThreadSchema.optional().describe(
+      'Thread with its messages (each carries essential headers and decoded textContent)'
+    ),
+    error: z.string().describe('Error message if operation failed'),
+  }),
+
+  z.object({
     operation: z.literal('list_labels').describe('List all labels in mailbox'),
     success: z
       .boolean()
@@ -857,12 +1000,13 @@ export class GmailBubble<
   static readonly longDescription = `
     Gmail service integration for comprehensive email management and automation.
     Use cases:
-    - Send and receive emails with rich formatting
-    - Search and filter emails with advanced queries
+    - Send and receive emails with rich formatting and file attachments
+    - Search and filter emails with advanced queries (paginated via page_token)
+    - Read full threads (get_thread) and reply in-thread with RFC 2822 headers
     - Manage drafts and email threads
     - Mark messages as read/unread
     - Organize emails with labels and folders
-    - Handle email attachments and metadata
+    - Download attachments and read email metadata
   `;
   static readonly alias = 'gmail';
 
@@ -1156,6 +1300,8 @@ export class GmailBubble<
             return await this.trashEmail(this.params);
           case 'list_threads':
             return await this.listThreads(this.params);
+          case 'get_thread':
+            return await this.getThread(this.params);
           case 'list_labels':
             return await this.listLabels(this.params);
           case 'create_label':
@@ -1190,10 +1336,22 @@ export class GmailBubble<
     body_text?: string;
     body_html?: string;
     reply_to?: string;
-    thread_id?: string;
+    in_reply_to?: string;
+    references?: string;
+    attachments?: Array<{ filename: string; mime_type: string; data: string }>;
   }): string {
-    const { to, cc, bcc, subject, body_text, body_html, reply_to, thread_id } =
-      params;
+    const {
+      to,
+      cc,
+      bcc,
+      subject,
+      body_text,
+      body_html,
+      reply_to,
+      in_reply_to,
+      references,
+      attachments,
+    } = params;
 
     let emailContent = '';
     emailContent += `To: ${to.join(', ')}\r\n`;
@@ -1212,33 +1370,72 @@ export class GmailBubble<
       emailContent += `Reply-To: ${reply_to}\r\n`;
     }
 
-    if (thread_id) {
-      emailContent += `In-Reply-To: ${thread_id}\r\n`;
-      emailContent += `References: ${thread_id}\r\n`;
+    // RFC 2822 threading headers. In-Reply-To/References must carry the
+    // Message-ID of the message being replied to — never the Gmail thread id,
+    // which is an API identifier no mail client recognizes. Gmail requires
+    // these headers (plus a matching Subject) for a message with threadId to
+    // join the thread:
+    // https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages
+    if (in_reply_to) {
+      const messageId = ensureAngleBrackets(in_reply_to);
+      emailContent += `In-Reply-To: ${messageId}\r\n`;
+      emailContent += `References: ${references?.trim() || messageId}\r\n`;
+    } else if (references && references.trim()) {
+      emailContent += `References: ${references.trim()}\r\n`;
     }
 
-    // Handle multipart content
-    if (body_text && body_html) {
-      const boundary = '----=_Part_0_123456789.123456789';
-      emailContent += `Content-Type: multipart/alternative; boundary="${boundary}"\r\n`;
+    emailContent += `MIME-Version: 1.0\r\n`;
+
+    // Body section: single part or multipart/alternative for text+html.
+    // Returned with its own Content-Type header line so it works both at the
+    // top level and nested inside multipart/mixed.
+    const buildBodySection = (): string => {
+      let section = '';
+      if (body_text && body_html) {
+        const boundary = '----=_Part_alt_0123456789';
+        section += `Content-Type: multipart/alternative; boundary="${boundary}"\r\n`;
+        section += `\r\n`;
+        section += `--${boundary}\r\n`;
+        section += `Content-Type: text/plain; charset=UTF-8\r\n`;
+        section += `\r\n`;
+        section += `${body_text}\r\n`;
+        section += `--${boundary}\r\n`;
+        section += `Content-Type: text/html; charset=UTF-8\r\n`;
+        section += `\r\n`;
+        section += `${body_html}\r\n`;
+        section += `--${boundary}--\r\n`;
+      } else if (body_html) {
+        section += `Content-Type: text/html; charset=UTF-8\r\n`;
+        section += `\r\n`;
+        section += `${body_html}\r\n`;
+      } else if (body_text) {
+        section += `Content-Type: text/plain; charset=UTF-8\r\n`;
+        section += `\r\n`;
+        section += `${body_text}\r\n`;
+      }
+      return section;
+    };
+
+    if (attachments && attachments.length > 0) {
+      // multipart/mixed: body part first, then one base64 part per file
+      // (https://developers.google.com/workspace/gmail/api/guides/sending)
+      const mixedBoundary = '----=_Part_mixed_9876543210';
+      emailContent += `Content-Type: multipart/mixed; boundary="${mixedBoundary}"\r\n`;
       emailContent += `\r\n`;
-      emailContent += `--${boundary}\r\n`;
-      emailContent += `Content-Type: text/plain; charset=UTF-8\r\n`;
-      emailContent += `\r\n`;
-      emailContent += `${body_text}\r\n`;
-      emailContent += `--${boundary}\r\n`;
-      emailContent += `Content-Type: text/html; charset=UTF-8\r\n`;
-      emailContent += `\r\n`;
-      emailContent += `${body_html}\r\n`;
-      emailContent += `--${boundary}--\r\n`;
-    } else if (body_html) {
-      emailContent += `Content-Type: text/html; charset=UTF-8\r\n`;
-      emailContent += `\r\n`;
-      emailContent += `${body_html}\r\n`;
-    } else if (body_text) {
-      emailContent += `Content-Type: text/plain; charset=UTF-8\r\n`;
-      emailContent += `\r\n`;
-      emailContent += `${body_text}\r\n`;
+      emailContent += `--${mixedBoundary}\r\n`;
+      emailContent += buildBodySection();
+      for (const attachment of attachments) {
+        const filename = encodeRFC2047(attachment.filename);
+        emailContent += `--${mixedBoundary}\r\n`;
+        emailContent += `Content-Type: ${attachment.mime_type}; name="${filename}"\r\n`;
+        emailContent += `Content-Disposition: attachment; filename="${filename}"\r\n`;
+        emailContent += `Content-Transfer-Encoding: base64\r\n`;
+        emailContent += `\r\n`;
+        emailContent += `${normalizeBase64ForMime(attachment.data)}\r\n`;
+      }
+      emailContent += `--${mixedBoundary}--\r\n`;
+    } else {
+      emailContent += buildBodySection();
     }
 
     // Convert to base64url encoding
@@ -1249,11 +1446,71 @@ export class GmailBubble<
       .replace(/=+$/, '');
   }
 
+  /**
+   * Resolve RFC 2822 threading headers for a reply into an existing thread.
+   * Fetches the thread's message headers (metadata format) and derives
+   * In-Reply-To (last message's Message-ID) and References (that message's
+   * References plus its Message-ID, per RFC 2822 section 3.6.4).
+   * Returns {} when the lookup fails or yields no Message-ID — the send
+   * still proceeds with threadId; it only loses cross-client threading.
+   */
+  private async resolveThreadingHeaders(
+    threadId: string
+  ): Promise<{ in_reply_to?: string; references?: string }> {
+    try {
+      const queryParams = new URLSearchParams({ format: 'metadata' });
+      ['Message-ID', 'References'].forEach((header) =>
+        queryParams.append('metadataHeaders', header)
+      );
+
+      const thread = await this.makeGmailApiRequest(
+        `/threads/${threadId}?${queryParams.toString()}`
+      );
+
+      const messages: any[] = thread.messages || [];
+      if (messages.length === 0) return {};
+
+      const lastMessage = messages[messages.length - 1];
+      const headers: Array<{ name: string; value: string }> =
+        lastMessage.payload?.headers || [];
+      const headerValue = (name: string): string | undefined =>
+        headers.find(
+          (header) => header.name.toLowerCase() === name.toLowerCase()
+        )?.value;
+
+      const lastMessageId = headerValue('Message-ID');
+      if (!lastMessageId) return {};
+
+      const messageId = ensureAngleBrackets(lastMessageId);
+      const priorReferences = headerValue('References');
+
+      return {
+        in_reply_to: messageId,
+        references: priorReferences
+          ? `${priorReferences.trim()} ${messageId}`
+          : messageId,
+      };
+    } catch {
+      return {};
+    }
+  }
+
   private async sendEmail(
     params: Extract<GmailParams, { operation: 'send_email' }>
   ): Promise<Extract<GmailResult, { operation: 'send_email' }>> {
-    const { to, cc, bcc, subject, body_text, body_html, reply_to, thread_id } =
-      params;
+    const {
+      to,
+      cc,
+      bcc,
+      subject,
+      body_text,
+      body_html,
+      reply_to,
+      thread_id,
+      in_reply_to,
+      references,
+      attachments,
+    } = params;
 
     // Validate that at least one body type is provided
     if (!body_text && !body_html) {
@@ -1264,6 +1521,17 @@ export class GmailBubble<
     const resolvedHtml =
       body_html || (body_text ? markdownToHtml(body_text) : undefined);
 
+    // Replying into a thread without explicit headers: derive In-Reply-To/
+    // References from the thread so the reply threads across mail clients.
+    let threading = { in_reply_to, references };
+    if (thread_id && !in_reply_to) {
+      const resolved = await this.resolveThreadingHeaders(thread_id);
+      threading = {
+        in_reply_to: resolved.in_reply_to,
+        references: references ?? resolved.references,
+      };
+    }
+
     const raw = this.createEmailMessage({
       to,
       cc,
@@ -1272,7 +1540,9 @@ export class GmailBubble<
       body_text,
       body_html: resolvedHtml,
       reply_to,
-      thread_id,
+      in_reply_to: threading.in_reply_to,
+      references: threading.references,
+      attachments,
     });
 
     const messageData: any = { raw };
@@ -1377,7 +1647,7 @@ export class GmailBubble<
   private async searchEmails(
     params: Extract<GmailParams, { operation: 'search_emails' }>
   ): Promise<Extract<GmailResult, { operation: 'search_emails' }>> {
-    const { query, max_results, include_spam_trash } = params;
+    const { query, max_results, page_token, include_spam_trash } = params;
 
     const queryParams = new URLSearchParams({
       q: query,
@@ -1385,6 +1655,7 @@ export class GmailBubble<
     });
 
     if (include_spam_trash) queryParams.set('includeSpamTrash', 'true');
+    if (page_token) queryParams.set('pageToken', page_token);
 
     const response = await this.makeGmailApiRequest(
       `/messages?${queryParams.toString()}`
@@ -1404,6 +1675,7 @@ export class GmailBubble<
       operation: 'search_emails',
       success: true,
       messages,
+      next_page_token: response.nextPageToken,
       result_size_estimate: response.resultSizeEstimate,
       error: '',
     };
@@ -1448,8 +1720,19 @@ export class GmailBubble<
   private async createDraft(
     params: Extract<GmailParams, { operation: 'create_draft' }>
   ): Promise<Extract<GmailResult, { operation: 'create_draft' }>> {
-    const { to, cc, bcc, subject, body_text, body_html, reply_to, thread_id } =
-      params;
+    const {
+      to,
+      cc,
+      bcc,
+      subject,
+      body_text,
+      body_html,
+      reply_to,
+      thread_id,
+      in_reply_to,
+      references,
+      attachments,
+    } = params;
 
     // Validate that at least one body type is provided
     if (!body_text && !body_html) {
@@ -1460,6 +1743,17 @@ export class GmailBubble<
     const resolvedHtml =
       body_html || (body_text ? markdownToHtml(body_text) : undefined);
 
+    // Replying into a thread without explicit headers: derive In-Reply-To/
+    // References from the thread so the reply threads across mail clients.
+    let threading = { in_reply_to, references };
+    if (thread_id && !in_reply_to) {
+      const resolved = await this.resolveThreadingHeaders(thread_id);
+      threading = {
+        in_reply_to: resolved.in_reply_to,
+        references: references ?? resolved.references,
+      };
+    }
+
     const raw = this.createEmailMessage({
       to,
       cc,
@@ -1468,7 +1762,9 @@ export class GmailBubble<
       body_text,
       body_html: resolvedHtml,
       reply_to,
-      thread_id,
+      in_reply_to: threading.in_reply_to,
+      references: threading.references,
+      attachments,
     });
 
     const draftData: any = {
@@ -1619,6 +1915,50 @@ export class GmailBubble<
       threads: response.threads || [],
       next_page_token: response.nextPageToken,
       result_size_estimate: response.resultSizeEstimate,
+      error: '',
+    };
+  }
+
+  private async getThread(
+    params: Extract<GmailParams, { operation: 'get_thread' }>
+  ): Promise<Extract<GmailResult, { operation: 'get_thread' }>> {
+    const { thread_id, format, metadata_headers } = params;
+
+    // users.threads.get — format=full returns each message with body content
+    // parsed into payload (threads.list returns message-less stubs):
+    // https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.threads/get
+    const queryParams = new URLSearchParams({
+      format: format!,
+    });
+
+    if (metadata_headers && metadata_headers.length > 0) {
+      metadata_headers.forEach((header) =>
+        queryParams.append('metadataHeaders', header)
+      );
+    }
+
+    const response = await this.makeGmailApiRequest(
+      `/threads/${thread_id}?${queryParams.toString()}`
+    );
+
+    let messages = response.messages || [];
+
+    // For full format, decode body text and strip heavy base64 fields the
+    // same way get_email does (messages are already full objects — no
+    // per-message re-fetch)
+    if (format === 'full' && messages.length > 0) {
+      messages = await Promise.all(
+        messages.map((message: any) => this.processAndCleanMessage(message))
+      );
+    }
+
+    return {
+      operation: 'get_thread',
+      success: true,
+      thread: {
+        ...response,
+        messages,
+      },
       error: '',
     };
   }
