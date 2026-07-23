@@ -72,7 +72,7 @@ The validator is only a PROXY. After validation, the runtime RE-PARSES your sour
    Do NOT use the word "step" in method names, comments, or variable names. Name methods clearly (e.g., 'transformInput', 'performResearch', 'formatOutput'); each bubble variable name describes that bubble's purpose in the workflow.
 10. CREDENTIALS: DO NOT include credentials in bubble parameters - they are matched to each bubble and injected automatically at runtime. NEVER pass a credentials key, NEVER read process.env, NEVER put API keys or tokens in the payload interface. If a service has no bubble yet, its credential goes in the payload as a normal input field.
 11. NO 'any', NO CASTS: NEVER use the 'any' type anywhere. NEVER cast: 'as T', 'as unknown as T', 'as any', and '<T>expr' are all rejected - including on JSON.parse results. Let TypeScript infer bubble result types: const result = await new GmailBubble({...}).action(); When you must annotate, use the specific type (e.g., BubbleResult<GmailReadEmailData>) or 'unknown' narrowed with typeof/in/instanceof checks. A cast makes the checker agree with a shape the runtime never produces. Rules 12, 13, and 14 are the sanctioned cast-free patterns for the cases where a cast is most tempting.
-12. AI AGENT STRUCTURED OUTPUT: when a flow needs structured data from an ai-agent bubble, declare a Zod schema as a const inside the bubble method, pass it as the bubble's expectedOutputSchema parameter, then parse the response with that SAME schema. expectedOutputSchema forces JSON mode and makes the model answer in that exact shape, but result.data.response is still a JSON STRING - result.success === true guarantees it parses as JSON, and safeParse turns it into a fully typed, runtime-validated object with zero casts:
+12. AI AGENT STRUCTURED OUTPUT: when a flow needs structured data from an ai-agent bubble, declare a Zod schema as a const inside the bubble method, pass it as the bubble's expectedOutputSchema parameter, then parse the response with safeParseJson and that SAME schema. safeParseJson is imported from '@bubblelab/bubble-core' - add it to the flow's single existing import, next to the bubble classes. expectedOutputSchema forces JSON mode and makes the model answer in that exact shape, but result.data.response is still a JSON STRING - safeParseJson(raw, schema) JSON-parses it and validates it with the schema, returning a fully typed, runtime-validated object (or undefined) with zero casts:
      const ticketSchema = z.object({
        urgency: z.enum(['low', 'high']),
        reason: z.string(),
@@ -85,31 +85,16 @@ The validator is only a PROXY. After validation, the runtime RE-PARSES your sour
        model: { model: 'google/gemini-2.5-flash-lite', temperature: 0, maxTokens: 10000 },
      }).action();
      if (!result.success || !result.data?.response) return null;
-     const parsed = ticketSchema.safeParse(JSON.parse(result.data.response));
-     return parsed.success ? parsed.data : null;
-   NEVER JSON.parse an AI response and cast it (JSON.parse(x) as {...} is rejected), and never read fields off an unparsed response. safeParse with the shared schema is the only path from AI text to typed data.
-13. UNTYPED EXTERNAL PAYLOADS (polymorphic API data such as Notion page properties, webhook bodies, loose HTTP JSON): traverse them with runtime narrowing inside pure transformation methods - typeof checks, Array.isArray, optional chaining, and small helpers that take unknown and return a typed value. When a shape is unclear, narrow it; never assert it. Example - reading a Notion page title (page.properties is a polymorphic map; the title lives at properties.Title.title[0].plain_text with every level optional) without a single cast:
-     // Reads one named field from an untyped object, or undefined when absent
-     private field(v: unknown, key: string): unknown {
-       return typeof v === 'object' && v !== null
-         ? Object.getOwnPropertyDescriptor(v, key)?.value
-         : undefined;
-     }
-     // Returns v when it is an array, otherwise an empty array
-     private asArray(v: unknown): unknown[] {
-       return Array.isArray(v) ? v : [];
-     }
-     // Returns v when it is a string, otherwise the fallback
-     private asString(v: unknown, fallback: string): string {
-       return typeof v === 'string' ? v : fallback;
-     }
+     return safeParseJson(result.data.response, ticketSchema) ?? null;
+   NEVER JSON.parse an AI response and cast it (JSON.parse(x) as {...} is rejected), never read fields off an unparsed response, and never redefine safeParseJson in the flow. Imported safeParseJson with the shared schema is the only path from AI text to typed data.
+13. UNTYPED EXTERNAL PAYLOADS (polymorphic API data such as Notion page properties, webhook bodies, loose HTTP JSON): traverse them with runtime narrowing inside pure transformation methods - typeof checks, optional chaining, and the narrowing helpers getField, asArray, asString, asNumber, asBoolean imported from '@bubblelab/bubble-core' (add the ones you use to the flow's single existing import, next to the bubble classes; NEVER redefine them in the flow). getField(obj, key) reads one named field from an untyped value, or undefined when absent; asArray(v) returns v when it is an array, otherwise []; asString(v, fallback) returns v when it is a string, otherwise the fallback; asNumber(v) and asBoolean(v) return the typed value or undefined. When a shape is unclear, narrow it; never assert it. Example - reading a Notion page title (page.properties is a polymorphic map; the title lives at properties.Title.title[0].plain_text with every level optional) without a single cast:
      // Extracts the plain-text page title from Notion's polymorphic properties map without any cast
      private extractTitle(properties: Record<string, unknown>): string {
        const titleProp = properties['Title'] ?? properties['Name'];
-       const richText = this.asArray(this.field(titleProp, 'title'));
-       return this.asString(this.field(richText[0], 'plain_text'), 'Untitled');
+       const richText = asArray(getField(titleProp, 'title'));
+       return asString(getField(richText[0], 'plain_text'), 'Untitled');
      }
-   These helpers are pure transformation methods (rule 7): they may call each other and appear inside expressions.
+   The helpers are plain imported functions: call them anywhere, including inside expressions and inside pure transformation methods (rule 7).
 14. GOOGLE SHEETS CANONICAL USAGE: google-sheets params form a discriminated union on 'operation' - pick the operation FIRST, then pass ONLY that operation's params (get-bubble-details-tool shows every operation's exact shape). All params are snake_case: spreadsheet_id, never spreadsheetId. Passing the operation as a quoted literal narrows result.data to that operation's result fields, so results read cast-free. The three common operations, each inside its own bubble method (rule 7):
      // read_values - params: spreadsheet_id, range; result.data.values is (string | number | boolean)[][]
      const readResult = await new GoogleSheetsBubble({

@@ -87,6 +87,16 @@ export type {
   AuditCredentialScopesInput,
 } from './utils/scope-audit.js';
 
+// Cast-free narrowing helpers for generated BubbleFlows (codegen rules 12/13)
+export {
+  getField,
+  asArray,
+  asString,
+  asNumber,
+  asBoolean,
+  safeParseJson,
+} from './utils/codegen-narrow.js';
+
 // Export capabilities framework
 export * from './capabilities/index.js';
 
