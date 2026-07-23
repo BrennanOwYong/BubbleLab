@@ -12,6 +12,8 @@ import {
   noThrowInHandleRule,
   noWideningCastRule,
   noPlaceholderValuesRule,
+  noMethodCallingMethodRule,
+  noMethodInvocationInComplexExpressionRule,
   LintRuleRegistry,
 } from './lint-rules.js';
 
@@ -921,5 +923,195 @@ const prompt = 'Summarize the TODO items found in the document';
       noPlaceholderValuesRule
     );
     expect(errors.length).toBe(0);
+  });
+});
+
+describe('narrowed method-call lint rules (bubble-containing chains only)', () => {
+  const SEND_MESSAGE_METHOD = `
+  // Sends the given text to slack
+  private async sendMessage(text: string): Promise<string> {
+    const result = await new SlackBubble({ operation: 'send_message', channel: '#general', text }).action();
+    return result.success ? 'ok' : 'failed';
+  }`;
+
+  const PURE_HELPERS = `
+  // Trims and uppercases the raw input
+  private cleanInput(input: string): string {
+    return this.normalize(input).toUpperCase();
+  }
+
+  // Collapses surrounding whitespace
+  private normalize(input: string): string {
+    return input.trim();
+  }`;
+
+  it('allows a pure transform helper to call another pure transform helper', () => {
+    const code = `
+import { BubbleFlow, SlackBubble } from '@bubblelab/bubble-core';
+
+export class MyFlow extends BubbleFlow<'webhook/http'> {
+  async handle(payload: WebhookEvent): Promise<{ message: string }> {
+    const cleaned = this.cleanInput(' hi ');
+    const sent = await this.sendMessage(cleaned);
+    return { message: sent };
+  }
+${PURE_HELPERS}
+${SEND_MESSAGE_METHOD}
+}
+`;
+    const errors = lint(
+      code,
+      noMethodCallingMethodRule,
+      noMethodInvocationInComplexExpressionRule
+    );
+    expect(errors).toEqual([]);
+  });
+
+  it('still errors when a bubble method is called from a non-handle method', () => {
+    const code = `
+import { BubbleFlow, SlackBubble } from '@bubblelab/bubble-core';
+
+export class MyFlow extends BubbleFlow<'webhook/http'> {
+  async handle(payload: WebhookEvent): Promise<{ message: string }> {
+    const sent = await this.doWork('hi');
+    return { message: sent };
+  }
+
+  // Delegates to the slack bubble method
+  private async doWork(text: string): Promise<string> {
+    return await this.sendMessage(text);
+  }
+${SEND_MESSAGE_METHOD}
+}
+`;
+    const errors = lint(code, noMethodCallingMethodRule);
+    expect(errors.length).toBe(1);
+    expect(errors[0].message).toContain("'this.sendMessage()'");
+    expect(errors[0].message).toContain('cannot be called from another method');
+  });
+
+  it('allows pure helper calls inside object literals and ternaries', () => {
+    const code = `
+import { BubbleFlow, SlackBubble } from '@bubblelab/bubble-core';
+
+export class MyFlow extends BubbleFlow<'webhook/http'> {
+  async handle(payload: WebhookEvent): Promise<{ message: string; flag: string }> {
+    return {
+      message: this.cleanInput(' hi '),
+      flag: payload.path ? this.normalize('a') : 'b',
+    };
+  }
+${PURE_HELPERS}
+${SEND_MESSAGE_METHOD}
+}
+`;
+    const errors = lint(
+      code,
+      noMethodCallingMethodRule,
+      noMethodInvocationInComplexExpressionRule
+    );
+    expect(errors).toEqual([]);
+  });
+
+  it('still errors when a bubble method call sits inside an object literal', () => {
+    const code = `
+import { BubbleFlow, SlackBubble } from '@bubblelab/bubble-core';
+
+export class MyFlow extends BubbleFlow<'webhook/http'> {
+  async handle(payload: WebhookEvent): Promise<{ message: string }> {
+    return { message: await this.sendMessage('hi') };
+  }
+${SEND_MESSAGE_METHOD}
+}
+`;
+    const errors = lint(code, noMethodInvocationInComplexExpressionRule);
+    expect(errors.length).toBe(1);
+    expect(errors[0].message).toContain("'this.sendMessage()'");
+    expect(errors[0].message).toContain('cannot be instrumented');
+  });
+
+  it('detects bubbles transitively through a helper chain', () => {
+    const code = `
+import { BubbleFlow, SlackBubble } from '@bubblelab/bubble-core';
+
+export class MyFlow extends BubbleFlow<'webhook/http'> {
+  async handle(payload: WebhookEvent): Promise<{ message: string }> {
+    const sent = await this.chainA('hi');
+    return { message: sent };
+  }
+
+  // Forwards to chainB
+  private async chainA(text: string): Promise<string> {
+    return await this.chainB(text);
+  }
+
+  // Forwards to the slack bubble method
+  private async chainB(text: string): Promise<string> {
+    return await this.sendMessage(text);
+  }
+${SEND_MESSAGE_METHOD}
+}
+`;
+    const errors = lint(code, noMethodCallingMethodRule);
+    // chainA -> chainB and chainB -> sendMessage both reach a bubble
+    expect(errors.length).toBe(2);
+    expect(errors.some((e) => e.message.includes("'this.chainB()'"))).toBe(
+      true
+    );
+    expect(errors.some((e) => e.message.includes("'this.sendMessage()'"))).toBe(
+      true
+    );
+  });
+
+  it('keeps the restriction for unresolvable callees (class-property arrow)', () => {
+    const code = `
+import { BubbleFlow, SlackBubble } from '@bubblelab/bubble-core';
+
+export class MyFlow extends BubbleFlow<'webhook/http'> {
+  private fmt = (s: string): string => s.trim();
+
+  async handle(payload: WebhookEvent): Promise<{ message: string }> {
+    const prepared = this.prepare(' hi ');
+    return { message: prepared };
+  }
+
+  // Formats via the class-property arrow
+  private prepare(s: string): string {
+    return this.fmt(s);
+  }
+}
+`;
+    const errors = lint(code, noMethodCallingMethodRule);
+    expect(errors.length).toBe(1);
+    expect(errors[0].message).toContain("'this.fmt()'");
+  });
+
+  it('terminates and stays silent on mutually recursive pure helpers', () => {
+    const code = `
+import { BubbleFlow, SlackBubble } from '@bubblelab/bubble-core';
+
+export class MyFlow extends BubbleFlow<'webhook/http'> {
+  async handle(payload: WebhookEvent): Promise<{ value: number }> {
+    const value = this.countDown(3);
+    return { value };
+  }
+
+  // Counts down via countUpGuard
+  private countDown(n: number): number {
+    return n <= 0 ? 0 : this.countUpGuard(n - 1);
+  }
+
+  // Bounces back to countDown
+  private countUpGuard(n: number): number {
+    return this.countDown(n);
+  }
+}
+`;
+    const errors = lint(
+      code,
+      noMethodCallingMethodRule,
+      noMethodInvocationInComplexExpressionRule
+    );
+    expect(errors).toEqual([]);
   });
 });

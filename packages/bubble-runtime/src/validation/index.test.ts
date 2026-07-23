@@ -185,17 +185,18 @@ export class MyFlow extends BubbleFlow<'slack/bot_mentioned'> {
       expect(result.valid).toBe(true);
     });
 
-    it('should fail validation when a method calls another method', async () => {
+    it('should fail validation when a method calls another bubble-containing method', async () => {
       const code = `
-import { BubbleFlow, AIAgentBubble } from '@bubblelab/bubble-core';
+import { BubbleFlow, HelloWorldBubble } from '@bubblelab/bubble-core';
 
 export class TestFlow extends BubbleFlow<'webhook/http'> {
   private async helperMethod(): Promise<string> {
-    return 'test';
+    const result = await new HelloWorldBubble({ message: 'hello', name: 'test' }).action();
+    return result.success ? 'ok' : 'failed';
   }
 
   private async gatherContext(): Promise<string> {
-    // This should fail - calling another method from a method
+    // This should fail - calling a bubble-containing method from a method
     const result = await this.helperMethod();
     return result;
   }
@@ -214,6 +215,40 @@ export class TestFlow extends BubbleFlow<'webhook/http'> {
           error.includes('cannot be called from another method')
         )
       ).toBe(true);
+    });
+
+    it('should pass validation when pure transformation helpers call each other', async () => {
+      const code = `
+import { BubbleFlow, HelloWorldBubble } from '@bubblelab/bubble-core';
+import type { WebhookEvent } from '@bubblelab/bubble-core';
+
+export class TestFlow extends BubbleFlow<'webhook/http'> {
+  // Trims and uppercases the raw input
+  private cleanInput(input: string): string {
+    return this.normalize(input).toUpperCase();
+  }
+
+  // Collapses surrounding whitespace
+  private normalize(input: string): string {
+    return input.trim();
+  }
+
+  // Greets the cleaned name with the hello-world bubble
+  private async greet(name: string): Promise<string> {
+    const result = await new HelloWorldBubble({ message: 'hello', name }).action();
+    return result.success ? 'ok' : 'failed';
+  }
+
+  async handle(payload: WebhookEvent): Promise<{ greeting: string }> {
+    const cleaned = this.cleanInput('  bubble  ');
+    const greeting = await this.greet(cleaned);
+    return { greeting };
+  }
+}
+`;
+      const result = await validateBubbleFlow(code);
+      expect(result.errors ?? []).toEqual([]);
+      expect(result.valid).toBe(true);
     });
 
     it('should fail validation when multiple BubbleFlow classes are in the same file', async () => {

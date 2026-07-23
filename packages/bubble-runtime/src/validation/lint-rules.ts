@@ -674,7 +674,103 @@ export const noProcessEnvRule: LintRule = {
 };
 
 /**
- * Lint rule that prevents method invocations inside complex expressions
+ * Resolves a method name to a non-static instance MethodDeclaration on the
+ * BubbleFlow class. Returns null for class-property arrows, inherited members,
+ * static methods, private-identifier (#name) methods, and anything else that
+ * is not a plain instance method with an Identifier name. Callers treat null
+ * as "cannot instrument" and keep the restriction.
+ */
+function resolveMethodDeclaration(
+  bubbleFlowClass: ts.ClassDeclaration | null,
+  methodName: string
+): ts.MethodDeclaration | null {
+  if (!bubbleFlowClass || !bubbleFlowClass.members) {
+    return null;
+  }
+  for (const member of bubbleFlowClass.members) {
+    if (
+      ts.isMethodDeclaration(member) &&
+      !member.modifiers?.some(
+        (modifier) => modifier.kind === ts.SyntaxKind.StaticKeyword
+      ) &&
+      ts.isIdentifier(member.name) &&
+      member.name.text === methodName
+    ) {
+      return member;
+    }
+  }
+  return null;
+}
+
+/**
+ * Returns true when the method named `methodName` instantiates a bubble
+ * anywhere in its body, or transitively calls (via this.x()) a method that
+ * does. Pure data-transformation chains return false.
+ *
+ * Bubble detection reuses getClassNameFromExpression + isBubbleClass, the
+ * same pair no-direct-bubble-instantiation-in-handle uses. The walk visits
+ * every descendant node, so `new XBubble(...)` is found regardless of
+ * await/.action() wrapping.
+ *
+ * Conservative: an unresolvable callee (class-property arrow, inherited
+ * member, missing body) counts as bubble-containing, keeping the restriction
+ * for anything the instrumentation cannot see. The visited set guards
+ * recursion cycles: a method already on the resolution path contributes no
+ * new bubbles of its own.
+ */
+function chainHasBubble(
+  methodName: string,
+  bubbleFlowClass: ts.ClassDeclaration | null,
+  importedBubbleClasses: Set<string>,
+  visited: Set<string>
+): boolean {
+  if (visited.has(methodName)) {
+    return false;
+  }
+  visited.add(methodName);
+
+  const declaration = resolveMethodDeclaration(bubbleFlowClass, methodName);
+  if (!declaration || !declaration.body) {
+    return true;
+  }
+
+  let found = false;
+  const walk = (node: ts.Node): void => {
+    if (found) {
+      return;
+    }
+    if (ts.isNewExpression(node)) {
+      const className = getClassNameFromExpression(node.expression);
+      if (className && isBubbleClass(className, importedBubbleClasses)) {
+        found = true;
+        return;
+      }
+    }
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      node.expression.expression.kind === ts.SyntaxKind.ThisKeyword &&
+      chainHasBubble(
+        node.expression.name.text,
+        bubbleFlowClass,
+        importedBubbleClasses,
+        visited
+      )
+    ) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(node, walk);
+  };
+  ts.forEachChild(declaration.body, walk);
+  return found;
+}
+
+/**
+ * Lint rule that prevents bubble-containing method invocations inside complex
+ * expressions. Pure data-transformation methods (no bubble anywhere in their
+ * call chain) are exempt: the parser only needs ordinal-stable rewriting for
+ * calls that reach a bubble.
  */
 export const noMethodInvocationInComplexExpressionRule: LintRule = {
   name: 'no-method-invocation-in-complex-expression',
@@ -693,17 +789,28 @@ export const noMethodInvocationInComplexExpressionRule: LintRule = {
             // Check if any parent is a complex expression
             const complexParent = findComplexExpressionParent(parents, node);
             if (complexParent) {
-              const { line, character } =
-                context.sourceFile.getLineAndCharacterOfPosition(
-                  node.getStart(context.sourceFile)
-                );
               const methodName = node.expression.name.text;
-              const parentType = getReadableParentType(complexParent);
-              errors.push({
-                line: line + 1,
-                column: character + 1,
-                message: `Method invocation 'this.${methodName}()' inside ${parentType} cannot be instrumented. Extract to a separate variable before using in ${parentType}.`,
-              });
+              // Pure data-transformation chains need no instrumentation
+              // rewrite; only bubble-containing calls must stay extractable.
+              if (
+                chainHasBubble(
+                  methodName,
+                  context.bubbleFlowClass,
+                  context.importedBubbleClasses,
+                  new Set<string>()
+                )
+              ) {
+                const { line, character } =
+                  context.sourceFile.getLineAndCharacterOfPosition(
+                    node.getStart(context.sourceFile)
+                  );
+                const parentType = getReadableParentType(complexParent);
+                errors.push({
+                  line: line + 1,
+                  column: character + 1,
+                  message: `Bubble-containing method invocation 'this.${methodName}()' inside ${parentType} cannot be instrumented. Fix: extract the call to its own variable in handle() first (const result = await this.${methodName}(...);), then use that variable in the ${parentType}. Do NOT rename the method.`,
+                });
+              }
             }
           }
         }
@@ -860,8 +967,11 @@ export const noTryCatchInHandleRule: LintRule = {
 };
 
 /**
- * Lint rule that prevents methods from calling other methods
- * Methods should only be called from the handle method, not from other methods
+ * Lint rule that prevents bubble-containing methods from being called by
+ * other methods. Bubble methods run only from handle() so the parser's
+ * variableId ordinals stay in sync with the rewrite. Pure
+ * data-transformation methods (no bubble anywhere in their call chain) may
+ * call each other freely.
  */
 export const noMethodCallingMethodRule: LintRule = {
   name: 'no-method-calling-method',
@@ -895,7 +1005,9 @@ export const noMethodCallingMethodRule: LintRule = {
 
       const methodCallErrors = findMethodCallsInNode(
         method.body,
-        context.sourceFile
+        context.sourceFile,
+        context.bubbleFlowClass,
+        context.importedBubbleClasses
       );
       errors.push(...methodCallErrors);
     }
@@ -905,11 +1017,14 @@ export const noMethodCallingMethodRule: LintRule = {
 };
 
 /**
- * Recursively finds all method calls (this.methodName()) in a node
+ * Recursively finds bubble-containing method calls (this.methodName()) in a
+ * node. Calls whose entire chain is pure data transformation are skipped.
  */
 function findMethodCallsInNode(
   node: ts.Node,
-  sourceFile: ts.SourceFile
+  sourceFile: ts.SourceFile,
+  bubbleFlowClass: ts.ClassDeclaration | null,
+  importedBubbleClasses: Set<string>
 ): LintError[] {
   const errors: LintError[] = [];
 
@@ -921,14 +1036,22 @@ function findMethodCallsInNode(
         // Check if it's 'this' keyword (SyntaxKind.ThisKeyword)
         if (object.kind === ts.SyntaxKind.ThisKeyword) {
           const methodName = n.expression.name.text;
-          const { line, character } = sourceFile.getLineAndCharacterOfPosition(
-            n.getStart(sourceFile)
-          );
-          errors.push({
-            line: line + 1,
-            column: character + 1,
-            message: `Method 'this.${methodName}()' cannot be called from another method. Methods should only be called from the handle method.`,
-          });
+          if (
+            chainHasBubble(
+              methodName,
+              bubbleFlowClass,
+              importedBubbleClasses,
+              new Set<string>()
+            )
+          ) {
+            const { line, character } =
+              sourceFile.getLineAndCharacterOfPosition(n.getStart(sourceFile));
+            errors.push({
+              line: line + 1,
+              column: character + 1,
+              message: `Bubble-containing method 'this.${methodName}()' cannot be called from another method. Bubble methods run only from handle(). Fix: inline the callee's body here, or lift this call into handle() and pass its result in as a parameter. Do NOT rename the method.`,
+            });
+          }
         }
       }
     }
