@@ -104,6 +104,29 @@ export class GoogleSheetsBubble<
         `Google OAuth token validation failed (${response.status}): ${text}`
       );
     }
+
+    // tokeninfo returns `scope` as space-delimited case-sensitive strings.
+    // A live token that lacks every Sheets-accepted scope (e.g. a Gmail-only
+    // or Drive-metadata-only grant) passes the HTTP-200 check yet cannot call
+    // the Sheets API — reject it here. Accepted read scopes per the method
+    // reference (see google-sheets.metadata.ts References block):
+    // https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.values/get
+    const info = (await response.json()) as { scope?: string };
+    if (typeof info.scope === 'string') {
+      const granted = info.scope.split(' ').filter((s) => s.length > 0);
+      const accepted = [
+        'https://www.googleapis.com/auth/spreadsheets',
+        'https://www.googleapis.com/auth/spreadsheets.readonly',
+        'https://www.googleapis.com/auth/drive',
+        'https://www.googleapis.com/auth/drive.readonly',
+        'https://www.googleapis.com/auth/drive.file',
+      ];
+      if (!granted.some((scope) => accepted.includes(scope))) {
+        throw new Error(
+          `Google OAuth token is valid but carries no Google Sheets scope (granted: ${granted.join(', ') || 'none'}). Re-consent with a Sheets or Drive scope.`
+        );
+      }
+    }
     return true;
   }
 
@@ -346,7 +369,11 @@ export class GoogleSheetsBubble<
       updated_rows: response.updatedRows,
       updated_columns: response.updatedColumns,
       updated_cells: response.updatedCells,
-      updated_data: response.updatedData,
+      // An all-empty write echoes updatedData WITHOUT a `values` key
+      // (proto3 JSON drops empty repeated fields) — normalize to [].
+      updated_data: response.updatedData
+        ? { ...response.updatedData, values: response.updatedData.values ?? [] }
+        : undefined,
       error: '',
     };
   }
@@ -391,7 +418,11 @@ export class GoogleSheetsBubble<
       updated_rows: response.updatedRows,
       updated_columns: response.updatedColumns,
       updated_cells: response.updatedCells,
-      updated_data: response.updatedData,
+      // Same empty-range guard as write_values: updatedData may arrive
+      // without a `values` key when every written cell is empty.
+      updated_data: response.updatedData
+        ? { ...response.updatedData, values: response.updatedData.values ?? [] }
+        : undefined,
       error: '',
     };
   }
@@ -489,10 +520,23 @@ export class GoogleSheetsBubble<
       `/spreadsheets/${spreadsheet_id}/values:batchGet?${queryParams.toString()}`
     );
 
+    // The batchGet response OMITS `values` on a ValueRange when that range is
+    // empty (proto3 JSON drops empty repeated fields). Normalize to [] so an
+    // empty tab reads as "no rows" instead of failing result validation —
+    // read_values applies the same guard (`response.values || []`).
+    const valueRanges: Array<{
+      range: string;
+      majorDimension?: 'ROWS' | 'COLUMNS';
+      values?: (string | number | boolean)[][];
+    }> = response.valueRanges || [];
+
     return {
       operation: 'batch_read_values',
       success: true,
-      value_ranges: response.valueRanges || [],
+      value_ranges: valueRanges.map((vr) => ({
+        ...vr,
+        values: vr.values ?? [],
+      })),
       error: '',
     };
   }

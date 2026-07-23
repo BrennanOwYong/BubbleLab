@@ -12,6 +12,13 @@ export const ValueRangeSchema = z
       .describe('Major dimension of the values'),
     values: z
       .array(z.array(z.union([z.string(), z.number(), z.boolean()])))
+      // The Sheets API OMITS the `values` key entirely for an empty range
+      // (proto3 JSON drops empty repeated fields; the values.batchGet /
+      // values.update responses carry no `values` when nothing is in range —
+      // https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.values).
+      // Default to [] so result validation treats "empty range" as data, never
+      // as a BubbleValidationError.
+      .default([])
       .describe('The data values as array of arrays'),
   })
   .describe('Range of values in a spreadsheet');

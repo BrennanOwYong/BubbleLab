@@ -1,10 +1,21 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { CredentialType } from '@bubblelab/shared-schemas';
 import { GoogleSheetsBubble } from './google-sheets';
-import { GoogleSheetsParamsSchema } from './google-sheets.schema';
+import {
+  GoogleSheetsParamsSchema,
+  GoogleSheetsResultSchema,
+  ValueRangeSchema,
+} from './google-sheets.schema';
 import {
   normalizeRange,
   validateAndNormalizeRange,
 } from './google-sheets.utils';
+
+const jsonResponse = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
 
 describe('GoogleSheetsBubble', () => {
   it('should be defined', () => {
@@ -277,6 +288,123 @@ describe('GoogleSheetsBubble', () => {
 
     it('should return ranges without sheet names unchanged', () => {
       expect(normalizeRange('A1:B10')).toBe('A1:B10');
+    });
+  });
+
+  describe('Empty-range handling (Sheets API omits `values` for empty ranges)', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('batch_read_values returns [] for a range whose valueRange has no values key, no throw', async () => {
+      const fetchMock = vi.fn(async () =>
+        jsonResponse({
+          spreadsheetId: 'sheet-1',
+          valueRanges: [
+            {
+              range: 'Data!A1:B2',
+              majorDimension: 'ROWS',
+              values: [['a', 'b']],
+            },
+            // Empty tab: the API omits `values` entirely
+            { range: 'EmptyTab!A1:B2', majorDimension: 'ROWS' },
+          ],
+        })
+      );
+      vi.stubGlobal('fetch', fetchMock);
+
+      const result = await new GoogleSheetsBubble({
+        operation: 'batch_read_values',
+        spreadsheet_id: 'sheet-1',
+        ranges: ['Data!A1:B2', 'EmptyTab!A1:B2'],
+        credentials: { [CredentialType.GOOGLE_SHEETS_CRED]: 'test-token' },
+      }).action();
+
+      expect(result.success).toBe(true);
+      expect(result.data?.value_ranges).toEqual([
+        { range: 'Data!A1:B2', majorDimension: 'ROWS', values: [['a', 'b']] },
+        { range: 'EmptyTab!A1:B2', majorDimension: 'ROWS', values: [] },
+      ]);
+    });
+
+    it('ValueRangeSchema defaults a missing values key to []', () => {
+      const parsed = ValueRangeSchema.parse({ range: 'EmptyTab!A1:B2' });
+      expect(parsed.values).toEqual([]);
+    });
+
+    it('update_values result validates when updatedData carries no values key (all-empty write)', () => {
+      const parsed = GoogleSheetsResultSchema.parse({
+        operation: 'update_values',
+        success: true,
+        updated_range: 'Sheet1!A1:B2',
+        updated_rows: 2,
+        updated_columns: 2,
+        updated_cells: 4,
+        updated_data: { range: 'Sheet1!A1:B2', majorDimension: 'ROWS' },
+        error: '',
+      });
+      if (parsed.operation === 'update_values') {
+        expect(parsed.updated_data?.values).toEqual([]);
+      }
+    });
+  });
+
+  describe('testCredential scope check', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    const bubbleWithCred = () =>
+      new GoogleSheetsBubble({
+        operation: 'read_values',
+        spreadsheet_id: 'sheet-1',
+        range: 'Sheet1!A1:B2',
+        credentials: { [CredentialType.GOOGLE_SHEETS_CRED]: 'test-token' },
+      });
+
+    it('rejects a live token whose granted scopes exclude Sheets (e.g. Gmail-only)', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () =>
+          jsonResponse({
+            scope:
+              'openid email https://www.googleapis.com/auth/gmail.readonly',
+          })
+        )
+      );
+      await expect(bubbleWithCred().testCredential()).rejects.toThrow(
+        /no Google Sheets scope/
+      );
+    });
+
+    it('accepts a token granted the spreadsheets scope', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () =>
+          jsonResponse({
+            scope: 'https://www.googleapis.com/auth/spreadsheets',
+          })
+        )
+      );
+      await expect(bubbleWithCred().testCredential()).resolves.toBe(true);
+    });
+
+    it('accepts a token granted a Drive scope (Sheets API accepts drive scopes)', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () =>
+          jsonResponse({ scope: 'https://www.googleapis.com/auth/drive.file' })
+        )
+      );
+      await expect(bubbleWithCred().testCredential()).resolves.toBe(true);
+    });
+
+    it('keeps the HTTP-200 pass when tokeninfo carries no scope field', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => jsonResponse({ aud: 'client-id', exp: '9999999999' }))
+      );
+      await expect(bubbleWithCred().testCredential()).resolves.toBe(true);
     });
   });
 

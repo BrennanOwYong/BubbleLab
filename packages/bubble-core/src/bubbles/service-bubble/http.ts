@@ -42,16 +42,30 @@ const HttpParamsSchema = z.object({
     .default(true)
     .describe('Whether to follow HTTP redirects (default: true)'),
   authType: z
-    .enum(['none', 'bearer', 'basic', 'api-key', 'api-key-header', 'custom'])
+    .enum([
+      'none',
+      'bearer',
+      'basic',
+      'api-key',
+      'api-key-header',
+      'custom',
+      'query-param',
+    ])
     .default('none')
     .describe(
-      'Authentication type: none (default), bearer (Authorization: Bearer), basic (Authorization: Basic), api-key (X-API-Key), api-key-header (Api-Key), custom (user-specified header)'
+      'Authentication type: none (default), bearer (Authorization: Bearer), basic (Authorization: Basic base64(user:pass) per RFC 7617 — pass the credential as "user:password"; a credential without a colon is used as the username with an empty password, the common key-only vendor convention), api-key (X-API-Key), api-key-header (Api-Key), custom (user-specified header), query-param (credential appended to the URL as a query parameter, name from authQueryParam)'
     ),
   authHeader: z
     .string()
     .optional()
     .describe(
       'Custom header name when authType is "custom" (e.g., "X-Custom-Auth")'
+    ),
+  authQueryParam: z
+    .string()
+    .optional()
+    .describe(
+      'Query parameter name when authType is "query-param" (default: "key", e.g., "apikey", "api_key", "token")'
     ),
   responseType: z
     .enum(['auto', 'text', 'binary'])
@@ -176,6 +190,7 @@ export class HttpBubble extends ServiceBubble<HttpParams, HttpResult> {
       followRedirects,
       authType,
       authHeader,
+      authQueryParam,
     } = this.params;
     const startTime = Date.now();
 
@@ -190,15 +205,29 @@ export class HttpBubble extends ServiceBubble<HttpParams, HttpResult> {
 
       // Build auth headers based on authType
       const authHeaders: Record<string, string> = {};
+      // query-param auth mutates the request URL instead of the headers
+      let requestUrl = url;
       const credential = this.chooseCredential();
       if (credential && authType !== 'none') {
         switch (authType) {
           case 'bearer':
             authHeaders['Authorization'] = `Bearer ${credential}`;
             break;
-          case 'basic':
-            authHeaders['Authorization'] = `Basic ${credential}`;
+          case 'basic': {
+            // RFC 7617 §2: the Basic value is base64(user-id ":" password),
+            // never the raw credential —
+            // https://datatracker.ietf.org/doc/html/rfc7617#section-2
+            // A credential without a colon is treated as an API key used as
+            // the user-id with an empty password (base64("key:")) — the
+            // documented convention for key-only Basic-auth vendors
+            // (e.g. Stripe, Mailchimp).
+            const userPass = credential.includes(':')
+              ? credential
+              : `${credential}:`;
+            authHeaders['Authorization'] =
+              `Basic ${Buffer.from(userPass, 'utf-8').toString('base64')}`;
             break;
+          }
           case 'api-key':
             authHeaders['X-API-Key'] = credential;
             break;
@@ -210,6 +239,15 @@ export class HttpBubble extends ServiceBubble<HttpParams, HttpResult> {
               authHeaders[authHeader] = credential;
             }
             break;
+          case 'query-param': {
+            // Several data vendors key requests by query parameter instead of
+            // a header (e.g. ?key=..., ?apikey=...). URL is schema-validated,
+            // so the constructor cannot throw here.
+            const parsedUrl = new URL(url);
+            parsedUrl.searchParams.set(authQueryParam || 'key', credential);
+            requestUrl = parsedUrl.toString();
+            break;
+          }
         }
       }
 
@@ -238,8 +276,9 @@ export class HttpBubble extends ServiceBubble<HttpParams, HttpResult> {
         }
       }
 
-      // Make the request
-      const response = await fetch(url, requestOptions);
+      // Make the request (requestUrl carries the query-param credential when
+      // authType is "query-param"; log lines keep the credential-free `url`)
+      const response = await fetch(requestUrl, requestOptions);
       clearTimeout(timeoutId); // Clear timeout if request completes
       const responseTime = Date.now() - startTime;
 
