@@ -1221,8 +1221,12 @@ export class NotionBubble<
       return false;
     }
 
-    // Test by listing users — let errors propagate for vendor-specific messages
-    await this.makeNotionApiCall('users', {}, 'GET');
+    // Probe the token's own bot user — the canonical "who am I" check that any
+    // valid token passes. NOT 'users' (list all): Notion personal access /
+    // internal integration tokens are forbidden from listing users (403
+    // restricted_resource), so listing rejected valid keys. Errors propagate
+    // for vendor-specific messages.
+    await this.makeNotionApiCall('users/me', {}, 'GET');
     return true;
   }
 
