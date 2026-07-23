@@ -1,4 +1,5 @@
 import ts from 'typescript';
+import { validateCronExpression } from '@bubblelab/shared-schemas';
 
 /**
  * Represents a lint error found during validation
@@ -1625,6 +1626,467 @@ function checkCapabilityObjectForInputs(
 }
 
 /**
+ * Lint rule that requires a literal cronSchedule class property when the
+ * trigger is 'schedule/cron'.
+ *
+ * Without this rule, a cron flow with a missing/invalid cronSchedule passes
+ * validateBubbleFlow (all lint rules green) and only fails later at
+ * validateAndExtract/save. Surfacing it at validity time lets the generation
+ * loop fix it before shipping.
+ *
+ * Mirrors the parser (BubbleScript.getBubbleTriggerEventType): only a plain
+ * string-literal initializer on a class property named 'cronSchedule' is
+ * extracted, so template literals and computed values are rejected here too.
+ */
+export const requireCronScheduleRule: LintRule = {
+  name: 'require-cron-schedule',
+  validate(context: LintRuleContext): LintError[] {
+    const errors: LintError[] = [];
+
+    if (context.bubbleFlowTriggerType !== 'schedule/cron') {
+      return errors;
+    }
+    if (!context.bubbleFlowClass) {
+      return errors;
+    }
+
+    const cls: ts.ClassDeclaration = context.bubbleFlowClass;
+    let cronProperty: ts.PropertyDeclaration | null = null;
+    for (const member of cls.members) {
+      if (
+        ts.isPropertyDeclaration(member) &&
+        ts.isIdentifier(member.name) &&
+        member.name.text === 'cronSchedule'
+      ) {
+        cronProperty = member;
+        break;
+      }
+    }
+
+    if (!cronProperty) {
+      const { line } = context.sourceFile.getLineAndCharacterOfPosition(
+        cls.getStart(context.sourceFile)
+      );
+      errors.push({
+        line: line + 1,
+        message:
+          "Trigger 'schedule/cron' requires a cronSchedule class property. Declare it inside the class as: readonly cronSchedule = '0 0 * * *'; (cron expression in UTC).",
+      });
+      return errors;
+    }
+
+    const { line } = context.sourceFile.getLineAndCharacterOfPosition(
+      cronProperty.getStart(context.sourceFile)
+    );
+
+    const initializer = cronProperty.initializer;
+    if (!initializer || !ts.isStringLiteral(initializer)) {
+      errors.push({
+        line: line + 1,
+        message:
+          "cronSchedule must be a plain string literal cron expression (e.g. readonly cronSchedule = '0 0 * * *';). Computed values and template literals are not extracted by the parser.",
+      });
+      return errors;
+    }
+
+    if (!validateCronExpression(initializer.text).valid) {
+      errors.push({
+        line: line + 1,
+        message: `Invalid cron expression '${initializer.text}' in cronSchedule. Use a valid cron expression in UTC, e.g. readonly cronSchedule = '0 0 * * *';`,
+      });
+    }
+
+    return errors;
+  },
+};
+
+/**
+ * Lint rule that requires a custom payload interface to extend the trigger's
+ * base event type (WebhookEvent, CronEvent, SlackMentionEvent, ...).
+ *
+ * enforce-payload-type allows any custom interface name; if that interface
+ * does not extend the trigger event, lint passes silently but the studio
+ * cannot extract the flow's input schema. This rule closes that hole by
+ * resolving the interface/type-alias chain declared in the file and checking
+ * it reaches the expected base event type.
+ *
+ * Types declared outside the file (imports) are skipped - they cannot be
+ * verified statically here.
+ */
+export const payloadMustExtendTriggerEventRule: LintRule = {
+  name: 'payload-must-extend-trigger-event',
+  validate(context: LintRuleContext): LintError[] {
+    const errors: LintError[] = [];
+
+    if (!context.handleMethod || !context.bubbleFlowTriggerType) {
+      return errors;
+    }
+
+    const expectedTypeName =
+      TRIGGER_PAYLOAD_TYPE_MAP[context.bubbleFlowTriggerType];
+    if (!expectedTypeName) {
+      return errors; // Unknown trigger type, skip
+    }
+
+    const parameters = context.handleMethod.parameters;
+    if (parameters.length === 0) {
+      return errors; // enforce-payload-type reports missing parameter
+    }
+
+    const typeAnnotation = parameters[0].type;
+    // Missing/any/indexed-access annotations are handled by enforce-payload-type
+    if (!typeAnnotation || !ts.isTypeReferenceNode(typeAnnotation)) {
+      return errors;
+    }
+    if (!ts.isIdentifier(typeAnnotation.typeName)) {
+      return errors;
+    }
+
+    const payloadTypeName = typeAnnotation.typeName.text;
+    // Using a base trigger event type directly (right or wrong one) is
+    // already fully checked by enforce-payload-type
+    if (BASE_TRIGGER_EVENT_TYPES.has(payloadTypeName)) {
+      return errors;
+    }
+
+    // Collect interface and type alias declarations in this file
+    const interfaces = new Map<string, ts.InterfaceDeclaration>();
+    const aliases = new Map<string, ts.TypeAliasDeclaration>();
+    const collect = (node: ts.Node): void => {
+      if (ts.isInterfaceDeclaration(node)) {
+        interfaces.set(node.name.text, node);
+      } else if (ts.isTypeAliasDeclaration(node)) {
+        aliases.set(node.name.text, node);
+      }
+      ts.forEachChild(node, collect);
+    };
+    collect(context.sourceFile);
+
+    if (!interfaces.has(payloadTypeName) && !aliases.has(payloadTypeName)) {
+      return errors; // Declared elsewhere (import); cannot verify statically
+    }
+
+    // Walk the extends/alias chain looking for the expected base event type
+    const reachesExpectedBase = (
+      typeName: string,
+      visited: Set<string>
+    ): boolean => {
+      if (typeName === expectedTypeName) {
+        return true;
+      }
+      if (visited.has(typeName)) {
+        return false;
+      }
+      visited.add(typeName);
+
+      const iface = interfaces.get(typeName);
+      if (iface) {
+        for (const clause of iface.heritageClauses ?? []) {
+          if (clause.token !== ts.SyntaxKind.ExtendsKeyword) continue;
+          for (const heritageType of clause.types) {
+            if (
+              ts.isIdentifier(heritageType.expression) &&
+              reachesExpectedBase(heritageType.expression.text, visited)
+            ) {
+              return true;
+            }
+          }
+        }
+        return false;
+      }
+
+      const alias = aliases.get(typeName);
+      if (alias) {
+        return typeNodeReachesExpectedBase(alias.type, visited);
+      }
+
+      return false;
+    };
+
+    const typeNodeReachesExpectedBase = (
+      typeNode: ts.TypeNode,
+      visited: Set<string>
+    ): boolean => {
+      if (
+        ts.isTypeReferenceNode(typeNode) &&
+        ts.isIdentifier(typeNode.typeName)
+      ) {
+        return reachesExpectedBase(typeNode.typeName.text, visited);
+      }
+      if (ts.isIntersectionTypeNode(typeNode)) {
+        return typeNode.types.some((t) =>
+          typeNodeReachesExpectedBase(t, visited)
+        );
+      }
+      return false;
+    };
+
+    if (!reachesExpectedBase(payloadTypeName, new Set<string>())) {
+      const { line } = context.sourceFile.getLineAndCharacterOfPosition(
+        typeAnnotation.getStart(context.sourceFile)
+      );
+      errors.push({
+        line: line + 1,
+        message: `Payload type '${payloadTypeName}' must extend '${expectedTypeName}' for trigger '${context.bubbleFlowTriggerType}'. Declare it as: export interface ${payloadTypeName} extends ${expectedTypeName} { ... }. Without this the studio cannot extract the flow's input schema.`,
+      });
+    }
+
+    return errors;
+  },
+};
+
+/**
+ * Lint rule that catches throw statements NESTED anywhere inside handle().
+ *
+ * no-throw-in-handle only checks direct statements of the handle body (and
+ * direct if-then/else throws), so a throw wrapped in a block, loop, try, or
+ * callback escapes it. This rule deep-scans the handle body and reports every
+ * throw the shallow rule does not, without double-reporting.
+ */
+export const noNestedThrowInHandleRule: LintRule = {
+  name: 'no-nested-throw-in-handle',
+  validate(context: LintRuleContext): LintError[] {
+    const errors: LintError[] = [];
+
+    const body = context.handleMethodBody;
+    if (!body) {
+      return errors;
+    }
+
+    // Throws already reported by the shallow no-throw-in-handle rule:
+    // a direct statement of the body, or the direct (non-block) then/else
+    // of an if statement that is itself a direct statement of the body.
+    const isShallowReported = (throwStmt: ts.ThrowStatement): boolean => {
+      const parent = throwStmt.parent;
+      if (parent === body) {
+        return true;
+      }
+      if (
+        parent &&
+        ts.isIfStatement(parent) &&
+        parent.parent === body &&
+        (parent.thenStatement === throwStmt ||
+          parent.elseStatement === throwStmt)
+      ) {
+        return true;
+      }
+      return false;
+    };
+
+    const visit = (node: ts.Node): void => {
+      if (ts.isThrowStatement(node) && !isShallowReported(node)) {
+        const { line } = context.sourceFile.getLineAndCharacterOfPosition(
+          node.getStart(context.sourceFile)
+        );
+        errors.push({
+          line: line + 1,
+          message:
+            'throw statements are not allowed anywhere inside the handle method (including nested blocks, loops, and callbacks). Return a result object from handle, or move error handling into a private method.',
+        });
+      }
+      ts.forEachChild(node, visit);
+    };
+
+    visit(body);
+    return errors;
+  },
+};
+
+/**
+ * Lint rule that bans type casts: `expr as T`, `expr as unknown as T`,
+ * `expr as any`, and `<T>expr`. Only `as const` assertions are allowed.
+ *
+ * A cast makes the type checker agree with a shape the runtime never
+ * produces; bubble results are Zod-parsed against their declared schema, so
+ * the laundered shape fails in the user's run instead of at validation. The
+ * common offender is `JSON.parse(...) as T`, which silently widens `any`
+ * into a claimed shape.
+ */
+export const noWideningCastRule: LintRule = {
+  name: 'no-widening-cast',
+  validate(context: LintRuleContext): LintError[] {
+    const errors: LintError[] = [];
+
+    const isConstAssertion = (node: ts.AsExpression): boolean =>
+      ts.isTypeReferenceNode(node.type) &&
+      ts.isIdentifier(node.type.typeName) &&
+      node.type.typeName.text === 'const';
+
+    // Report only the outermost cast of an `x as unknown as T` chain
+    const isInnerCastOfChain = (node: ts.AsExpression): boolean => {
+      let parent: ts.Node = node.parent;
+      while (parent && ts.isParenthesizedExpression(parent)) {
+        parent = parent.parent;
+      }
+      return parent !== undefined && ts.isAsExpression(parent);
+    };
+
+    const unwrapCastChain = (
+      node: ts.Expression
+    ): { inner: ts.Expression; laundersViaUnknownOrAny: boolean } => {
+      let laundersViaUnknownOrAny = false;
+      let current: ts.Expression = node;
+      while (
+        ts.isAsExpression(current) ||
+        ts.isParenthesizedExpression(current)
+      ) {
+        if (ts.isAsExpression(current)) {
+          if (
+            current.type.kind === ts.SyntaxKind.UnknownKeyword ||
+            current.type.kind === ts.SyntaxKind.AnyKeyword
+          ) {
+            laundersViaUnknownOrAny = true;
+          }
+        }
+        current = current.expression;
+      }
+      return { inner: current, laundersViaUnknownOrAny };
+    };
+
+    const isJsonParseCall = (expr: ts.Expression): boolean =>
+      ts.isCallExpression(expr) &&
+      ts.isPropertyAccessExpression(expr.expression) &&
+      ts.isIdentifier(expr.expression.expression) &&
+      expr.expression.expression.text === 'JSON' &&
+      expr.expression.name.text === 'parse';
+
+    const reportCast = (
+      node: ts.Node,
+      typeText: string,
+      inner: ts.Expression,
+      laundersViaUnknownOrAny: boolean
+    ): void => {
+      const { line, character } =
+        context.sourceFile.getLineAndCharacterOfPosition(
+          node.getStart(context.sourceFile)
+        );
+      const jsonParseHint = isJsonParseCall(inner)
+        ? ' For JSON.parse results, declare the fields in the payload interface or narrow with typeof/in checks instead of casting.'
+        : '';
+      const launderHint = laundersViaUnknownOrAny
+        ? ' Casting through unknown/any launders a type error instead of fixing it.'
+        : '';
+      errors.push({
+        line: line + 1,
+        column: character + 1,
+        message: `Type cast 'as ${typeText}' is not allowed. Casts hide real type mismatches from validation and shift the failure into the user's run - fix the underlying type instead.${launderHint}${jsonParseHint}`,
+      });
+    };
+
+    const visit = (node: ts.Node): void => {
+      if (ts.isAsExpression(node)) {
+        if (!isConstAssertion(node) && !isInnerCastOfChain(node)) {
+          const { inner, laundersViaUnknownOrAny } = unwrapCastChain(node);
+          reportCast(
+            node,
+            node.type.getText(context.sourceFile),
+            inner,
+            laundersViaUnknownOrAny
+          );
+        }
+      } else if (ts.isTypeAssertionExpression(node)) {
+        // Angle-bracket assertion: <T>expr
+        const { inner, laundersViaUnknownOrAny } = unwrapCastChain(
+          node.expression
+        );
+        reportCast(
+          node,
+          node.type.getText(context.sourceFile),
+          inner,
+          laundersViaUnknownOrAny
+        );
+      }
+
+      ts.forEachChild(node, visit);
+    };
+
+    visit(context.sourceFile);
+    return errors;
+  },
+};
+
+/**
+ * Patterns that identify placeholder string values a user would have to
+ * hand-edit in code. Each pattern is matched against the raw text of string
+ * literals and no-substitution template literals.
+ */
+const PLACEHOLDER_STRING_PATTERNS: { pattern: RegExp; label: string }[] = [
+  // YOUR_API_KEY, your_folder_id_here, YOUR-CHANNEL-ID ...
+  { pattern: /\bYOUR[_-][A-Z0-9_-]{2,}\b/i, label: "'YOUR_*' placeholder" },
+  // Whole string is one angle-bracketed uppercase token: <FOLDER_ID>, <YOUR-TOKEN>
+  {
+    pattern: /^<\s*[A-Z][A-Z0-9 _-]*\s*>$/,
+    label: 'angle-bracket placeholder',
+  },
+  // Whole string is a TODO-style token
+  {
+    pattern:
+      /^\s*(TODO|FIXME|TBD|CHANGE[-_ ]?ME|REPLACE[-_ ]?(ME|THIS)|PLACEHOLDER([-_ ]?(VALUE|HERE))?|INSERT[-_ ]?HERE)\s*[:.!]?\s*$/i,
+    label: 'TODO-style placeholder',
+  },
+  // Whole string is an ALL_CAPS_..._HERE token: API_KEY_HERE, PASTE_ID_HERE
+  {
+    pattern: /^[A-Z][A-Z0-9_-]*[_-]HERE$/,
+    label: "'*_HERE' placeholder",
+  },
+];
+
+/**
+ * Lint rule that flags placeholder string constants (YOUR_*, <LIKE_THIS>,
+ * TODO-style tokens).
+ *
+ * A shipped placeholder is invisible to the mock run - the mocked write
+ * succeeds regardless of the value - so the flow validates and test-runs
+ * green, then fails in the user's hands. User-specific values belong in the
+ * payload interface as JSDoc-documented inputs with realistic example
+ * defaults.
+ */
+export const noPlaceholderValuesRule: LintRule = {
+  name: 'no-placeholder-values',
+  validate(context: LintRuleContext): LintError[] {
+    const errors: LintError[] = [];
+
+    const checkText = (node: ts.Node, text: string): void => {
+      for (const { pattern, label } of PLACEHOLDER_STRING_PATTERNS) {
+        if (pattern.test(text)) {
+          const { line, character } =
+            context.sourceFile.getLineAndCharacterOfPosition(
+              node.getStart(context.sourceFile)
+            );
+          const shown = text.length > 40 ? `${text.slice(0, 40)}...` : text;
+          errors.push({
+            line: line + 1,
+            column: character + 1,
+            message: `Placeholder value '${shown}' (${label}) is not allowed. Move user-specific values into the payload interface as a JSDoc-documented input field with a realistic example default; constants may only hold truly static values.`,
+          });
+          return; // One report per literal is enough
+        }
+      }
+    };
+
+    const visit = (node: ts.Node): void => {
+      if (
+        ts.isStringLiteral(node) ||
+        ts.isNoSubstitutionTemplateLiteral(node)
+      ) {
+        checkText(node, node.text);
+      } else if (ts.isTemplateExpression(node)) {
+        // Check the static chunks of `...${x}...` templates
+        checkText(node, node.head.text);
+        for (const span of node.templateSpans) {
+          checkText(span.literal, span.literal.text);
+        }
+      }
+
+      ts.forEachChild(node, visit);
+    };
+
+    visit(context.sourceFile);
+    return errors;
+  },
+};
+
+/**
  * Default registry instance with all rules registered
  */
 export const defaultLintRuleRegistry = new LintRuleRegistry();
@@ -1642,3 +2104,8 @@ defaultLintRuleRegistry.register(noCastPayloadInHandleRule);
 defaultLintRuleRegistry.register(noToStringOnExpectedOutputSchemaRule);
 defaultLintRuleRegistry.register(noJsonStringifyOnExpectedOutputSchemaRule);
 defaultLintRuleRegistry.register(noCapabilityInputsRule);
+defaultLintRuleRegistry.register(requireCronScheduleRule);
+defaultLintRuleRegistry.register(payloadMustExtendTriggerEventRule);
+defaultLintRuleRegistry.register(noNestedThrowInHandleRule);
+defaultLintRuleRegistry.register(noWideningCastRule);
+defaultLintRuleRegistry.register(noPlaceholderValuesRule);

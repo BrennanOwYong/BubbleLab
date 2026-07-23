@@ -45,8 +45,11 @@ export class MyFlow extends BubbleFlow<'slack/bot_mentioned'> {
       const result = await validateBubbleFlow(code);
       expect(result.valid).toBe(false);
       expect(result.errors).toBeDefined();
-      expect(result.errors!.length).toBe(1);
-      expect(result.errors![0]).toContain('credentials');
+      // The fixture wraps the credentials object in a cast, so the
+      // no-widening-cast rule also fires alongside no-credentials-parameter.
+      expect(
+        result.errors!.some((error) => error.includes('credentials'))
+      ).toBe(true);
     });
 
     it('should validate calender step flow', async () => {

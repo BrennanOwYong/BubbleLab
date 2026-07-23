@@ -17,7 +17,10 @@ export class TestBubbleFlow extends BubbleFlow<'webhook/http'> {
     const shouldFail = payload.body && payload.body.shouldFail;
 
     if (shouldFail) {
-      throw new Error('Test failure');
+      return {
+        message: 'Test failure',
+        success: false,
+      };
     }
 
     return {

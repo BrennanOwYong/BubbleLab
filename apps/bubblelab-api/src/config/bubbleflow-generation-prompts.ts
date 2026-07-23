@@ -17,60 +17,51 @@ export { RECOMMENDED_MODELS };
 const AVAILABLE_TRIGGERS = Object.keys(TRIGGER_EVENT_CONFIGS).join(', ');
 
 export const CRITICAL_INSTRUCTIONS = `CRITICAL INSTRUCTIONS:
-1. Start with the exact boilerplate template above (it has all the correct imports and class structure), come up with a name for the flow based on the user's request, export class [name] extends BubbleFlow
-2. CRITICAL: Only ONE class extending BubbleFlow is allowed per file. Do NOT create multiple BubbleFlow classes (e.g., a webhook flow and a cron flow).
-3. Properly type the payload import and output interface based on the user's request, create typescript interfaces for them
-4. BEFORE writing any code, identify which bubbles you plan to use from the available list, prioritize choosing tools over services unless the user specifically requests a service.
-5. For EACH bubble you plan to use, ALWAYS call get-bubble-details-tool first to understand:
-   - The correct input parameters and their types
-   - The expected output structure in result.data
-   - How to properly handle success/error cases
-6. TRIGGER SELECTION:
+
+HOW GENERATED CODE IS EXECUTED (the contract behind every rule below):
+The validator is only a PROXY. After validation, the runtime RE-PARSES your source and recognizes a bubble ONLY when \`new XBubble({...})\` (optionally awaited, optionally with a single chained .action()) sits directly at one of four anchors: a const/let variable initializer, a bare expression statement, a concise arrow body, or a return statement. Recognized bubbles are physically rewritten with injected credentials and telemetry; a bubble anywhere else (ternary arm, object/array literal, call argument, .map() callback, longer method chain) is INVISIBLE - it validates green and compiles, but executes with NO credentials and NO telemetry. At runtime every bubble re-validates its params with its Zod schema, so any value laundered past static checks still fails in the user's run. The user's first run is a TEST run: read operations execute for real; write and read_with_side_effects operations are mocked. Fix every error at its cause; never cast, wrap, or restructure code to hide an error from the checker.
+
+1. FILE STRUCTURE: Start with the exact boilerplate template above (it has all the correct imports and class structure). Come up with a flow name based on the user's request: exactly ONE exported class [name] extends BubbleFlow<'trigger'> with an async handle method. The trigger generic MUST be a quoted string literal (never a type alias or variable). NEVER create a second class extending BubbleFlow (e.g., a webhook flow and a cron flow in one file). Import everything you use from '@bubblelab/bubble-core'.
+2. TRIGGER SELECTION:
    - Available triggers: ${AVAILABLE_TRIGGERS}
-   - Use get-trigger-detail-tool to get the payload schema, setup guide, and TypeScript interface for your chosen trigger
-   - The tool returns the exact payload interface to extend (e.g., SlackMentionEvent, CronEvent, WebhookEvent)
-   - Default to 'webhook/http' if no specific trigger is requested
-7. IMPLEMENTATION ARCHITECTURE (CRITICAL):
-   - Break the workflow into atomic PRIVATE methods (do NOT call them "steps" or use "step" terminology).
-   - Types of methods:
-     a) Transformation Methods: Pure functions for data cleaning, validation, or formatting. NO Bubble usage here.
-     b) Bubble Methods: Async functions that instantiate and run SINGLE Bubble (or logically grouped Bubbles).
-   - The 'handle()' method must be a CLEAN orchestrator:
-     - ONLY call private methods sequentially.
-     - Use 'if' statements and 'for' loops inside handle() to control execution flow.
-     - NO switch statements.
-     - NO direct Bubble instantiation inside handle().
-     - NO try-catch blocks inside handle() (handle errors inside private methods if needed, otherwise let them bubble up).
-     - NO complex logic inside handle() - use Transformation Methods instead.
-   - CRITICAL: Each private method MUST have a ONE-LINE comment describing WHAT the method does in specific, concrete terms (not generic phrases like "processes data" or "transforms input").
-     ONLY add a second "Condition:" line if the method is CONDITIONALLY executed (e.g., inside an if-statement, only runs when X is true). Do NOT add "Condition: Always runs" - if it always runs, omit the Condition line entirely.
-   - Example:
+   - Use get-trigger-detail-tool to get the payload schema, setup guide, and TypeScript interface for your chosen trigger. The tool returns the exact payload interface to extend (e.g., SlackMentionEvent, CronEvent, WebhookEvent).
+   - Default to 'webhook/http' if no specific trigger is requested.
+   - For 'schedule/cron': declare readonly cronSchedule = '0 0 * * *'; (a valid cron expression, in UTC - convert the user's local time to UTC) inside the class. Never omit it and never compute it; validation rejects cron flows without a literal cronSchedule.
+3. PAYLOAD TYPING: Type handle's first parameter with the exact event type for the trigger ('webhook/http' -> WebhookEvent, 'schedule/cron' -> CronEvent, 'slack/bot_mentioned' -> SlackMentionEvent, ...). For custom inputs, declare export interface MyPayload extends WebhookEvent { ... } and use handle(payload: MyPayload) - the interface MUST extend the trigger event type or the studio cannot extract the flow's input schema. NEVER leave the parameter untyped, type it as any, use a different base event type, or cast the payload inside handle (payload as X and payload.body as unknown as X are both rejected).
+4. BUBBLE DISCOVERY: BEFORE writing any code, identify which bubbles you plan to use from the available list; prioritize tools over services unless the user specifically requests a service. For EACH bubble, ALWAYS call get-bubble-details-tool first to learn its exact input parameters and types, its result.data structure, and how to handle success/error cases. Use the exact parameter structures shown in the bubble details; never guess parameter shapes from memory.
+5. BUBBLE CALL SHAPE (the single most important rule): every bubble gets its own const declaration whose initializer is immediately the instantiation and call, inside a private bubble method:
+   const result = await new SlackBubble({ operation: 'send_message', channel, text }).action();
+   - .action() is the ONLY way to run a bubble. NEVER use runBubble, this.runBubble, or any other invocation.
+   - NEVER embed new XBubble(...) inside a larger expression: no ternary arms, no object or array literals, no function arguments, no .map() callbacks, no chains past .action() (.action().then(...)), no aliased classes (const B = SlackBubble). The runtime parser only recognizes the four anchor shapes above; anything else runs with NO credentials and NO telemetry.
+   - Pass the constructor's first argument as an inline object literal with discrete properties. Never hoist the params into a variable, spread an opaque object, or cast the object.
+6. handle() IS PURE ORCHESTRATION: sequential calls to private methods, plain 'if' statements and 'for' loops for control flow, then return meaningful data (this is what the user sees). Inside handle(): NO direct bubble instantiation, NO throw statements anywhere (including nested inside if/for blocks or callbacks - return a result object instead), NO try-catch blocks (handle errors inside private methods), NO switch statements, NO complex logic (use transformation methods).
+7. PRIVATE METHODS: Break the workflow into atomic PRIVATE methods of two kinds: (a) transformation methods - pure data cleaning, validation, or formatting with NO bubble usage; (b) bubble methods - async methods that instantiate and run a SINGLE bubble (or a logically grouped few). Call private methods ONLY from handle(), as plain statements: const x = await this.methodName(...); (await Promise.all([this.a(), this.b()]) is allowed). NEVER call this.method() from another private method, alias a method (const f = this.method), or place this.method() inside a ternary, object literal, array literal (except directly inside Promise.all), object property, or spread - instrumentation cannot rewrite those call sites.
+8. METHOD COMMENTS: Each private method MUST have a ONE-LINE comment describing WHAT it does in specific, concrete terms (not generic phrases like "processes data"). ONLY add a second "Condition:" line if the method is CONDITIONALLY executed; do NOT write "Condition: Always runs".
+   Example:
      // Sanitizes raw webhook input by trimming whitespace and converting to uppercase
      private transformData(input: string): string { ... }
 
      // Sends cleaned input to AI for natural language processing
-     // Only runs when input length is greater than 3 characters
+     // Condition: only runs when input length is greater than 3 characters
      private async processWithAI(input: string): Promise<string> { ... }
-8. Use the exact parameter structures shown in the bubble details
-9. If deterministic tool calls and branch logic are possible, there is no need to use AI agent.
-10. Access bubble outputs safely using result.data with null checking (e.g., result.data?.someProperty or check if result.data exists first)
-11. Return meaningful data from the handle method, this is the data that will be shown to the user.
-12. DO NOT include credentials in bubble parameters - credentials are handled automatically
-13. CRITICAL: In Bubble methods, always use the pattern: const result = await new SomeBubble({params}).action() - NEVER use runBubble, this.runBubble, or any other method.
-14. When using AI Agent, ensure your prompt includes comprehensive context and explicitly pass in all relevant information needed for the task. Be thorough in providing complete data rather than expecting the AI to infer or assume missing details (unless the information must be retrieved from an online source)
-15. When generating and dealing with images, process them one at a time to ensure proper handling and avoid overwhelming the system
-16. If the location of the output is unknown or not specified by the user, use this.logger?.info(message:string) to print the output to the console.
-17. DO NOT repeat the user's request in your response or thinking process. Do not include "The user says: <user's request>" in your response.
-18. Write short and concise comments throughout the code. Name methods clearly (e.g., 'transformInput', 'performResearch', 'formatOutput'). The variable name for bubble should describe the bubble's purpose and its role in the workflow. NEVER use the word "step" in method names, comments, or variable names.
-19. If user does not specify a communication channel to get the result, use email sending via resend and do not set the 'from' parameter, it will be set automatically and use bubble lab's default email, unless the user has their own resend setup and account domain verified.
-20. When importing JSON workflows from other platforms, focus on capturing the ESSENCE and INTENT of the workflow, not the exact architecture. Convert to appropriate BubbleFlow patterns - use deterministic workflows when the logic is linear and predictable, only use AI agents when dynamic decision-making is truly needed.
-21. NEVER generate placeholder values like "YOUR_API_KEY_HERE", "YOUR_FOLDER_ID", "REPLACE_THIS", etc. in constants. User-specific values like folder IDs, spreadsheet IDs, email addresses MUST be defined in the payload interface and passed as inputs. Constants should only contain truly static values that never change (like MIME types, fixed strings, enum values, etc.). EXCEPTION: API keys and authentication credentials should NOT go in the payload - they are handled automatically by the Bubble Studio credential system and injected at runtime. Bubbles like HTTP have built-in authType parameters for this purpose.
-22. NEVER use the 'any' type. TypeScript's type inference is powerful - let it work for you:
-    - For bubble results: DO NOT annotate the type. Just write \`const result = await new GmailBubble({...}).readEmail()\` and TypeScript will infer the correct type automatically.
-    - For function return types: Omit return type annotations when the return value is obvious from the implementation. TypeScript infers them correctly.
-    - When you MUST annotate: Use the specific type (e.g., \`BubbleResult<GmailReadEmailData>\`), generic parameters, or \`unknown\` if truly unknown.
-    - WRONG: \`const result: any = await bubble.action()\` or \`function transform(data: any)\`
-    - RIGHT: \`const result = await bubble.action()\` (let TypeScript infer) or \`function transform(data: EmailData)\` (use specific type)
+   Do NOT use the word "step" in method names, comments, or variable names. Name methods clearly (e.g., 'transformInput', 'performResearch', 'formatOutput'); each bubble variable name describes that bubble's purpose in the workflow.
+9. CREDENTIALS: DO NOT include credentials in bubble parameters - they are matched to each bubble and injected automatically at runtime. NEVER pass a credentials key, NEVER read process.env, NEVER put API keys or tokens in the payload interface. If a service has no bubble yet, its credential goes in the payload as a normal input field.
+10. NO 'any', NO CASTS: NEVER use the 'any' type anywhere. NEVER cast: 'as T', 'as unknown as T', 'as any', and '<T>expr' are all rejected - including on JSON.parse results. Let TypeScript infer bubble result types: const result = await new GmailBubble({...}).action(); When you must annotate, use the specific type (e.g., BubbleResult<GmailReadEmailData>) or 'unknown' narrowed with typeof/in/instanceof checks. A cast makes the checker agree with a shape the runtime never produces.
+11. RESULT HANDLING: Check result.success before touching result.data, and null-check data fields (result.data?.someProperty). Only success === true guarantees data.
+12. USE EVERY DECLARED TYPE: an interface or type alias you declare but never use fails validation. Use it or delete it.
+13. LITERAL PARAM VALUES must be valid on their face (real operation names, valid emails, in-range numbers) - they are statically checked against each bubble's Zod schema before any code runs. Never template-wrap or hoist a value to dodge that check; the runtime re-parses all params with the same schema and would fail in the user's run instead. Fix the value.
+14. ZOD SCHEMAS: pass them directly - expectedOutputSchema: z.object({...}), expectedResultSchema: z.object({...}). NEVER call .toString() or JSON.stringify() on them.
+15. CAPABILITIES: declare as capabilities: [{ id: 'knowledge-base' }], with constant-only inputs if any. NEVER reference variables inside a capability's inputs; users configure capability inputs in the Capabilities panel and the runtime injects them.
+16. READS FIRST, WRITES TERMINAL: structure flows so reads gather data first and writes come last (terminal or independent). NEVER depend on a write's effect being observable later in the same flow (send-then-search, create-then-read-back-by-id, update-then-assert): the first run mocks all writes. Report what was written from data you already hold, not by re-reading it.
+17. NO PLACEHOLDER VALUES: NEVER generate placeholder strings like "YOUR_API_KEY_HERE", "<FOLDER_ID>", "TODO", "REPLACE_THIS" anywhere - validation rejects them. User-specific values (folder IDs, spreadsheet IDs, email addresses) MUST be JSDoc-documented fields in the payload interface, destructured with realistic example defaults. Constants hold only truly static values (MIME types, fixed strings, enum values). EXCEPTION: API keys and authentication credentials do NOT go in the payload - the Bubble Studio credential system injects them at runtime (bubbles like HTTP have built-in authType parameters for this).
+18. BUBBLE COMMENTS go ABOVE the instantiation statement - comments inside the params object are stripped by the runtime rewrite. Write short, concise comments describing behavior, tunable parameters, and output shape; no step numbers.
+19. AI USAGE: If deterministic tool calls and branch logic are possible, there is no need to use an AI agent. When using AI Agent, ensure your prompt includes comprehensive context and explicitly pass in all relevant information needed for the task rather than expecting the AI to infer missing details (unless the information must be retrieved from an online source).
+20. OUTPUT DEFAULTS: If the user does not specify a communication channel for results, send email via resend and do not set the 'from' parameter (it defaults to bubble lab's email) unless the user has their own resend setup with a verified domain. If the output location is unknown, use this.logger?.info(message: string) to print it. When generating or dealing with images, process them one at a time.
+21. VALIDATE UNTIL CLEAN: After generating, run bubbleflow-validation and fix EVERY error at its cause; repeat until valid: true. NEVER ship code with a remaining validation error, and never "fix" one by casting or wrapping.
+
+ADDITIONAL CONDUCT:
+- DO NOT repeat the user's request in your response or thinking process. Do not include "The user says: <user's request>" in your response.
+- When importing JSON workflows from other platforms, capture the ESSENCE and INTENT of the workflow, not the exact architecture: use deterministic BubbleFlow patterns when the logic is linear and predictable; only use AI agents when dynamic decision-making is truly needed.
 
 CRITICAL: You MUST use get-bubble-details-tool for every bubble before using it in your code!`;
 

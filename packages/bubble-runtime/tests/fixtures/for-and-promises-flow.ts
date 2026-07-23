@@ -65,7 +65,7 @@ export class RedditLeadScraperFlow extends BubbleFlow<'webhook/http'> {
       return [];
     }
 
-    return result.data.posts as RedditPost[];
+    return result.data.posts;
   }
 
   // Filters raw posts based on keywords to reduce noise before AI processing

@@ -6,8 +6,31 @@ import {
   noToStringOnExpectedOutputSchemaRule,
   noJsonStringifyOnExpectedOutputSchemaRule,
   noCapabilityInputsRule,
+  requireCronScheduleRule,
+  payloadMustExtendTriggerEventRule,
+  noNestedThrowInHandleRule,
+  noThrowInHandleRule,
+  noWideningCastRule,
+  noPlaceholderValuesRule,
   LintRuleRegistry,
 } from './lint-rules.js';
+
+function lint(
+  code: string,
+  ...rules: Parameters<LintRuleRegistry['register']>[0][]
+) {
+  const sourceFile = ts.createSourceFile(
+    'test.ts',
+    code,
+    ts.ScriptTarget.Latest,
+    true
+  );
+  const registry = new LintRuleRegistry();
+  for (const rule of rules) {
+    registry.register(rule);
+  }
+  return registry.validateAll(sourceFile);
+}
 
 describe('enforce-payload-type lint rule', () => {
   it('should error when handle payload uses wrong type for slack/bot_mentioned trigger', () => {
@@ -479,6 +502,424 @@ export class MyFlow extends BubbleFlow<'webhook/http'> {
 
     const errors = registry.validateAll(sourceFile);
 
+    expect(errors.length).toBe(0);
+  });
+});
+
+describe('require-cron-schedule lint rule', () => {
+  it('should error when a schedule/cron flow has no cronSchedule property', () => {
+    const errors = lint(
+      `
+import { BubbleFlow, type CronEvent } from '@bubblelab/bubble-core';
+
+export class DailyFlow extends BubbleFlow<'schedule/cron'> {
+  async handle(payload: CronEvent) {
+    return { ok: true };
+  }
+}
+`,
+      requireCronScheduleRule
+    );
+    expect(errors.length).toBe(1);
+    expect(errors[0].message).toContain('cronSchedule');
+    expect(errors[0].message).toContain('schedule/cron');
+  });
+
+  it('should error when cronSchedule is not a plain string literal', () => {
+    const errors = lint(
+      `
+import { BubbleFlow, type CronEvent } from '@bubblelab/bubble-core';
+
+export class DailyFlow extends BubbleFlow<'schedule/cron'> {
+  readonly cronSchedule = ['0', '0', '*', '*', '*'].join(' ');
+  async handle(payload: CronEvent) {
+    return { ok: true };
+  }
+}
+`,
+      requireCronScheduleRule
+    );
+    expect(errors.length).toBe(1);
+    expect(errors[0].message).toContain('string literal');
+  });
+
+  it('should error when cronSchedule is an invalid cron expression', () => {
+    const errors = lint(
+      `
+import { BubbleFlow, type CronEvent } from '@bubblelab/bubble-core';
+
+export class DailyFlow extends BubbleFlow<'schedule/cron'> {
+  readonly cronSchedule = 'every day at nine';
+  async handle(payload: CronEvent) {
+    return { ok: true };
+  }
+}
+`,
+      requireCronScheduleRule
+    );
+    expect(errors.length).toBe(1);
+    expect(errors[0].message).toContain('Invalid cron expression');
+  });
+
+  it('should not error when a valid literal cronSchedule is declared', () => {
+    const errors = lint(
+      `
+import { BubbleFlow, type CronEvent } from '@bubblelab/bubble-core';
+
+export class DailyFlow extends BubbleFlow<'schedule/cron'> {
+  readonly cronSchedule = '0 9 * * *';
+  async handle(payload: CronEvent) {
+    return { ok: true };
+  }
+}
+`,
+      requireCronScheduleRule
+    );
+    expect(errors.length).toBe(0);
+  });
+
+  it('should not apply to non-cron triggers', () => {
+    const errors = lint(
+      `
+import { BubbleFlow, type WebhookEvent } from '@bubblelab/bubble-core';
+
+export class WebFlow extends BubbleFlow<'webhook/http'> {
+  async handle(payload: WebhookEvent) {
+    return { ok: true };
+  }
+}
+`,
+      requireCronScheduleRule
+    );
+    expect(errors.length).toBe(0);
+  });
+});
+
+describe('payload-must-extend-trigger-event lint rule', () => {
+  it('should error when a custom payload interface does not extend the trigger event', () => {
+    const errors = lint(
+      `
+import { BubbleFlow } from '@bubblelab/bubble-core';
+
+export interface MyPayload {
+  email: string;
+}
+
+export class MyFlow extends BubbleFlow<'webhook/http'> {
+  async handle(payload: MyPayload) {
+    return { ok: true };
+  }
+}
+`,
+      payloadMustExtendTriggerEventRule
+    );
+    expect(errors.length).toBe(1);
+    expect(errors[0].message).toContain("must extend 'WebhookEvent'");
+  });
+
+  it('should error when the payload interface extends the wrong base event', () => {
+    const errors = lint(
+      `
+import { BubbleFlow, type CronEvent } from '@bubblelab/bubble-core';
+
+export interface MyPayload extends CronEvent {
+  email: string;
+}
+
+export class MyFlow extends BubbleFlow<'webhook/http'> {
+  async handle(payload: MyPayload) {
+    return { ok: true };
+  }
+}
+`,
+      payloadMustExtendTriggerEventRule
+    );
+    expect(errors.length).toBe(1);
+    expect(errors[0].message).toContain("must extend 'WebhookEvent'");
+  });
+
+  it('should not error when the payload interface extends the trigger event', () => {
+    const errors = lint(
+      `
+import { BubbleFlow, type WebhookEvent } from '@bubblelab/bubble-core';
+
+export interface MyPayload extends WebhookEvent {
+  email: string;
+}
+
+export class MyFlow extends BubbleFlow<'webhook/http'> {
+  async handle(payload: MyPayload) {
+    return { ok: true };
+  }
+}
+`,
+      payloadMustExtendTriggerEventRule
+    );
+    expect(errors.length).toBe(0);
+  });
+
+  it('should resolve a chain of interfaces to the trigger event', () => {
+    const errors = lint(
+      `
+import { BubbleFlow, type WebhookEvent } from '@bubblelab/bubble-core';
+
+interface BasePayload extends WebhookEvent {
+  email: string;
+}
+
+export interface MyPayload extends BasePayload {
+  name: string;
+}
+
+export class MyFlow extends BubbleFlow<'webhook/http'> {
+  async handle(payload: MyPayload) {
+    return { ok: true };
+  }
+}
+`,
+      payloadMustExtendTriggerEventRule
+    );
+    expect(errors.length).toBe(0);
+  });
+
+  it('should not error when the base trigger event type is used directly', () => {
+    const errors = lint(
+      `
+import { BubbleFlow, type WebhookEvent } from '@bubblelab/bubble-core';
+
+export class MyFlow extends BubbleFlow<'webhook/http'> {
+  async handle(payload: WebhookEvent) {
+    return { ok: true };
+  }
+}
+`,
+      payloadMustExtendTriggerEventRule
+    );
+    expect(errors.length).toBe(0);
+  });
+});
+
+describe('no-nested-throw-in-handle lint rule', () => {
+  it('should error on a throw nested inside an if block in handle', () => {
+    const errors = lint(
+      `
+import { BubbleFlow, type WebhookEvent } from '@bubblelab/bubble-core';
+
+export class MyFlow extends BubbleFlow<'webhook/http'> {
+  async handle(payload: WebhookEvent) {
+    if (!payload.body) {
+      throw new Error('missing body');
+    }
+    return { ok: true };
+  }
+}
+`,
+      noNestedThrowInHandleRule
+    );
+    expect(errors.length).toBe(1);
+    expect(errors[0].message).toContain('throw statements are not allowed');
+  });
+
+  it('should error on a throw nested inside a for loop in handle', () => {
+    const errors = lint(
+      `
+import { BubbleFlow, type WebhookEvent } from '@bubblelab/bubble-core';
+
+export class MyFlow extends BubbleFlow<'webhook/http'> {
+  async handle(payload: WebhookEvent) {
+    for (const item of ['a', 'b']) {
+      if (item === 'a') {
+        throw new Error('bad item');
+      }
+    }
+    return { ok: true };
+  }
+}
+`,
+      noNestedThrowInHandleRule
+    );
+    expect(errors.length).toBe(1);
+  });
+
+  it('should not double-report a direct throw already caught by no-throw-in-handle', () => {
+    const code = `
+import { BubbleFlow, type WebhookEvent } from '@bubblelab/bubble-core';
+
+export class MyFlow extends BubbleFlow<'webhook/http'> {
+  async handle(payload: WebhookEvent) {
+    throw new Error('direct');
+  }
+}
+`;
+    const deepErrors = lint(code, noNestedThrowInHandleRule);
+    expect(deepErrors.length).toBe(0);
+    const shallowErrors = lint(code, noThrowInHandleRule);
+    expect(shallowErrors.length).toBe(1);
+    const combined = lint(code, noThrowInHandleRule, noNestedThrowInHandleRule);
+    expect(combined.length).toBe(1);
+  });
+
+  it('should not error on throws in private methods', () => {
+    const errors = lint(
+      `
+import { BubbleFlow, type WebhookEvent } from '@bubblelab/bubble-core';
+
+export class MyFlow extends BubbleFlow<'webhook/http'> {
+  async handle(payload: WebhookEvent) {
+    const cleaned = this.cleanInput(payload.path);
+    return { cleaned };
+  }
+
+  // Trims the incoming path and rejects blank values
+  private cleanInput(input: string): string {
+    if (!input.trim()) {
+      throw new Error('blank input');
+    }
+    return input.trim();
+  }
+}
+`,
+      noNestedThrowInHandleRule
+    );
+    expect(errors.length).toBe(0);
+  });
+});
+
+describe('no-widening-cast lint rule', () => {
+  it('should error on a plain as-cast of JSON.parse', () => {
+    const errors = lint(
+      `
+interface Config { retries: number }
+const config = JSON.parse('{"retries":3}') as Config;
+`,
+      noWideningCastRule
+    );
+    expect(errors.length).toBe(1);
+    expect(errors[0].message).toContain("'as Config'");
+    expect(errors[0].message).toContain('JSON.parse');
+  });
+
+  it('should error once on an as-unknown-as chain', () => {
+    const errors = lint(
+      `
+const value = getValue() as unknown as string;
+`,
+      noWideningCastRule
+    );
+    expect(errors.length).toBe(1);
+    expect(errors[0].message).toContain('unknown/any');
+  });
+
+  it('should error on as any', () => {
+    const errors = lint(
+      `
+const value = getValue() as any;
+`,
+      noWideningCastRule
+    );
+    expect(errors.length).toBe(1);
+  });
+
+  it('should error on angle-bracket assertions', () => {
+    const errors = lint(
+      `
+const value = <string>getValue();
+`,
+      noWideningCastRule
+    );
+    expect(errors.length).toBe(1);
+  });
+
+  it('should allow as const assertions', () => {
+    const errors = lint(
+      `
+const levels = ['low', 'medium', 'high'] as const;
+`,
+      noWideningCastRule
+    );
+    expect(errors.length).toBe(0);
+  });
+
+  it('should not error on cast-free code', () => {
+    const errors = lint(
+      `
+import { BubbleFlow, GmailBubble, type WebhookEvent } from '@bubblelab/bubble-core';
+
+export class MyFlow extends BubbleFlow<'webhook/http'> {
+  async handle(payload: WebhookEvent) {
+    const emails = await this.fetchEmails();
+    return { emails };
+  }
+
+  // Reads the latest unread emails from the inbox
+  private async fetchEmails() {
+    const result = await new GmailBubble({ operation: 'read_emails', maxResults: 5 }).action();
+    if (!result.success) {
+      return [];
+    }
+    return result.data?.emails ?? [];
+  }
+}
+`,
+      noWideningCastRule
+    );
+    expect(errors.length).toBe(0);
+  });
+});
+
+describe('no-placeholder-values lint rule', () => {
+  it('should flag YOUR_* placeholder constants', () => {
+    const errors = lint(
+      `
+const TELEGRAM_CHAT_ID = 'YOUR_TELEGRAM_CHAT_ID';
+`,
+      noPlaceholderValuesRule
+    );
+    expect(errors.length).toBe(1);
+    expect(errors[0].message).toContain('YOUR_TELEGRAM_CHAT_ID');
+  });
+
+  it('should flag angle-bracket placeholder strings', () => {
+    const errors = lint(
+      `
+const folderId = '<FOLDER_ID>';
+`,
+      noPlaceholderValuesRule
+    );
+    expect(errors.length).toBe(1);
+    expect(errors[0].message).toContain('angle-bracket');
+  });
+
+  it('should flag TODO-style placeholder strings', () => {
+    const errors = lint(
+      `
+const apiUrl = 'TODO';
+const other = 'REPLACE_ME';
+`,
+      noPlaceholderValuesRule
+    );
+    expect(errors.length).toBe(2);
+  });
+
+  it('should flag placeholders inside template literal chunks', () => {
+    const errors = lint(
+      'const msg = `Sending to YOUR_CHANNEL_ID for ${user}`;',
+      noPlaceholderValuesRule
+    );
+    expect(errors.length).toBe(1);
+  });
+
+  it('should not flag realistic example defaults or HTML strings', () => {
+    const errors = lint(
+      `
+const email = 'user@example.com';
+const spreadsheetId = '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms';
+const channelId = 'C01234567AB';
+const html = '<html><b>bold</b></html>';
+const prompt = 'Summarize the TODO items found in the document';
+`,
+      noPlaceholderValuesRule
+    );
     expect(errors.length).toBe(0);
   });
 });
