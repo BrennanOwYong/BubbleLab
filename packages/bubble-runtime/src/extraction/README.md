@@ -114,6 +114,17 @@ When the same bubble definition appears in multiple method calls, each call need
 - Accurate execution logging with distinct IDs
 - Proper token/usage tracking per invocation
 
+### When Cloning Happens
+
+Cloning only happens for methods with MORE THAN ONE call site. A method
+invoked exactly once needs no disambiguation: its bubbles keep their parser
+variableIds, the persisted bubble_parameters map holds ONE canonical entry
+per bubble, and LoggerInjector emits no `__setInvocationCallSiteKey` around
+the call (so runtime bubble telemetry also uses the parser ids). Cloning a
+single-call method used to persist two entries per bubble (parser id + hash
+clone id), which doubled credential slots in the studio and split bindings
+across the two keys.
+
 ### How Cloning Works
 
 ```

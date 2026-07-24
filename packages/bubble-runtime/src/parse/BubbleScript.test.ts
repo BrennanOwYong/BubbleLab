@@ -663,7 +663,10 @@ describe('BubbleScript.getWorkflow()', () => {
     const bubbleIdsFromTraversal = new Set<number>();
     collectBubbleIds(workflow.root, bubbleIdsFromTraversal);
     const totalBubblesInWorkflow = bubbleIdsFromTraversal.size;
-    expect(totalBubblesInWorkflow * 2).toEqual(totalParsedBubbles);
+    // Every method in this fixture is invoked exactly once, so no
+    // per-invocation clones exist: the parsed bubble map holds one canonical
+    // entry per bubble and the workflow references those same ids.
+    expect(totalBubblesInWorkflow).toEqual(totalParsedBubbles);
   });
 
   it('should get workflow from reddit scraper script', () => {

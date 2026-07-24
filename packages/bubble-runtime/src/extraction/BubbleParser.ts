@@ -120,6 +120,17 @@ export class BubbleParser {
    * (e.g., once in .map() callback processing, again in Promise.all resolution)
    */
   private processedCallSiteIndexes: Map<string, number> = new Map();
+  /**
+   * Total invocation call sites per instance method (from
+   * findMethodInvocations). Per-invocation bubble cloning only happens for
+   * methods with MORE THAN ONE call site: a single-call method needs no
+   * disambiguation, and cloning it would persist two bubble_parameters
+   * entries (original parser id + hash clone id) for one real bubble,
+   * doubling credential slots in the studio. LoggerInjector applies the
+   * same >1 rule when deciding whether to emit __setInvocationCallSiteKey,
+   * so parser ids and runtime telemetry ids stay in lockstep.
+   */
+  private methodInvocationTotals: Map<string, number> = new Map();
   /** Custom tool func ranges for marking bubbles inside custom tools */
   private customToolFuncs: CustomToolFuncInfo[] = [];
 
@@ -177,6 +188,7 @@ export class BubbleParser {
       const invocations = this.findMethodInvocations(ast, methodNames);
 
       // Combine method locations with invocation lines
+      this.methodInvocationTotals.clear();
       for (const method of methods) {
         instanceMethodsLocation[method.methodName] = {
           startLine: method.startLine,
@@ -185,6 +197,10 @@ export class BubbleParser {
           bodyStartLine: method.bodyStartLine,
           invocationLines: invocations[method.methodName] || [],
         };
+        this.methodInvocationTotals.set(
+          method.methodName,
+          (invocations[method.methodName] || []).length
+        );
       }
     }
 
@@ -3839,8 +3855,18 @@ export class BubbleParser {
       shouldTrackInvocation && invocationIndex > 0
         ? buildCallSiteKey(callInfo.functionName, invocationIndex)
         : null;
+    // Clone bubbles per invocation ONLY when the method has multiple call
+    // sites. A single-call method keeps its parser variableIds: cloning it
+    // would add a second hash-keyed copy of every bubble to the persisted
+    // bubble_parameters map. callSiteKey itself stays non-null so the
+    // function_call workflow node id still matches LoggerInjector's
+    // function-call telemetry id (hash of "method#1").
+    const hasMultipleInvocations =
+      (this.methodInvocationTotals.get(callInfo.functionName) ?? 0) > 1;
     const invocationCloneMap =
-      callSiteKey !== null ? new Map<number, number>() : null;
+      callSiteKey !== null && hasMultipleInvocations
+        ? new Map<number, number>()
+        : null;
     const fallbackCallSiteKey = `${callInfo.functionName}:${location.startLine}:${location.startCol}`;
 
     if (methodChildren.length > 0) {

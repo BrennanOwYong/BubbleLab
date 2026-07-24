@@ -666,3 +666,111 @@ describe('BubbleParser Promise.all parsing', () => {
     }
   });
 });
+
+describe('per-invocation cloning scope', () => {
+  let bubbleFactory: BubbleFactory;
+
+  const SINGLE_INVOCATION_FLOW = `
+import { BubbleFlow, ResendBubble, WebScrapeTool, type WebhookEvent } from '@bubblelab/bubble-core';
+
+export class SingleInvocationFlow extends BubbleFlow<'webhook/http'> {
+  private async scrapePage(url: string) {
+    const scraper = new WebScrapeTool({ url, format: 'markdown' });
+    return await scraper.action();
+  }
+
+  private async sendReport(html: string) {
+    const emailSender = new ResendBubble({
+      operation: 'send_email',
+      to: ['user@example.com'],
+      subject: 'report',
+      html,
+    });
+    return await emailSender.action();
+  }
+
+  async handle(payload: WebhookEvent) {
+    const scraped = await this.scrapePage('https://example.com');
+    const sent = await this.sendReport(String(scraped.data?.content ?? ''));
+    return { message: String(sent.success) };
+  }
+}
+`;
+
+  beforeEach(async () => {
+    bubbleFactory = new BubbleFactory();
+    await bubbleFactory.registerDefaults();
+  });
+
+  function parseScript(script: string) {
+    const ast = parse(script, {
+      range: true,
+      loc: true,
+      sourceType: 'module',
+      ecmaVersion: 2022,
+    });
+    const scopeManager = analyze(ast, { sourceType: 'module' });
+    return new BubbleParser(script).parseBubblesFromAST(
+      bubbleFactory,
+      ast,
+      scopeManager
+    );
+  }
+
+  it('persists exactly ONE bubble entry per bubble when each method is invoked once (no hash-keyed clones)', () => {
+    const parseResult = parseScript(SINGLE_INVOCATION_FLOW);
+    const entries = Object.values(parseResult.bubbles);
+
+    // One entry per real bubble: WebScrapeTool + ResendBubble
+    expect(entries.length).toBe(2);
+
+    // No entry is a per-invocation clone
+    for (const bubble of entries) {
+      expect(bubble.invocationCallSiteKey).toBeUndefined();
+      expect(bubble.clonedFromVariableId).toBeUndefined();
+      // Canonical key scheme: entry key == parser variableId
+      expect(parseResult.bubbles[bubble.variableId]).toBe(bubble);
+    }
+
+    // The workflow tree references the canonical parser variableIds, so the
+    // studio's step graph resolves against the same single entry
+    const referencedIds = new Set<number>();
+    const collect = (nodes: unknown[]): void => {
+      for (const node of nodes as Array<Record<string, unknown>>) {
+        if (!node || typeof node !== 'object') continue;
+        if (node.type === 'bubble' && typeof node.variableId === 'number') {
+          referencedIds.add(node.variableId);
+        }
+        for (const key of ['children', 'elseBranch', 'catchBlock']) {
+          if (Array.isArray(node[key])) collect(node[key] as unknown[]);
+        }
+      }
+    };
+    collect(parseResult.workflow.root as unknown[]);
+    for (const id of referencedIds) {
+      expect(parseResult.bubbles[id]).toBeDefined();
+    }
+  });
+
+  it('still clones per invocation when a method has MULTIPLE call sites', () => {
+    const bubbleScript = getFixture('flow-with-class-method-and-log');
+    const parseResult = parseScript(bubbleScript);
+    const entries = Object.values(parseResult.bubbles);
+
+    // processJobsAndSendEmail has multiple call sites -> its ResendBubble
+    // must have per-invocation clones so each call site keeps a distinct
+    // identity (the parser dedupes call sites reached through the same AST
+    // node, so the clone count can be below the textual count)
+    const resendClones = entries.filter(
+      (b) =>
+        b.bubbleName === 'resend' &&
+        b.invocationCallSiteKey?.startsWith('processJobsAndSendEmail#')
+    );
+    expect(resendClones.length).toBeGreaterThanOrEqual(2);
+    const cloneKeys = new Set(resendClones.map((b) => b.invocationCallSiteKey));
+    expect(cloneKeys.size).toBe(resendClones.length);
+    for (const clone of resendClones) {
+      expect(typeof clone.clonedFromVariableId).toBe('number');
+    }
+  });
+});

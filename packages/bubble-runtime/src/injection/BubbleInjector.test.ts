@@ -776,13 +776,6 @@ describe('BubbleInjector.injectCredentials()', () => {
           credentialId: 17,
           metadata: undefined,
         },
-        {
-          bubbleVarId: 798456,
-          secret: 'fake-telegram-bot-token-pqrst',
-          credentialType: CredentialType.TELEGRAM_BOT_TOKEN,
-          credentialId: 17,
-          metadata: undefined,
-        },
       ];
 
       const systemCredentials: Partial<Record<CredentialType, string>> = {
@@ -810,9 +803,12 @@ describe('BubbleInjector.injectCredentials()', () => {
 
       expect(result.success).toBe(true);
       expect(result.injectedCredentials).toBeDefined();
+      // Single-call methods no longer produce per-invocation bubble clones,
+      // so injection targets the six real bubbles (one entry each) instead of
+      // originals + hash-keyed clones.
       expect(
         Object.keys(result.injectedCredentials!).length
-      ).toBeGreaterThanOrEqual(8);
+      ).toBeGreaterThanOrEqual(6);
       console.log(result.injectedCredentials);
       console.log(result.injectedCredentials);
       expect(
