@@ -325,9 +325,17 @@ function BubbleNode({ data }: BubbleNodeProps) {
       ? bubbleKey
       : parseInt(String(bubbleKey), 10));
 
-  // Determine credentials key (try variableId, variableName, bubbleName, fallback to bubbleKey)
+  // Determine credentials key: canonical across invocation twins — a clone
+  // (clonedFromVariableId set) resolves to its ORIGINAL's variableId so the
+  // original entry and every clone share ONE pendingCredentials slot. Chain
+  // mirrors bindingKeyForBubble (credentialBinding.ts).
+  const canonicalCredentialId =
+    bubble.clonedFromVariableId ?? bubble.variableId;
   const credentialsKey = String(
-    bubble.variableId || bubble.variableName || bubble.bubbleName || bubbleKey
+    canonicalCredentialId ||
+      bubble.variableName ||
+      bubble.bubbleName ||
+      bubbleKey
   );
 
   // Subscribe to execution store state for this bubble (using selectors to avoid re-renders from events)
@@ -452,40 +460,6 @@ function BubbleNode({ data }: BubbleNodeProps) {
     return selectedId === undefined || selectedId === null;
   });
 
-  /**
-   * Keys of this bubble's ORIGINAL/CLONE partners in bubbleParameters: the
-   * original when this is a clone (invocationCallSiteKey set), every clone
-   * when this is the original. Partners share one credential selection.
-   */
-  const getClonePartnerKeys = (): string[] => {
-    const bubbleParameters = currentFlow?.bubbleParameters;
-    if (!bubbleParameters) return [];
-    const partnerKeys: string[] = [];
-    if (
-      bubble.invocationCallSiteKey &&
-      bubble.clonedFromVariableId !== undefined
-    ) {
-      // This is a clone - find the original bubble
-      Object.entries(bubbleParameters).forEach(([key, otherBubble]) => {
-        if (otherBubble.variableId === bubble.clonedFromVariableId) {
-          partnerKeys.push(key);
-        }
-      });
-    }
-    if (!bubble.invocationCallSiteKey) {
-      // This is an original - find all its clones
-      Object.entries(bubbleParameters).forEach(([key, otherBubble]) => {
-        if (
-          otherBubble.invocationCallSiteKey &&
-          otherBubble.clonedFromVariableId === bubble.variableId
-        ) {
-          partnerKeys.push(key);
-        }
-      });
-    }
-    return partnerKeys;
-  };
-
   const handleCredentialChange = (credType: string, credId: number | null) => {
     const previousId = selectedBubbleCredentials[credType] ?? null;
     if (credId !== null && credId !== previousId) {
@@ -498,19 +472,18 @@ function BubbleNode({ data }: BubbleNodeProps) {
         source: 'bubble_node',
       });
     }
-    // Update credential for this bubble and its clone partners
+    // credentialsKey is canonical across invocation twins, so one write
+    // covers this bubble, its original, and every sibling clone.
     setCredential(credentialsKey, credType, credId);
-    for (const key of getClonePartnerKeys()) {
-      setCredential(key, credType, credId);
-    }
   };
 
   /**
    * One credential per tool type: a credential added from this node binds to
    * EVERY step requiring the type, not only the clicked slot. The clicked
-   * slot and its clone partners are also bound directly, covering bubbles
-   * whose keys are absent from the flow's requiredCredentials (fallback-typed
-   * slots). usePersistCredentialBindings persists the store changes.
+   * slot (canonical across its invocation twins) is also bound directly,
+   * covering bubbles whose keys are absent from the flow's
+   * requiredCredentials (fallback-typed slots). usePersistCredentialBindings
+   * persists the store changes.
    */
   const handleCredentialCreated = (
     credType: string,
@@ -528,10 +501,9 @@ function BubbleNode({ data }: BubbleNodeProps) {
         setCredential
       )
     );
-    for (const key of [credentialsKey, ...getClonePartnerKeys()]) {
-      if (boundKeys.has(key)) continue;
-      setCredential(key, credType, created.id);
-      boundKeys.add(key);
+    if (!boundKeys.has(credentialsKey)) {
+      setCredential(credentialsKey, credType, created.id);
+      boundKeys.add(credentialsKey);
     }
     emitTelemetry('setup.credential_switched', {
       flowId,

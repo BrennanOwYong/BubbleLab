@@ -47,6 +47,13 @@ export interface AutoBindResult {
   bubbleParameters: Record<string, ParsedBubbleWithInfo>;
   /** Every slot this call bound; empty when nothing was missing or bindable. */
   bound: AutoBoundSlot[];
+  /**
+   * True when unionTwinCredentials changed at least one entry (a split
+   * original/clone binding was converged or mirrored). Callers persist when
+   * bound is non-empty OR healed is true — this is the lazy migration path
+   * for flows written before twin credentials were kept in lockstep.
+   */
+  healed: boolean;
 }
 
 /** The credential types already bound (numeric id or id array) on a bubble. */
@@ -101,17 +108,106 @@ function bindCredentialOnBubble(
     credentialId;
 }
 
+/** The credentials parameter value of a bubble, when it is a proper object. */
+function credentialsValueOf(
+  bubble: ParsedBubbleWithInfo
+): Record<string, unknown> | undefined {
+  const credentialsParam = bubble.parameters.find(
+    (p) => p.name === 'credentials'
+  );
+  if (
+    credentialsParam &&
+    typeof credentialsParam.value === 'object' &&
+    credentialsParam.value !== null &&
+    !Array.isArray(credentialsParam.value)
+  ) {
+    return credentialsParam.value as Record<string, unknown>;
+  }
+  return undefined;
+}
+
+/**
+ * Union credential bindings across per-invocation twins (an original bubble
+ * entry and its invocation clones — see isInvocationClone) so every twin
+ * carries the SAME bindings. Per credential type the original's non-null
+ * value wins; a type only a clone carries fills the gap (this converges the
+ * legacy split-binding state where one twin looked unbound while the other
+ * was bound). Mutates the entries in place; returns whether anything changed.
+ */
+export function unionTwinCredentials(
+  bubbleParameters: Record<string, ParsedBubbleWithInfo>
+): boolean {
+  let changed = false;
+  const originalsById = new Map<number, ParsedBubbleWithInfo>();
+  const cloneGroups = new Map<number, ParsedBubbleWithInfo[]>();
+  for (const bubble of Object.values(bubbleParameters)) {
+    if (typeof bubble.clonedFromVariableId === 'number') {
+      const group = cloneGroups.get(bubble.clonedFromVariableId) ?? [];
+      group.push(bubble);
+      cloneGroups.set(bubble.clonedFromVariableId, group);
+    } else if (typeof bubble.variableId === 'number') {
+      originalsById.set(bubble.variableId, bubble);
+    }
+  }
+  for (const [originalId, clones] of cloneGroups) {
+    const original = originalsById.get(originalId);
+    // Original first: its values win conflicts; clones fill remaining gaps in
+    // entry order (deterministic).
+    const members = original ? [original, ...clones] : clones;
+    const merged: Record<string, unknown> = {};
+    for (const member of members) {
+      const value = credentialsValueOf(member);
+      if (!value) continue;
+      for (const [credType, credId] of Object.entries(value)) {
+        if (
+          merged[credType] === undefined &&
+          credId !== null &&
+          credId !== undefined
+        ) {
+          merged[credType] = credId;
+        }
+      }
+    }
+    if (Object.keys(merged).length === 0) continue;
+    for (const member of members) {
+      const existing = credentialsValueOf(member);
+      if (JSON.stringify(existing ?? {}) === JSON.stringify(merged)) continue;
+      let credentialsParam = member.parameters.find(
+        (p) => p.name === 'credentials'
+      );
+      if (!credentialsParam) {
+        credentialsParam = {
+          name: 'credentials',
+          value: {},
+          type: BubbleParameterType.OBJECT,
+        };
+        member.parameters.push(credentialsParam);
+      }
+      credentialsParam.value = { ...merged };
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 /**
  * Fill every unbound required-credential slot that has at least one covering
  * credential, picking the single best deterministically (see module doc).
  * Reads the database only when at least one slot is missing, so bound-through
  * flows cost nothing extra.
+ *
+ * Twin invariant: before computing missing slots, existing split bindings
+ * between an original entry and its invocation clones are converged
+ * (unionTwinCredentials); after binding, new binds are mirrored onto the
+ * clones the same way. requiredCredentials itself never lists clone entries,
+ * so binding decisions run once per real bubble.
  */
 export async function autoBindMissingCredentials(
   userId: string,
   bubbleParameters: Record<string, ParsedBubbleWithInfo>
 ): Promise<AutoBindResult> {
   const bound: AutoBoundSlot[] = [];
+  const healed = unionTwinCredentials(bubbleParameters);
   const requiredCredentials = extractRequiredCredentials(bubbleParameters);
 
   // Collect missing (bubbleKey, credentialType) slots before touching the DB.
@@ -132,7 +228,7 @@ export async function autoBindMissingCredentials(
     }
   }
   if (missingSlots.length === 0) {
-    return { bubbleParameters, bound };
+    return { bubbleParameters, bound, healed };
   }
 
   const missingTypes = [
@@ -217,5 +313,10 @@ export async function autoBindMissingCredentials(
     }
   }
 
-  return { bubbleParameters, bound };
+  // Mirror the fresh binds onto invocation clones so every twin agrees.
+  if (bound.length > 0) {
+    unionTwinCredentials(bubbleParameters);
+  }
+
+  return { bubbleParameters, bound, healed };
 }

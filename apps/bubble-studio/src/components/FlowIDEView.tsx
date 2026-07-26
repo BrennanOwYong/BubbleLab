@@ -176,7 +176,18 @@ export function FlowIDEView({ flowId }: FlowIDEViewProps) {
             });
 
             if (Object.keys(bubbleCredentials).length > 0) {
-              extractedCredentials[key] = bubbleCredentials;
+              // Invocation-clone entries fold into their ORIGINAL's key so
+              // the store holds one slot per real bubble; on a conflict the
+              // original entry's values win, clones only fill gaps.
+              const clonedFrom = (bubble as { clonedFromVariableId?: number })
+                .clonedFromVariableId;
+              const canonicalKey =
+                typeof clonedFrom === 'number' ? String(clonedFrom) : key;
+              const existing = extractedCredentials[canonicalKey] ?? {};
+              extractedCredentials[canonicalKey] =
+                typeof clonedFrom === 'number'
+                  ? { ...bubbleCredentials, ...existing }
+                  : { ...existing, ...bubbleCredentials };
             }
           }
         }

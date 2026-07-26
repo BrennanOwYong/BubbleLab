@@ -252,7 +252,18 @@ function FlowVisualizerInner({
           });
 
           if (Object.keys(bubbleCredentials).length > 0) {
-            savedCredentials[key] = bubbleCredentials;
+            // Invocation-clone entries fold into their ORIGINAL's key —
+            // mirrors the FlowIDEView extraction so the unsaved-changes
+            // comparison against pendingCredentials (canonical keys) holds.
+            const clonedFrom = (bubble as { clonedFromVariableId?: number })
+              .clonedFromVariableId;
+            const canonicalKey =
+              typeof clonedFrom === 'number' ? String(clonedFrom) : key;
+            const existing = savedCredentials[canonicalKey] ?? {};
+            savedCredentials[canonicalKey] =
+              typeof clonedFrom === 'number'
+                ? { ...bubbleCredentials, ...existing }
+                : { ...existing, ...bubbleCredentials };
           }
         }
       }
@@ -1161,7 +1172,13 @@ function FlowVisualizerInner({
             bubble,
             bubbleKey: key,
             requiredCredentialTypes: (() => {
+              // requiredCredentials keys only ORIGINAL entries (clone entries
+              // carry no slot of their own), so a clone node resolves its
+              // types through clonedFromVariableId first.
+              const clonedFrom = (bubble as { clonedFromVariableId?: number })
+                .clonedFromVariableId;
               const keyCandidates = [
+                typeof clonedFrom === 'number' ? String(clonedFrom) : undefined,
                 String(bubble.variableId),
                 bubble.variableName,
                 bubble.bubbleName,
@@ -1735,7 +1752,13 @@ function FlowVisualizerInner({
             bubble,
             bubbleKey: key,
             requiredCredentialTypes: (() => {
+              // requiredCredentials keys only ORIGINAL entries (clone entries
+              // carry no slot of their own), so a clone node resolves its
+              // types through clonedFromVariableId first.
+              const clonedFrom = (bubble as { clonedFromVariableId?: number })
+                .clonedFromVariableId;
               const keyCandidates = [
+                typeof clonedFrom === 'number' ? String(clonedFrom) : undefined,
                 String(bubble.variableId),
                 bubble.variableName,
                 bubble.bubbleName,

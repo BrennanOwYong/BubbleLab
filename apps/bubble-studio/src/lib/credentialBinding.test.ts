@@ -10,6 +10,7 @@ import type {
 } from '@bubblelab/shared-schemas';
 import {
   bindCredentialToAllSteps,
+  bindingKeyForBubble,
   computeAutoBindings,
   computeSuiteBindingProposals,
   credentialCoversTypeByRecord,
@@ -652,5 +653,49 @@ describe('computeScopeCoverage (shared-schemas — the API record derivation)', 
     expect(
       computeScopeCoverage(CredentialType.SLACK_CRED, ['chat:write'])
     ).toEqual([]);
+  });
+});
+
+describe('bindingKeyForBubble', () => {
+  /** A per-invocation clone of `original` (the parser's twin entry). */
+  function cloneOf(
+    original: ParsedBubbleWithInfo,
+    cloneVariableId: number,
+    callSiteKey: string
+  ): ParsedBubbleWithInfo {
+    return {
+      ...bubble(cloneVariableId, original.bubbleName),
+      invocationCallSiteKey: callSiteKey,
+      clonedFromVariableId: original.variableId,
+    } as unknown as ParsedBubbleWithInfo;
+  }
+
+  it('maps a clone entry and its original to the SAME canonical key', () => {
+    const original = bubble(514, 'google-sheets');
+    const clone = cloneOf(original, 571192, 'readPerformanceRows#1');
+
+    expect(bindingKeyForBubble(original, '514')).toBe('514');
+    expect(bindingKeyForBubble(clone, '571192')).toBe('514');
+  });
+
+  it('maps sibling clones of one original to one key', () => {
+    const original = bubble(586, 'gmail');
+    const first = cloneOf(original, 700000, 'sendReportEmail#1');
+    const second = cloneOf(original, 700001, 'sendReportEmail#2');
+
+    expect(bindingKeyForBubble(first, '700000')).toBe(
+      bindingKeyForBubble(second, '700001')
+    );
+    expect(bindingKeyForBubble(first, '700000')).toBe('586');
+  });
+
+  it('keeps the variableName/bubbleName/fallback chain for clone-less bubbles', () => {
+    const noId = {
+      variableName: 'sendMail',
+      bubbleName: 'gmail',
+      parameters: [],
+    } as unknown as ParsedBubbleWithInfo;
+    expect(bindingKeyForBubble(noId, 'fallback')).toBe('sendMail');
+    expect(bindingKeyForBubble(bubble(42), 'fallback')).toBe('42');
   });
 });
