@@ -67,7 +67,10 @@ import {
 } from '../utils/error-handler.js';
 import { getCurrentWebhookUsage } from '../services/subscription-validation.js';
 import { executeBubbleFlowWithTracking } from '../services/bubble-flow-execution.js';
-import { autoBindMissingCredentials } from '../services/credential-auto-bind.js';
+import {
+  autoBindMissingCredentials,
+  unionTwinCredentials,
+} from '../services/credential-auto-bind.js';
 import { resolveAccountEmailDefaults } from '../services/account-email-defaults.js';
 import { runBubbleFlow } from '../services/execution.js';
 import {
@@ -661,8 +664,11 @@ app.openapi(getBubbleFlowRoute, async (c) => {
   // persist them here so the flow binds without an editor session ever
   // mounting it. autoBindMissingCredentials returns without touching the DB
   // when no slot is unbound, so bound-through flows pay nothing.
+  // healed covers the lazy twin-credential migration: flows persisted with
+  // split original/clone bindings converge here on first load and the merged
+  // state is written back, so the split never resurfaces.
   const autoBind = await autoBindMissingCredentials(userId, bubbleParameters);
-  if (autoBind.bound.length > 0) {
+  if (autoBind.bound.length > 0 || autoBind.healed) {
     bubbleParameters = autoBind.bubbleParameters;
     await db
       .update(bubbleFlows)
@@ -764,6 +770,11 @@ app.openapi(updateBubbleFlowRoute, async (c) => {
       400
     );
   }
+
+  // The studio writes credential bindings under canonical (original) keys
+  // only; mirror them onto invocation-clone twins before persisting so every
+  // twin agrees (execution and older readers resolve by either id).
+  unionTwinCredentials(newParams);
 
   // Update the bubble parameters
   await db

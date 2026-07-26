@@ -14,7 +14,10 @@ import { TEST_USER_ID } from '../test/setup.js';
 import { db } from '../db/index.js';
 import { userCredentials, derivedCredentials, users } from '../db/schema.js';
 import type { ParsedBubbleWithInfo } from '@bubblelab/shared-schemas';
-import { autoBindMissingCredentials } from './credential-auto-bind.js';
+import {
+  autoBindMissingCredentials,
+  unionTwinCredentials,
+} from './credential-auto-bind.js';
 
 const OTHER_USER_ID = 'other-user';
 
@@ -62,6 +65,25 @@ async function seedDerivedRecord(
     provider: 'google',
     isDerived: true,
   });
+}
+
+/**
+ * A per-invocation clone entry of `original` (invocationCallSiteKey set,
+ * clonedFromVariableId pointing back) — the shape BubbleParser persists for
+ * bubbles inside a `this.method()` invocation.
+ */
+function cloneOf(
+  original: ParsedBubbleWithInfo,
+  cloneVariableId: number,
+  callSiteKey: string,
+  credentials?: Record<string, number>
+): ParsedBubbleWithInfo {
+  return {
+    ...bubble(cloneVariableId, original.bubbleName, credentials),
+    variableName: original.variableName,
+    invocationCallSiteKey: callSiteKey,
+    clonedFromVariableId: original.variableId,
+  } as unknown as ParsedBubbleWithInfo;
 }
 
 function boundCredentials(
@@ -303,5 +325,118 @@ describe('autoBindMissingCredentials', () => {
     expect(boundCredentials(result.bubbleParameters, '2')).toEqual({
       GOOGLE_SHEETS_CRED: gmailId,
     });
+  });
+
+  it('binds ONE slot per real bubble and mirrors it onto invocation clones', async () => {
+    const telegramId = await seedCredential('TELEGRAM_BOT_TOKEN');
+    const original = bubble(1, 'telegram');
+    const params = {
+      '1': original,
+      '571192': cloneOf(original, 571192, 'sendOne#1'),
+      '700000': cloneOf(original, 700000, 'sendOne#2'),
+    };
+
+    const result = await autoBindMissingCredentials(TEST_USER_ID, params);
+
+    // Clone entries carry no slot of their own — one bind decision only.
+    expect(result.bound).toEqual([
+      {
+        bubbleKey: '1',
+        credentialType: 'TELEGRAM_BOT_TOKEN',
+        credentialId: telegramId,
+        match: 'exact_type',
+      },
+    ]);
+    // Every twin agrees after the mirror pass.
+    for (const key of ['1', '571192', '700000']) {
+      expect(boundCredentials(result.bubbleParameters, key)).toEqual({
+        TELEGRAM_BOT_TOKEN: telegramId,
+      });
+    }
+  });
+
+  it('reports healed when converging a legacy split binding with nothing new to bind', async () => {
+    const original = bubble(1, 'telegram', { TELEGRAM_BOT_TOKEN: 42 });
+    const params = {
+      '1': original,
+      '571192': cloneOf(original, 571192, 'sendOne#1'),
+    };
+
+    const result = await autoBindMissingCredentials(TEST_USER_ID, params);
+
+    expect(result.bound).toEqual([]);
+    expect(result.healed).toBe(true);
+    expect(boundCredentials(result.bubbleParameters, '571192')).toEqual({
+      TELEGRAM_BOT_TOKEN: 42,
+    });
+  });
+});
+
+describe('unionTwinCredentials', () => {
+  it('mirrors the original binding onto an unbound clone', () => {
+    const original = bubble(514, 'google-sheets', { GOOGLE_SHEETS_CRED: 4 });
+    const params = {
+      '514': original,
+      '571192': cloneOf(original, 571192, 'readPerformanceRows#1'),
+    };
+
+    expect(unionTwinCredentials(params)).toBe(true);
+    expect(boundCredentials(params, '571192')).toEqual({
+      GOOGLE_SHEETS_CRED: 4,
+    });
+  });
+
+  it('fills the original from a clone-only binding (legacy split)', () => {
+    const original = bubble(586, 'gmail');
+    const params = {
+      '586': original,
+      '700000': cloneOf(original, 700000, 'sendReportEmail#1', {
+        GMAIL_CRED: 3,
+      }),
+    };
+
+    expect(unionTwinCredentials(params)).toBe(true);
+    expect(boundCredentials(params, '586')).toEqual({ GMAIL_CRED: 3 });
+    expect(boundCredentials(params, '700000')).toEqual({ GMAIL_CRED: 3 });
+  });
+
+  it("the original's value wins a conflicting twin binding", () => {
+    const original = bubble(586, 'gmail', { GMAIL_CRED: 3 });
+    const params = {
+      '586': original,
+      '700000': cloneOf(original, 700000, 'sendReportEmail#1', {
+        GMAIL_CRED: 9,
+      }),
+    };
+
+    expect(unionTwinCredentials(params)).toBe(true);
+    expect(boundCredentials(params, '586')).toEqual({ GMAIL_CRED: 3 });
+    expect(boundCredentials(params, '700000')).toEqual({ GMAIL_CRED: 3 });
+  });
+
+  it('unions per credential type across twins', () => {
+    const original = bubble(1, 'slack', { SLACK_CRED: 5 });
+    const params = {
+      '1': original,
+      '2': cloneOf(original, 2, 'notify#1', { SLACK_BOT_CRED: 7 }),
+    };
+
+    expect(unionTwinCredentials(params)).toBe(true);
+    const expected = { SLACK_CRED: 5, SLACK_BOT_CRED: 7 };
+    expect(boundCredentials(params, '1')).toEqual(expected);
+    expect(boundCredentials(params, '2')).toEqual(expected);
+  });
+
+  it('reports no change for twins already in sync and for clone-less flows', () => {
+    const original = bubble(514, 'google-sheets', { GOOGLE_SHEETS_CRED: 4 });
+    const synced = {
+      '514': original,
+      '571192': cloneOf(original, 571192, 'readPerformanceRows#1', {
+        GOOGLE_SHEETS_CRED: 4,
+      }),
+    };
+    expect(unionTwinCredentials(synced)).toBe(false);
+
+    expect(unionTwinCredentials({ '1': bubble(1, 'telegram') })).toBe(false);
   });
 });

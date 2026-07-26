@@ -63,13 +63,19 @@ export interface ComputeAutoBindingsInput {
  * The store key a bubble's credential selections live under. Mirrors
  * BubbleNode's credentialsKey chain so auto-bound values render in the
  * per-step chooser.
+ *
+ * Canonical across invocation twins: a per-invocation CLONE entry
+ * (clonedFromVariableId set) resolves to its ORIGINAL's variableId, so the
+ * original and every clone read and write ONE slot in pendingCredentials —
+ * a step can no longer look unbound while its twin is bound.
  */
 export function bindingKeyForBubble(
   bubble: ParsedBubbleWithInfo,
   fallbackKey: string
 ): string {
+  const canonicalId = bubble.clonedFromVariableId ?? bubble.variableId;
   return String(
-    bubble.variableId || bubble.variableName || bubble.bubbleName || fallbackKey
+    canonicalId || bubble.variableName || bubble.bubbleName || fallbackKey
   );
 }
 

@@ -9,6 +9,7 @@ import {
   BubbleName,
   ParsedBubbleWithInfo,
   SYSTEM_CREDENTIALS,
+  isInvocationClone,
 } from '@bubblelab/shared-schemas';
 
 // Re-export ParsedBubble for use in other modules
@@ -655,17 +656,28 @@ export async function getBubbleParameterSchema(
 }
 
 /**
- * Extracts required credential types from parsed bubble parameters
- * @param bubbleParameters - Parsed bubble parameters
+ * Extracts required credential types from parsed bubble parameters.
+ * Per-invocation clone entries (invocationCallSiteKey set) are skipped: the
+ * original entry owns the credential slot, so the result carries exactly one
+ * slot per real bubble.
+ * @param bubbleParameters - Parsed bubble parameters (plain ParsedBubble maps
+ * simply have no clone markers and pass through unfiltered)
  * @returns Record mapping bubble variable names to their required credential types (excluding system credentials)
  */
 export function extractRequiredCredentials(
-  bubbleParameters: Record<string, ParsedBubble>
+  bubbleParameters: Record<
+    string,
+    ParsedBubble & Partial<Pick<ParsedBubbleWithInfo, 'invocationCallSiteKey'>>
+  >
 ): Record<string, CredentialType[]> {
   const requiredCredentials: Record<string, CredentialType[]> = {};
 
   // Iterate through each bubble and check its credential requirements
   for (const [bubbleName, bubble] of Object.entries(bubbleParameters)) {
+    // Per-invocation clone entries share their original's credential slot —
+    // one slot per real bubble. Same predicate the runtime injector uses, so
+    // the API and runtime cannot diverge on which entries carry slots.
+    if (isInvocationClone(bubble)) continue;
     const allCredentialTypes = new Set<CredentialType>();
 
     // Get bubble-level credentials

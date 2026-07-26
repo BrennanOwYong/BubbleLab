@@ -3,9 +3,18 @@ import { describe, it, expect } from 'bun:test';
 import {
   reconstructBubbleFlow,
   parseBubbleFlow,
+  extractRequiredCredentials,
 } from './bubble-flow-parser.js';
-import type { ParsedBubble } from '@bubblelab/shared-schemas';
-import { BubbleParameterType } from '@bubblelab/shared-schemas';
+import type {
+  ParsedBubble,
+  ParsedBubbleWithInfo,
+} from '@bubblelab/shared-schemas';
+import {
+  BubbleParameterType,
+  isInvocationClone,
+} from '@bubblelab/shared-schemas';
+import { validateAndExtract } from '@bubblelab/bubble-runtime';
+import { getBubbleFactory } from './bubble-factory-instance.js';
 
 describe('BubbleFlow Parser', () => {
   describe('parseBubbleFlow', () => {
@@ -720,5 +729,59 @@ export class AnonymousCallFlow extends BubbleFlow<'webhook/http'> {
         "'Database query completed'"
       );
     });
+  });
+});
+
+describe('extractRequiredCredentials with invocation clones', () => {
+  it('yields exactly ONE credential slot per real bubble on a multi-invocation flow', async () => {
+    // One bubble inside a helper method invoked TWICE: the parser persists
+    // the original entry plus one clone per call site (invocationCallSiteKey
+    // set). Credential slots must come from the original alone.
+    const code = `
+import { BubbleFlow, PostgreSQLBubble } from '@bubblelab/bubble-core';
+
+export class TwinFlow extends BubbleFlow<'webhook/http'> {
+  async handle(payload: any) {
+    const first = await this.queryOnce();
+    const second = await this.queryOnce();
+    return { first, second };
+  }
+
+  async queryOnce() {
+    const rows = await new PostgreSQLBubble({
+      query: "SELECT 1",
+      ignoreSSL: true,
+      allowedOperations: ["SELECT"],
+    }).action();
+    return rows;
+  }
+}`;
+
+    const bubbleFactory = await getBubbleFactory();
+    const result = await validateAndExtract(code, bubbleFactory, false);
+    expect(result.valid).toBe(true);
+
+    const bubbleParameters = (result.bubbleParameters ?? {}) as Record<
+      string,
+      ParsedBubbleWithInfo
+    >;
+    const entries = Object.values(bubbleParameters);
+    const originals = entries.filter((entry) => !isInvocationClone(entry));
+    const clones = entries.filter((entry) => isInvocationClone(entry));
+
+    // One real bubble; one clone per call site, both pointing at it.
+    expect(originals).toHaveLength(1);
+    expect(clones).toHaveLength(2);
+    expect(new Set(clones.map((c) => c.clonedFromVariableId))).toEqual(
+      new Set([originals[0].variableId])
+    );
+
+    const requiredCredentials = extractRequiredCredentials(bubbleParameters);
+    expect(Object.keys(requiredCredentials)).toEqual([
+      String(originals[0].variableId),
+    ]);
+    expect(requiredCredentials[String(originals[0].variableId)]).toContain(
+      'DATABASE_CRED'
+    );
   });
 });

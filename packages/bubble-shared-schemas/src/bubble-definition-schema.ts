@@ -280,6 +280,23 @@ export const ParsedBubbleWithInfoSchema = z.object({
 });
 
 export type ParsedBubbleWithInfo = z.infer<typeof ParsedBubbleWithInfoSchema>;
+
+/**
+ * Whether a bubbleParameters entry is a per-invocation CLONE. BubbleParser
+ * clones every bubble located inside a `this.method()` invocation (one clone
+ * per call site, variableId = hash of "<originalId>:<method>#<n>") and marks
+ * it with invocationCallSiteKey; clonedFromVariableId points at the original
+ * entry. Clones exist for the canvas step graph and runtime telemetry id
+ * matching. Credential requirement extraction and binding must SKIP clones —
+ * the original entry owns the credential slot (one slot per real bubble).
+ * Shared so the API side (extractRequiredCredentials) and the runtime side
+ * (BubbleInjector) cannot diverge on the predicate.
+ */
+export function isInvocationClone(bubble: {
+  invocationCallSiteKey?: string;
+}): boolean {
+  return !!bubble.invocationCallSiteKey;
+}
 // Inferred types from Zod schemas
 export type BubbleParameterTypeInferred = z.infer<
   typeof BubbleParameterTypeSchema
