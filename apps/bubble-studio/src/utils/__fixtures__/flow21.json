@@ -1,0 +1,1359 @@
+{
+  "workflow": {
+    "root": [
+      {
+        "code": "const {\n      database_id = '1234567890abcdef1234567890abcdef',\n      notes_property_name = 'Notes',\n      lookback_days = 7,\n      telegram_chat_id = '123456789',\n      max_deals_to_scan = 100,\n    } = payload;",
+        "type": "variable_declaration",
+        "children": [],
+        "location": {
+          "endCol": 16,
+          "endLine": 162,
+          "startCol": 4,
+          "startLine": 156
+        },
+        "variables": []
+      },
+      {
+        "code": "{\n    const days = Number.isFinite(lookbackDays) && lookbackDays > 0 ? lookbackDays : 7;\n    const cutoffMs = Date.now() - days * 24 * 60 * 60 * 1000;\n    return new Date(cutoffMs).toISOString();\n  }",
+        "type": "transformation_function",
+        "location": {
+          "endCol": 62,
+          "endLine": 164,
+          "startCol": 4,
+          "startLine": 164
+        },
+        "arguments": "lookback_days",
+        "variableId": 288348,
+        "description": "Computes the ISO-8601 cutoff timestamp in UTC based on lookback_days.",
+        "functionName": "computeCutoffIsoUtc",
+        "isMethodCall": true,
+        "methodDefinition": {
+          "isAsync": false,
+          "location": { "endLine": 212, "startLine": 208 },
+          "parameters": ["lookbackDays"]
+        },
+        "variableDeclaration": {
+          "variableName": "cutoffIso",
+          "variableType": "const"
+        }
+      },
+      {
+        "code": "const rawDeals = await this.queryRecentDeals(database_id, max_deals_to_scan);",
+        "type": "function_call",
+        "children": [
+          {
+            "code": "{\n    const n = Math.floor(v);\n    if (!Number.isFinite(n)) {\n      return min;\n    }\n    if (n < min) {\n      return min;\n    }\n    if (n > max) {\n      return max;\n    }\n    return n;\n  }",
+            "type": "transformation_function",
+            "location": {
+              "endCol": 63,
+              "endLine": 224,
+              "startCol": 4,
+              "startLine": 224
+            },
+            "arguments": "maxDealsToScan, 1, 100",
+            "variableId": 675004,
+            "description": "Clamps a value to an integer between min and max.",
+            "functionName": "clampInteger",
+            "isMethodCall": true,
+            "methodDefinition": {
+              "isAsync": false,
+              "location": { "endLine": 474, "startLine": 462 },
+              "parameters": ["v", "min", "max"]
+            },
+            "variableDeclaration": {
+              "variableName": "pageSize",
+              "variableType": "const"
+            }
+          },
+          { "type": "bubble", "variableId": 820316 },
+          {
+            "type": "if",
+            "children": [
+              {
+                "code": "return [];",
+                "type": "return",
+                "value": "[]",
+                "children": [],
+                "location": {
+                  "endCol": 16,
+                  "endLine": 237,
+                  "startCol": 6,
+                  "startLine": 237
+                }
+              }
+            ],
+            "location": {
+              "endCol": 5,
+              "endLine": 238,
+              "startCol": 4,
+              "startLine": 236
+            },
+            "condition": "!notionQuery.success",
+            "thenTerminates": true
+          },
+          {
+            "code": "const results = notionQuery.data?.results ?? [];",
+            "type": "variable_declaration",
+            "children": [],
+            "location": {
+              "endCol": 52,
+              "endLine": 239,
+              "startCol": 4,
+              "startLine": 239
+            },
+            "variables": [
+              { "name": "results", "type": "const", "hasInitializer": true }
+            ]
+          },
+          {
+            "code": "const pages: { id: string; last_edited_time: string; url?: string; properties?: Record<string, unknown> }[] = [];",
+            "type": "variable_declaration",
+            "children": [],
+            "location": {
+              "endCol": 117,
+              "endLine": 241,
+              "startCol": 4,
+              "startLine": 241
+            },
+            "variables": [
+              { "name": "pages", "type": "const", "hasInitializer": true }
+            ]
+          },
+          {
+            "type": "for",
+            "children": [
+              {
+                "type": "if",
+                "children": [
+                  {
+                    "code": "continue;",
+                    "type": "code_block",
+                    "children": [],
+                    "location": {
+                      "endCol": 17,
+                      "endLine": 244,
+                      "startCol": 8,
+                      "startLine": 244
+                    }
+                  }
+                ],
+                "location": {
+                  "endCol": 7,
+                  "endLine": 245,
+                  "startCol": 6,
+                  "startLine": 243
+                },
+                "condition": "r?.object !== 'page'"
+              },
+              {
+                "type": "if",
+                "children": [
+                  {
+                    "code": "continue;",
+                    "type": "code_block",
+                    "children": [],
+                    "location": {
+                      "endCol": 17,
+                      "endLine": 247,
+                      "startCol": 8,
+                      "startLine": 247
+                    }
+                  }
+                ],
+                "location": {
+                  "endCol": 7,
+                  "endLine": 248,
+                  "startCol": 6,
+                  "startLine": 246
+                },
+                "condition": "!r.id || !r.last_edited_time"
+              },
+              {
+                "code": "pages.push({\n        id: r.id,\n        last_edited_time: r.last_edited_time,\n        url: r.url,\n        properties: r.properties,\n      });",
+                "type": "function_call",
+                "children": [],
+                "location": {
+                  "endCol": 9,
+                  "endLine": 254,
+                  "startCol": 6,
+                  "startLine": 249
+                },
+                "arguments": "{\n        id: r.id,\n        last_edited_time: r.last_edited_time,\n        url: r.url,\n        properties: r.properties,\n      }",
+                "variableId": 683088,
+                "functionName": "push",
+                "isMethodCall": false
+              }
+            ],
+            "location": {
+              "endCol": 5,
+              "endLine": 255,
+              "startCol": 4,
+              "startLine": 242
+            },
+            "condition": "const r of results"
+          },
+          {
+            "code": "return pages;",
+            "type": "return",
+            "value": "pages",
+            "children": [],
+            "location": {
+              "endCol": 17,
+              "endLine": 257,
+              "startCol": 4,
+              "startLine": 257
+            }
+          }
+        ],
+        "location": {
+          "endCol": 81,
+          "endLine": 166,
+          "startCol": 4,
+          "startLine": 166
+        },
+        "arguments": "database_id, max_deals_to_scan",
+        "variableId": 784951,
+        "description": "Queries your Notion deals database using a recency-friendly sort and a configurable page size.",
+        "functionName": "queryRecentDeals",
+        "isMethodCall": true,
+        "methodDefinition": {
+          "isAsync": true,
+          "location": { "endLine": 258, "startLine": 220 },
+          "parameters": ["databaseId", "maxDealsToScan"]
+        },
+        "variableDeclaration": {
+          "variableName": "rawDeals",
+          "variableType": "const"
+        }
+      },
+      {
+        "code": "{\n    const cutoffMs = Date.parse(cutoffIso);\n    const deals: DealRecord[] = [];\n\n    for (const p of rawPages) {\n      const editedMs = Date.parse(p.last_edited_time);\n      if (!Number.isFinite(editedMs) || editedMs < cutoffMs) {\n        continue;\n      }\n\n      const properties = p.properties ?? {};\n      const title = this.extractNotionTitle(properties);\n      const notes = this.extractRichTextProperty(properties, notesPropertyName).trim();\n      if (!notes) {\n        continue;\n      }\n\n      deals.push({\n        id: p.id,\n        title,\n        lastEditedTime: p.last_edited_time,\n        url: p.url,\n        notes,\n      });\n    }\n\n    return deals;\n  }",
+        "type": "transformation_function",
+        "location": {
+          "endCol": 80,
+          "endLine": 167,
+          "startCol": 4,
+          "startLine": 167
+        },
+        "arguments": "rawDeals, notes_property_name, cutoffIso",
+        "variableId": 187124,
+        "description": "Extracts deal title and notes text from Notion page properties and filters to pages edited after the cutoff.",
+        "functionName": "transformDeals",
+        "isMethodCall": true,
+        "methodDefinition": {
+          "isAsync": false,
+          "location": { "endLine": 292, "startLine": 261 },
+          "parameters": ["rawPages", "notesPropertyName", "cutoffIso"]
+        },
+        "variableDeclaration": {
+          "variableName": "deals",
+          "variableType": "const"
+        }
+      },
+      {
+        "code": "const assessments: DealAssessment[] = [];",
+        "type": "variable_declaration",
+        "children": [],
+        "location": {
+          "endCol": 45,
+          "endLine": 169,
+          "startCol": 4,
+          "startLine": 169
+        },
+        "variables": [
+          { "name": "assessments", "type": "const", "hasInitializer": true }
+        ]
+      },
+      {
+        "type": "for",
+        "children": [
+          {
+            "code": "const assessment = await this.assessDealWithAI(deal);",
+            "type": "function_call",
+            "children": [
+              {
+                "code": "const assessmentSchema = z.object({\n      stalled: z.boolean(),\n      stall_reason: z.string(),\n      next_steps: z.array(z.string()).default([]),\n      confidence: z.enum(['low', 'medium', 'high']),\n    });",
+                "type": "function_call",
+                "children": [],
+                "location": {
+                  "endCol": 7,
+                  "endLine": 301,
+                  "startCol": 4,
+                  "startLine": 296
+                },
+                "arguments": "{\n      stalled: z.boolean(),\n      stall_reason: z.string(),\n      next_steps: z.array(z.string()).default([]),\n      confidence: z.enum(['low', 'medium', 'high']),\n    }",
+                "variableId": 188024,
+                "functionName": "object",
+                "isMethodCall": false,
+                "variableDeclaration": {
+                  "variableName": "assessmentSchema",
+                  "variableType": "const"
+                }
+              },
+              { "type": "bubble", "variableId": 973580 },
+              {
+                "type": "if",
+                "children": [
+                  {
+                    "code": "return null;",
+                    "type": "return",
+                    "value": "null",
+                    "children": [],
+                    "location": {
+                      "endCol": 18,
+                      "endLine": 334,
+                      "startCol": 6,
+                      "startLine": 334
+                    }
+                  }
+                ],
+                "location": {
+                  "endCol": 5,
+                  "endLine": 335,
+                  "startCol": 4,
+                  "startLine": 333
+                },
+                "condition": "!analysisAgent.success || !analysisAgent.data?.response",
+                "thenTerminates": true
+              },
+              {
+                "code": "const parsed = assessmentSchema.safeParse(JSON.parse(analysisAgent.data.response));",
+                "type": "function_call",
+                "children": [],
+                "location": {
+                  "endCol": 87,
+                  "endLine": 337,
+                  "startCol": 4,
+                  "startLine": 337
+                },
+                "arguments": "JSON.parse(analysisAgent.data.response)",
+                "variableId": 832352,
+                "functionName": "safeParse",
+                "isMethodCall": false,
+                "variableDeclaration": {
+                  "variableName": "parsed",
+                  "variableType": "const"
+                }
+              },
+              {
+                "type": "if",
+                "children": [
+                  {
+                    "code": "return null;",
+                    "type": "return",
+                    "value": "null",
+                    "children": [],
+                    "location": {
+                      "endCol": 18,
+                      "endLine": 339,
+                      "startCol": 6,
+                      "startLine": 339
+                    }
+                  }
+                ],
+                "location": {
+                  "endCol": 5,
+                  "endLine": 340,
+                  "startCol": 4,
+                  "startLine": 338
+                },
+                "condition": "!parsed.success",
+                "thenTerminates": true
+              },
+              {
+                "code": "return {\n      deal,\n      stalled: parsed.data.stalled,\n      stall_reason: parsed.data.stall_reason,\n      next_steps: parsed.data.next_steps,\n      confidence: parsed.data.confidence,\n    };",
+                "type": "return",
+                "value": "{\n      deal,\n      stalled: parsed.data.stalled,\n      stall_reason: parsed.data.stall_reason,\n      next_steps: parsed.data.next_steps,\n      confidence: parsed.data.confidence,\n    }",
+                "children": [],
+                "location": {
+                  "endCol": 6,
+                  "endLine": 348,
+                  "startCol": 4,
+                  "startLine": 342
+                }
+              }
+            ],
+            "location": {
+              "endCol": 59,
+              "endLine": 171,
+              "startCol": 6,
+              "startLine": 171
+            },
+            "arguments": "deal",
+            "variableId": 198336,
+            "description": "Uses an AI agent to classify whether a deal looks stalled and propose actionable next steps.",
+            "functionName": "assessDealWithAI",
+            "isMethodCall": true,
+            "methodDefinition": {
+              "isAsync": true,
+              "location": { "endLine": 349, "startLine": 295 },
+              "parameters": ["deal"]
+            },
+            "variableDeclaration": {
+              "variableName": "assessment",
+              "variableType": "const"
+            }
+          },
+          {
+            "type": "if",
+            "children": [
+              {
+                "code": "assessments.push(assessment);",
+                "type": "function_call",
+                "children": [],
+                "location": {
+                  "endCol": 37,
+                  "endLine": 173,
+                  "startCol": 8,
+                  "startLine": 173
+                },
+                "arguments": "assessment",
+                "variableId": 729832,
+                "functionName": "push",
+                "isMethodCall": false
+              }
+            ],
+            "location": {
+              "endCol": 7,
+              "endLine": 174,
+              "startCol": 6,
+              "startLine": 172
+            },
+            "condition": "assessment !== null"
+          }
+        ],
+        "location": {
+          "endCol": 5,
+          "endLine": 175,
+          "startCol": 4,
+          "startLine": 170
+        },
+        "condition": "const deal of deals"
+      },
+      {
+        "code": "{\n    const stalled = assessments.filter((a) => a.stalled);\n    const active = assessments.filter((a) => !a.stalled);\n\n    const header = [\n      `<b>Pipeline digest</b>`,\n      `<i>${this.escapeHtml(cutoffIso)} → ${this.escapeHtml(nowIso)}</i>`,\n      '',\n      `Deals analyzed: <b>${assessments.length}</b>`,\n      `Stalled: <b>${stalled.length}</b>`,\n      `Active: <b>${active.length}</b>`,\n    ].join('\\n');\n\n    const sections: string[] = [header];\n\n    if (stalled.length > 0) {\n      sections.push('');\n      sections.push('<b>Stalled deals (need attention)</b>');\n      for (const a of stalled) {\n        sections.push(this.formatDealLine(a));\n      }\n    }\n\n    if (active.length > 0) {\n      sections.push('');\n      sections.push('<b>Active deals (next steps)</b>');\n      for (const a of active) {\n        sections.push(this.formatDealLine(a));\n      }\n    }\n\n    if (assessments.length === 0) {\n      sections.push('');\n      sections.push('No recently edited deals with non-empty notes were found in the lookback window.');\n    }\n\n    return this.splitTelegramMessages(sections.join('\\n'));\n  }",
+        "type": "transformation_function",
+        "location": {
+          "endCol": 6,
+          "endLine": 181,
+          "startCol": 4,
+          "startLine": 177
+        },
+        "arguments": "assessments, cutoffIso, this.nowIsoUtc()",
+        "variableId": 259124,
+        "description": "Builds one or more Telegram HTML messages, splitting when the digest would exceed safe length.",
+        "functionName": "buildTelegramDigestMessages",
+        "isMethodCall": true,
+        "methodDefinition": {
+          "isAsync": false,
+          "location": { "endLine": 393, "startLine": 352 },
+          "parameters": ["assessments", "cutoffIso", "nowIso"]
+        },
+        "variableDeclaration": {
+          "variableName": "telegramMessages",
+          "variableType": "const"
+        }
+      },
+      {
+        "code": "let telegramSent = false;\nlet telegramMessageCount = 0;",
+        "type": "variable_declaration",
+        "children": [],
+        "location": {
+          "endCol": 33,
+          "endLine": 184,
+          "startCol": 4,
+          "startLine": 183
+        },
+        "variables": [
+          { "name": "telegramSent", "type": "let", "hasInitializer": true },
+          {
+            "name": "telegramMessageCount",
+            "type": "let",
+            "hasInitializer": true
+          }
+        ]
+      },
+      {
+        "type": "for",
+        "children": [
+          {
+            "code": "const sent = await this.sendTelegramMessage(telegram_chat_id, text);",
+            "type": "function_call",
+            "children": [
+              { "type": "bubble", "variableId": 225883 },
+              {
+                "code": "return telegramSend.success && (telegramSend.data?.ok ?? false);",
+                "type": "return",
+                "value": "telegramSend.success && (telegramSend.data?.ok ?? false)",
+                "children": [],
+                "location": {
+                  "endCol": 68,
+                  "endLine": 432,
+                  "startCol": 4,
+                  "startLine": 432
+                }
+              }
+            ],
+            "location": {
+              "endCol": 74,
+              "endLine": 186,
+              "startCol": 6,
+              "startLine": 186
+            },
+            "arguments": "telegram_chat_id, text",
+            "variableId": 341467,
+            "description": "Sends one Telegram message using HTML formatting and disabled link previews for a compact digest.",
+            "functionName": "sendTelegramMessage",
+            "isMethodCall": true,
+            "methodDefinition": {
+              "isAsync": true,
+              "location": { "endLine": 433, "startLine": 421 },
+              "parameters": ["chatId", "text"]
+            },
+            "variableDeclaration": {
+              "variableName": "sent",
+              "variableType": "const"
+            }
+          },
+          {
+            "type": "if",
+            "children": [
+              {
+                "code": "telegramSent = true;",
+                "type": "code_block",
+                "children": [],
+                "location": {
+                  "endCol": 28,
+                  "endLine": 188,
+                  "startCol": 8,
+                  "startLine": 188
+                }
+              },
+              {
+                "code": "telegramMessageCount += 1;",
+                "type": "code_block",
+                "children": [],
+                "location": {
+                  "endCol": 34,
+                  "endLine": 189,
+                  "startCol": 8,
+                  "startLine": 189
+                }
+              }
+            ],
+            "location": {
+              "endCol": 7,
+              "endLine": 190,
+              "startCol": 6,
+              "startLine": 187
+            },
+            "condition": "sent"
+          }
+        ],
+        "location": {
+          "endCol": 5,
+          "endLine": 191,
+          "startCol": 4,
+          "startLine": 185
+        },
+        "condition": "const text of telegramMessages"
+      },
+      {
+        "code": "const stalledDealCount = assessments.filter((a) => a.stalled).length;",
+        "type": "variable_declaration",
+        "children": [],
+        "location": {
+          "endCol": 73,
+          "endLine": 193,
+          "startCol": 4,
+          "startLine": 193
+        },
+        "variables": [
+          {
+            "name": "stalledDealCount",
+            "type": "const",
+            "hasInitializer": true
+          }
+        ]
+      },
+      {
+        "code": "return {\n      message: telegramSent\n        ? `Sent pipeline digest to Telegram in ${telegramMessageCount} message(s).`\n        : 'No Telegram message was sent (no deals or an upstream error occurred).',\n      analyzedDealCount: deals.length,\n      includedDealCount: assessments.length,\n      stalledDealCount,\n      telegramSent,\n      telegramMessageCount,\n    };",
+        "type": "return",
+        "value": "{\n      message: telegramSent\n        ? `Sent pipeline digest to Telegram in ${telegramMessageCount} message(s).`\n        : 'No Telegram message was sent (no deals or an upstream error occurred).',\n      analyzedDealCount: deals.length,\n      includedDealCount: assessments.length,\n      stalledDealCount,\n      telegramSent,\n      telegramMessageCount,\n    }",
+        "children": [],
+        "location": {
+          "endCol": 6,
+          "endLine": 204,
+          "startCol": 4,
+          "startLine": 195
+        }
+      }
+    ],
+    "bubbles": {
+      "517": {
+        "hasAwait": true,
+        "location": {
+          "endCol": 6,
+          "endLine": 234,
+          "startCol": 30,
+          "startLine": 228
+        },
+        "nodeType": "service",
+        "className": "NotionBubble",
+        "bubbleName": "notion",
+        "parameters": [
+          {
+            "name": "operation",
+            "type": "string",
+            "value": "query_data_source",
+            "source": "object-property",
+            "location": {
+              "endCol": 36,
+              "endLine": 229,
+              "startCol": 17,
+              "startLine": 229
+            }
+          },
+          {
+            "name": "database_id",
+            "type": "variable",
+            "value": "databaseId",
+            "source": "object-property",
+            "location": {
+              "endCol": 29,
+              "endLine": 230,
+              "startCol": 19,
+              "startLine": 230
+            },
+            "variableId": 514
+          },
+          {
+            "name": "sorts",
+            "type": "array",
+            "value": "[{ timestamp: 'last_edited_time', direction: 'descending' }]",
+            "source": "object-property",
+            "location": {
+              "endCol": 73,
+              "endLine": 231,
+              "startCol": 13,
+              "startLine": 231
+            }
+          },
+          {
+            "name": "page_size",
+            "type": "variable",
+            "value": "pageSize",
+            "source": "object-property",
+            "location": {
+              "endCol": 25,
+              "endLine": 232,
+              "startCol": 17,
+              "startLine": 232
+            },
+            "variableId": 516
+          },
+          {
+            "name": "result_type",
+            "type": "string",
+            "value": "page",
+            "source": "object-property",
+            "location": {
+              "endCol": 25,
+              "endLine": 233,
+              "startCol": 19,
+              "startLine": 233
+            }
+          }
+        ],
+        "variableId": 517,
+        "description": "Queries the Notion database by database_id (auto-resolved to the correct data_source_id under the hood), sorting by last_edited_time descending so the freshest deal notes appear first for the weekly digest.",
+        "dependencies": [],
+        "variableName": "notionQuery",
+        "hasActionCall": true,
+        "dependencyGraph": {
+          "name": "notion",
+          "nodeType": "service",
+          "uniqueId": "517",
+          "variableId": 517,
+          "dependencies": [],
+          "variableName": "notionQuery"
+        }
+      },
+      "535": {
+        "hasAwait": true,
+        "location": {
+          "endCol": 6,
+          "endLine": 331,
+          "startCol": 32,
+          "startLine": 305
+        },
+        "nodeType": "service",
+        "className": "AIAgentBubble",
+        "bubbleName": "ai-agent",
+        "parameters": [
+          {
+            "name": "message",
+            "type": "expression",
+            "value": "[\n        'You are an expert sales ops assistant. Analyze the deal notes and decide if the deal is stalled.',\n        '',\n        'Return JSON that matches this schema exactly:',\n        '{ stalled: boolean, stall_reason: string, next_steps: string[], confidence: \"low\"|\"medium\"|\"high\" }',\n        '',\n        'Guidance:',\n        '- Mark stalled=true when notes indicate inactivity, missing response, unclear owner, or blocked next action.',\n        '- stall_reason should be one sentence, written for the seller.',\n        '- next_steps should be 1-3 short, concrete actions the seller can do next week.',\n        '- If the notes are too sparse to be confident, set confidence=low and keep next_steps generic but helpful.',\n        '',\n        `Deal: ${deal.title}`,\n        `Last edited (UTC): ${deal.lastEditedTime}`,\n        deal.url ? `URL: ${deal.url}` : 'URL: (not provided)',\n        '',\n        'Notes:',\n        deal.notes,\n      ].join('\\n')",
+            "source": "object-property",
+            "location": {
+              "endCol": 18,
+              "endLine": 324,
+              "startCol": 15,
+              "startLine": 306
+            }
+          },
+          {
+            "name": "expectedOutputSchema",
+            "type": "variable",
+            "value": "assessmentSchema",
+            "source": "object-property",
+            "location": {
+              "endCol": 44,
+              "endLine": 325,
+              "startCol": 28,
+              "startLine": 325
+            },
+            "variableId": 534
+          },
+          {
+            "name": "model",
+            "type": "object",
+            "value": "{\n        model: 'google/gemini-2.5-flash-lite',\n        temperature: 0,\n        maxTokens: 2000,\n      }",
+            "source": "object-property",
+            "location": {
+              "endCol": 7,
+              "endLine": 330,
+              "startCol": 13,
+              "startLine": 326
+            }
+          }
+        ],
+        "variableId": 535,
+        "description": "Analyzes one deal's recent notes to flag stall risk and propose next actions, returning strict JSON that includes stalled status, a concise reason, a short next-step checklist, and a confidence level.",
+        "dependencies": [],
+        "variableName": "analysisAgent",
+        "hasActionCall": true,
+        "dependencyGraph": {
+          "name": "ai-agent",
+          "nodeType": "service",
+          "uniqueId": "535",
+          "variableId": 535,
+          "dependencies": [],
+          "variableName": "analysisAgent"
+        }
+      },
+      "562": {
+        "hasAwait": true,
+        "location": {
+          "endCol": 6,
+          "endLine": 430,
+          "startCol": 31,
+          "startLine": 424
+        },
+        "nodeType": "service",
+        "className": "TelegramBubble",
+        "bubbleName": "telegram",
+        "parameters": [
+          {
+            "name": "operation",
+            "type": "string",
+            "value": "send_message",
+            "source": "object-property",
+            "location": {
+              "endCol": 31,
+              "endLine": 425,
+              "startCol": 17,
+              "startLine": 425
+            }
+          },
+          {
+            "name": "chat_id",
+            "type": "variable",
+            "value": "chatId",
+            "source": "object-property",
+            "location": {
+              "endCol": 21,
+              "endLine": 426,
+              "startCol": 15,
+              "startLine": 426
+            },
+            "variableId": 560
+          },
+          {
+            "name": "text",
+            "type": "variable",
+            "value": "text",
+            "source": "object-property",
+            "location": {
+              "endCol": 10,
+              "endLine": 427,
+              "startCol": 6,
+              "startLine": 427
+            },
+            "variableId": 561
+          },
+          {
+            "name": "parse_mode",
+            "type": "string",
+            "value": "HTML",
+            "source": "object-property",
+            "location": {
+              "endCol": 24,
+              "endLine": 428,
+              "startCol": 18,
+              "startLine": 428
+            }
+          },
+          {
+            "name": "disable_web_page_preview",
+            "type": "boolean",
+            "value": "true",
+            "source": "object-property",
+            "location": {
+              "endCol": 36,
+              "endLine": 429,
+              "startCol": 32,
+              "startLine": 429
+            }
+          }
+        ],
+        "variableId": 562,
+        "description": "Sends the digest chunk to your specified Telegram chat using HTML parse mode so headings and links render cleanly, while disabling web page previews to keep the recap compact in a private chat thread.",
+        "dependencies": [],
+        "variableName": "telegramSend",
+        "hasActionCall": true,
+        "dependencyGraph": {
+          "name": "telegram",
+          "nodeType": "service",
+          "uniqueId": "562",
+          "variableId": 562,
+          "dependencies": [],
+          "variableName": "telegramSend"
+        }
+      },
+      "225883": {
+        "hasAwait": true,
+        "location": {
+          "endCol": 6,
+          "endLine": 430,
+          "startCol": 31,
+          "startLine": 424
+        },
+        "nodeType": "service",
+        "className": "TelegramBubble",
+        "bubbleName": "telegram",
+        "parameters": [
+          {
+            "name": "operation",
+            "type": "string",
+            "value": "send_message",
+            "source": "object-property",
+            "location": {
+              "endCol": 31,
+              "endLine": 425,
+              "startCol": 17,
+              "startLine": 425
+            }
+          },
+          {
+            "name": "chat_id",
+            "type": "variable",
+            "value": "chatId",
+            "source": "object-property",
+            "location": {
+              "endCol": 21,
+              "endLine": 426,
+              "startCol": 15,
+              "startLine": 426
+            },
+            "variableId": 560
+          },
+          {
+            "name": "text",
+            "type": "variable",
+            "value": "text",
+            "source": "object-property",
+            "location": {
+              "endCol": 10,
+              "endLine": 427,
+              "startCol": 6,
+              "startLine": 427
+            },
+            "variableId": 561
+          },
+          {
+            "name": "parse_mode",
+            "type": "string",
+            "value": "HTML",
+            "source": "object-property",
+            "location": {
+              "endCol": 24,
+              "endLine": 428,
+              "startCol": 18,
+              "startLine": 428
+            }
+          },
+          {
+            "name": "disable_web_page_preview",
+            "type": "boolean",
+            "value": "true",
+            "source": "object-property",
+            "location": {
+              "endCol": 36,
+              "endLine": 429,
+              "startCol": 32,
+              "startLine": 429
+            }
+          }
+        ],
+        "variableId": 225883,
+        "description": "Sends the digest chunk to your specified Telegram chat using HTML parse mode so headings and links render cleanly, while disabling web page previews to keep the recap compact in a private chat thread.",
+        "dependencies": [],
+        "variableName": "telegramSend",
+        "hasActionCall": true,
+        "dependencyGraph": {
+          "name": "telegram",
+          "nodeType": "service",
+          "uniqueId": "562@sendTelegramMessage#1",
+          "variableId": 225883,
+          "dependencies": [],
+          "variableName": "telegramSend"
+        },
+        "clonedFromVariableId": 562,
+        "invocationCallSiteKey": "sendTelegramMessage#1"
+      },
+      "820316": {
+        "hasAwait": true,
+        "location": {
+          "endCol": 6,
+          "endLine": 234,
+          "startCol": 30,
+          "startLine": 228
+        },
+        "nodeType": "service",
+        "className": "NotionBubble",
+        "bubbleName": "notion",
+        "parameters": [
+          {
+            "name": "operation",
+            "type": "string",
+            "value": "query_data_source",
+            "source": "object-property",
+            "location": {
+              "endCol": 36,
+              "endLine": 229,
+              "startCol": 17,
+              "startLine": 229
+            }
+          },
+          {
+            "name": "database_id",
+            "type": "variable",
+            "value": "databaseId",
+            "source": "object-property",
+            "location": {
+              "endCol": 29,
+              "endLine": 230,
+              "startCol": 19,
+              "startLine": 230
+            },
+            "variableId": 514
+          },
+          {
+            "name": "sorts",
+            "type": "array",
+            "value": "[{ timestamp: 'last_edited_time', direction: 'descending' }]",
+            "source": "object-property",
+            "location": {
+              "endCol": 73,
+              "endLine": 231,
+              "startCol": 13,
+              "startLine": 231
+            }
+          },
+          {
+            "name": "page_size",
+            "type": "variable",
+            "value": "pageSize",
+            "source": "object-property",
+            "location": {
+              "endCol": 25,
+              "endLine": 232,
+              "startCol": 17,
+              "startLine": 232
+            },
+            "variableId": 516
+          },
+          {
+            "name": "result_type",
+            "type": "string",
+            "value": "page",
+            "source": "object-property",
+            "location": {
+              "endCol": 25,
+              "endLine": 233,
+              "startCol": 19,
+              "startLine": 233
+            }
+          }
+        ],
+        "variableId": 820316,
+        "description": "Queries the Notion database by database_id (auto-resolved to the correct data_source_id under the hood), sorting by last_edited_time descending so the freshest deal notes appear first for the weekly digest.",
+        "dependencies": [],
+        "variableName": "notionQuery",
+        "hasActionCall": true,
+        "dependencyGraph": {
+          "name": "notion",
+          "nodeType": "service",
+          "uniqueId": "517@queryRecentDeals#1",
+          "variableId": 820316,
+          "dependencies": [],
+          "variableName": "notionQuery"
+        },
+        "clonedFromVariableId": 517,
+        "invocationCallSiteKey": "queryRecentDeals#1"
+      },
+      "973580": {
+        "hasAwait": true,
+        "location": {
+          "endCol": 6,
+          "endLine": 331,
+          "startCol": 32,
+          "startLine": 305
+        },
+        "nodeType": "service",
+        "className": "AIAgentBubble",
+        "bubbleName": "ai-agent",
+        "parameters": [
+          {
+            "name": "message",
+            "type": "expression",
+            "value": "[\n        'You are an expert sales ops assistant. Analyze the deal notes and decide if the deal is stalled.',\n        '',\n        'Return JSON that matches this schema exactly:',\n        '{ stalled: boolean, stall_reason: string, next_steps: string[], confidence: \"low\"|\"medium\"|\"high\" }',\n        '',\n        'Guidance:',\n        '- Mark stalled=true when notes indicate inactivity, missing response, unclear owner, or blocked next action.',\n        '- stall_reason should be one sentence, written for the seller.',\n        '- next_steps should be 1-3 short, concrete actions the seller can do next week.',\n        '- If the notes are too sparse to be confident, set confidence=low and keep next_steps generic but helpful.',\n        '',\n        `Deal: ${deal.title}`,\n        `Last edited (UTC): ${deal.lastEditedTime}`,\n        deal.url ? `URL: ${deal.url}` : 'URL: (not provided)',\n        '',\n        'Notes:',\n        deal.notes,\n      ].join('\\n')",
+            "source": "object-property",
+            "location": {
+              "endCol": 18,
+              "endLine": 324,
+              "startCol": 15,
+              "startLine": 306
+            }
+          },
+          {
+            "name": "expectedOutputSchema",
+            "type": "variable",
+            "value": "assessmentSchema",
+            "source": "object-property",
+            "location": {
+              "endCol": 44,
+              "endLine": 325,
+              "startCol": 28,
+              "startLine": 325
+            },
+            "variableId": 534
+          },
+          {
+            "name": "model",
+            "type": "object",
+            "value": "{\n        model: 'google/gemini-2.5-flash-lite',\n        temperature: 0,\n        maxTokens: 2000,\n      }",
+            "source": "object-property",
+            "location": {
+              "endCol": 7,
+              "endLine": 330,
+              "startCol": 13,
+              "startLine": 326
+            }
+          }
+        ],
+        "variableId": 973580,
+        "description": "Analyzes one deal's recent notes to flag stall risk and propose next actions, returning strict JSON that includes stalled status, a concise reason, a short next-step checklist, and a confidence level.",
+        "dependencies": [],
+        "variableName": "analysisAgent",
+        "hasActionCall": true,
+        "dependencyGraph": {
+          "name": "ai-agent",
+          "nodeType": "service",
+          "uniqueId": "535@assessDealWithAI#1",
+          "variableId": 973580,
+          "dependencies": [],
+          "variableName": "analysisAgent"
+        },
+        "clonedFromVariableId": 535,
+        "invocationCallSiteKey": "assessDealWithAI#1"
+      }
+    }
+  },
+  "metadata": {
+    "conversationMessages": [
+      {
+        "id": "user-1",
+        "type": "user",
+        "content": "Every Friday at 5pm, read my recent deal notes from my Notion database, use an AI agent to flag stalled deals and next steps, then send me a pipeline digest via Telegram.",
+        "timestamp": "2026-07-23T10:00:00.000Z"
+      },
+      {
+        "id": "clar-req-1",
+        "type": "clarification_request",
+        "questions": [
+          {
+            "id": "timezone_for_5pm",
+            "choices": [
+              {
+                "id": "provide_tz",
+                "label": "I’ll specify a timezone",
+                "description": "Example: America/Los_Angeles, America/New_York, Europe/London"
+              },
+              {
+                "id": "utc",
+                "label": "Use UTC",
+                "description": "Run at 17:00 UTC every Friday"
+              }
+            ],
+            "context": "Cron schedules are configured in UTC; I’ll convert your local 5pm Friday into a UTC cron expression.",
+            "question": "What timezone should “Friday at 5pm” use?",
+            "allowMultiple": false
+          },
+          {
+            "id": "notion_source",
+            "choices": [
+              {
+                "id": "database_id",
+                "label": "I will paste the Notion database_id",
+                "description": "The 32-character ID from the Notion database URL"
+              },
+              {
+                "id": "data_source_id",
+                "label": "I will paste the Notion data_source_id",
+                "description": "If you already have it (more efficient for querying)"
+              }
+            ],
+            "context": "The Notion query bubble can use either; data_source_id is preferred when available.",
+            "question": "How should we identify the Notion database to read deals from?",
+            "allowMultiple": false
+          },
+          {
+            "id": "notion_filters",
+            "choices": [
+              {
+                "id": "open_pipeline_only",
+                "label": "Only open pipeline (exclude Closed Won/Lost)",
+                "description": "Most common weekly pipeline view"
+              },
+              {
+                "id": "recently_edited",
+                "label": "Deals edited in the last N days",
+                "description": "You’ll provide N; good for ‘recent notes’ behavior"
+              },
+              {
+                "id": "all_deals",
+                "label": "All deals in the database",
+                "description": "No filtering besides whatever Notion returns"
+              }
+            ],
+            "question": "Which deals should be included in the weekly digest?",
+            "allowMultiple": false
+          },
+          {
+            "id": "notion_fields_mapping",
+            "choices": [
+              {
+                "id": "property_rich_text",
+                "label": "In a database property (Rich text / Text)",
+                "description": "Example property name: Notes, Last note, Call notes"
+              },
+              {
+                "id": "page_content",
+                "label": "In the page body content (blocks)",
+                "description": "Notes are written inside the deal’s page, not a database property"
+              }
+            ],
+            "context": "If it’s page content, we’ll need to retrieve/parse blocks; if it’s a property, querying is simpler.",
+            "question": "Where are the “deal notes” stored in Notion for each deal?",
+            "allowMultiple": false
+          },
+          {
+            "id": "telegram_destination",
+            "choices": [
+              {
+                "id": "chat_id_private",
+                "label": "My private chat (I’ll provide chat_id)",
+                "description": "Send directly to you"
+              },
+              {
+                "id": "group_or_channel",
+                "label": "A group/channel (I’ll provide chat_id or @channelusername)",
+                "description": "Send to a shared place"
+              }
+            ],
+            "question": "Where should the Telegram digest be sent?",
+            "allowMultiple": false
+          }
+        ],
+        "timestamp": "2026-07-23T10:01:00.000Z"
+      },
+      {
+        "id": "clar-resp-1",
+        "type": "clarification_response",
+        "answers": {
+          "notion_source": ["database_id"],
+          "notion_filters": ["recently_edited"],
+          "timezone_for_5pm": ["provide_tz"],
+          "telegram_destination": ["chat_id_private"],
+          "notion_fields_mapping": ["property_rich_text"]
+        },
+        "timestamp": "2026-07-23T10:01:10.000Z",
+        "originalQuestions": [
+          {
+            "id": "timezone_for_5pm",
+            "choices": [
+              {
+                "id": "provide_tz",
+                "label": "I’ll specify a timezone",
+                "description": "Example: America/Los_Angeles, America/New_York, Europe/London"
+              },
+              {
+                "id": "utc",
+                "label": "Use UTC",
+                "description": "Run at 17:00 UTC every Friday"
+              }
+            ],
+            "context": "Cron schedules are configured in UTC; I’ll convert your local 5pm Friday into a UTC cron expression.",
+            "question": "What timezone should “Friday at 5pm” use?",
+            "allowMultiple": false
+          },
+          {
+            "id": "notion_source",
+            "choices": [
+              {
+                "id": "database_id",
+                "label": "I will paste the Notion database_id",
+                "description": "The 32-character ID from the Notion database URL"
+              },
+              {
+                "id": "data_source_id",
+                "label": "I will paste the Notion data_source_id",
+                "description": "If you already have it (more efficient for querying)"
+              }
+            ],
+            "context": "The Notion query bubble can use either; data_source_id is preferred when available.",
+            "question": "How should we identify the Notion database to read deals from?",
+            "allowMultiple": false
+          },
+          {
+            "id": "notion_filters",
+            "choices": [
+              {
+                "id": "open_pipeline_only",
+                "label": "Only open pipeline (exclude Closed Won/Lost)",
+                "description": "Most common weekly pipeline view"
+              },
+              {
+                "id": "recently_edited",
+                "label": "Deals edited in the last N days",
+                "description": "You’ll provide N; good for ‘recent notes’ behavior"
+              },
+              {
+                "id": "all_deals",
+                "label": "All deals in the database",
+                "description": "No filtering besides whatever Notion returns"
+              }
+            ],
+            "question": "Which deals should be included in the weekly digest?",
+            "allowMultiple": false
+          },
+          {
+            "id": "notion_fields_mapping",
+            "choices": [
+              {
+                "id": "property_rich_text",
+                "label": "In a database property (Rich text / Text)",
+                "description": "Example property name: Notes, Last note, Call notes"
+              },
+              {
+                "id": "page_content",
+                "label": "In the page body content (blocks)",
+                "description": "Notes are written inside the deal’s page, not a database property"
+              }
+            ],
+            "context": "If it’s page content, we’ll need to retrieve/parse blocks; if it’s a property, querying is simpler.",
+            "question": "Where are the “deal notes” stored in Notion for each deal?",
+            "allowMultiple": false
+          },
+          {
+            "id": "telegram_destination",
+            "choices": [
+              {
+                "id": "chat_id_private",
+                "label": "My private chat (I’ll provide chat_id)",
+                "description": "Send directly to you"
+              },
+              {
+                "id": "group_or_channel",
+                "label": "A group/channel (I’ll provide chat_id or @channelusername)",
+                "description": "Send to a shared place"
+              }
+            ],
+            "question": "Where should the Telegram digest be sent?",
+            "allowMultiple": false
+          }
+        ]
+      },
+      {
+        "id": "user-2",
+        "type": "user",
+        "content": "Use UTC for the schedule. Notion database_id: 1234567890abcdef1234567890abcdef. Recent deal notes = deals updated in the last 7 days. Stalled = AI judgment from the notes content. Telegram chat_id: 123456789. No more questions please - generate the plan.",
+        "timestamp": "2026-07-23T10:01:20.000Z"
+      },
+      {
+        "id": "plan-1",
+        "plan": {
+          "steps": [
+            {
+              "title": "Trigger weekly run (Friday 17:00 UTC)",
+              "bubblesUsed": [],
+              "description": "Use a schedule/cron trigger with a fixed cron expression to run the flow every Friday at 17:00 UTC."
+            },
+            {
+              "title": "Query recent deals in Notion (last 7 days)",
+              "bubblesUsed": ["NotionBubble"],
+              "description": "Query the Notion database_id (1234567890abcdef1234567890abcdef) for pages whose last_edited_time is within the last 7 days. Sort by last_edited_time descending so the digest highlights most recently updated deals first. If the Notion API filter cannot directly filter by last_edited_time via query, fall back to: (a) query by sorts + page_size, then (b) filter locally by last_edited_time >= cutoff."
+            },
+            {
+              "title": "Extract deal fields and notes text from Notion properties",
+              "bubblesUsed": [],
+              "description": "From each returned page, extract: deal title (page title property), last_edited_time, URL, and your notes property (rich text/text). Normalize notes into plain text (join rich text fragments) and drop deals where notes are empty to avoid low-signal AI analysis."
+            },
+            {
+              "title": "AI classification of stalled deals + next steps (per deal)",
+              "bubblesUsed": ["AIAgentBubble"],
+              "description": "For each deal (loop in handle), send the deal context (title, last edited time, notes text, optional URL) to the AI agent and request structured JSON output: { stalled: boolean, stall_reason: string, next_steps: string[], confidence: 'low'|'medium'|'high' }. Stalled determination is based on AI judgment from notes content. Collect per-deal assessments for digest assembly."
+            },
+            {
+              "title": "Assemble the pipeline digest message",
+              "bubblesUsed": [],
+              "description": "Group results into sections such as: “Stalled deals (need attention)” and “Active deals (next steps)”. Include for each deal: name, last edited date, 1-line stall reason (if stalled), and 1–3 actionable next steps. Add a header with the date range (last 7 days) and totals (deals analyzed, stalled count). Format as Telegram HTML (safe tags only) and keep message length within Telegram limits (truncate or split into multiple messages if needed)."
+            },
+            {
+              "title": "Send digest to Telegram",
+              "bubblesUsed": ["TelegramBubble"],
+              "description": "Send the digest to Telegram chat_id 123456789 using Telegram send_message with parse_mode = HTML. Optionally disable link previews to keep the digest compact."
+            }
+          ],
+          "summary": "Run every Friday at 17:00 UTC, pull deals from your Notion database edited in the last 7 days, use an AI agent to flag stalled deals and propose next steps from the notes, then send a formatted pipeline digest to your Telegram private chat.",
+          "estimatedBubbles": [
+            "NotionBubble",
+            "AIAgentBubble",
+            "TelegramBubble"
+          ]
+        },
+        "type": "plan",
+        "timestamp": "2026-07-23T10:09:00.000Z"
+      },
+      {
+        "id": "plan-approval-1",
+        "type": "plan_approval",
+        "approved": true,
+        "timestamp": "2026-07-23T10:09:10.000Z"
+      }
+    ]
+  }
+}

@@ -1,13 +1,29 @@
-import { Code, Activity, Clock, KeyRound } from 'lucide-react';
+import {
+  Code,
+  Activity,
+  ArrowLeft,
+  Clock,
+  KeyRound,
+  ListChecks,
+  MessageSquare,
+} from 'lucide-react';
+import { useMemo } from 'react';
 import { PearlChat } from './ai/PearlChat';
 import { FlowSetupPanel } from './FlowSetupPanel';
+import { FlowChecklistPanel } from './FlowChecklistPanel';
+import { FlowConversationPanel } from './FlowConversationPanel';
 import { MonacoEditor } from './MonacoEditor';
 import LiveOutput from './execution_logs/LiveOutput';
 import { ExecutionHistory } from './execution_logs/ExecutionHistory';
 import { useExecutionStore } from '../stores/executionStore';
 import { useEditor } from '../hooks/useEditor';
 import { useUIStore } from '../stores/uiStore';
+import { useBubbleFlow } from '../hooks/useBubbleFlow';
 import { useExecutionHistory } from '../hooks/useExecutionHistory';
+import {
+  deriveChecklistItems,
+  parseConversationMessages,
+} from '../utils/flowChecklist';
 import { shallow } from 'zustand/shallow';
 
 export function ConsolidatedSidePanel() {
@@ -15,6 +31,16 @@ export function ConsolidatedSidePanel() {
   const activeTab = useUIStore((state) => state.consolidatedPanelTab);
   const setConsolidatedPanelTab = useUIStore(
     (state) => state.setConsolidatedPanelTab
+  );
+  const { data: currentFlow } = useBubbleFlow(flowId);
+
+  const conversationMessages = useMemo(
+    () => parseConversationMessages(currentFlow?.metadata),
+    [currentFlow?.metadata]
+  );
+  const checklistItems = useMemo(
+    () => deriveChecklistItems(currentFlow?.workflow, conversationMessages),
+    [currentFlow?.workflow, conversationMessages]
   );
 
   // Use selector to only subscribe to specific fields and prevent unnecessary re-renders
@@ -40,10 +66,19 @@ export function ConsolidatedSidePanel() {
       badge: null,
     },
     {
-      id: 'code' as const,
-      label: 'Code',
-      icon: Code,
-      badge: editor.getCode().split('\n').length,
+      // Replaces the raw Code tab: plain-language checklist of what the
+      // flow does. Code stays reachable via the checklist's "View code".
+      id: 'checklist' as const,
+      label: 'Checklist',
+      icon: ListChecks,
+      badge: checklistItems.length > 0 ? checklistItems.length : null,
+    },
+    {
+      id: 'conversation' as const,
+      label: 'Conversation',
+      icon: MessageSquare,
+      badge:
+        conversationMessages.length > 0 ? conversationMessages.length : null,
     },
     {
       id: 'output' as const,
@@ -71,7 +106,11 @@ export function ConsolidatedSidePanel() {
       <div className="flex border-b border-[#30363d] bg-[#0f1115]">
         {tabs.map((tab) => {
           const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
+          // The code view is a sub-view of the checklist tab, so keep the
+          // Checklist tab highlighted while the raw code is showing.
+          const isActive =
+            activeTab === tab.id ||
+            (tab.id === 'checklist' && activeTab === 'code');
           const isPearl = tab.id === 'pearl';
 
           return (
@@ -79,7 +118,7 @@ export function ConsolidatedSidePanel() {
               key={tab.id}
               type="button"
               onClick={() => setConsolidatedPanelTab(tab.id)}
-              className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium transition-all duration-200 border-b-2 ${
+              className={`flex-1 flex items-center justify-center gap-2 px-3 py-3 text-sm font-medium transition-all duration-200 border-b-2 ${
                 isActive
                   ? 'border-white text-white bg-[#1a1a1a]'
                   : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-[#161b22]'
@@ -114,11 +153,41 @@ export function ConsolidatedSidePanel() {
           <PearlChat />
         </div>
 
-        {/* Code Editor Tab - Always mounted for useEditor to work */}
+        {/* Checklist Tab - plain-language view of what the flow does */}
+        {activeTab === 'checklist' && (
+          <div className="absolute inset-0">
+            <FlowChecklistPanel flowId={flowId} />
+          </div>
+        )}
+
+        {/* Conversation Tab - the saved thread that built this flow */}
+        {activeTab === 'conversation' && (
+          <div className="absolute inset-0">
+            <FlowConversationPanel flowId={flowId} />
+          </div>
+        )}
+
+        {/* Code Editor (demoted) - Always mounted for useEditor to work.
+            Reached from the checklist's "View code" link, not a tab. */}
         <div
-          className={`absolute inset-0 ${activeTab === 'code' ? 'block' : 'hidden'}`}
+          className={`absolute inset-0 ${activeTab === 'code' ? 'flex flex-col' : 'hidden'}`}
         >
-          <MonacoEditor />
+          <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#30363d] bg-[#0f1115] flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => setConsolidatedPanelTab('checklist')}
+              className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-200 transition-colors"
+            >
+              <ArrowLeft className="w-3 h-3" />
+              Back to checklist
+            </button>
+            <span className="text-[10px] text-gray-500">
+              {editor.getCode().split('\n').length} lines
+            </span>
+          </div>
+          <div className="flex-1 min-h-0">
+            <MonacoEditor />
+          </div>
         </div>
 
         {/* Live Output Tab - Only render when active */}

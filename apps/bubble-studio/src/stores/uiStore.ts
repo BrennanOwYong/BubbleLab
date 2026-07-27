@@ -10,6 +10,20 @@ import { create } from 'zustand';
 
 export type SidePanelMode = 'closed' | 'bubbleList' | 'milktea' | 'pearl';
 
+/**
+ * Tabs in the consolidated side panel. 'checklist' is the primary view of
+ * what the flow does; 'code' stays a valid tab id (reached via the
+ * checklist's "View code" link and showEditorPanel) but has no tab button.
+ */
+export type ConsolidatedPanelTab =
+  | 'pearl'
+  | 'checklist'
+  | 'code'
+  | 'conversation'
+  | 'output'
+  | 'history'
+  | 'setup';
+
 interface UIStore {
   // ============= Panel State =============
 
@@ -68,7 +82,7 @@ interface UIStore {
   /**
    * Active tab in the consolidated side panel
    */
-  consolidatedPanelTab: 'pearl' | 'code' | 'output' | 'history' | 'setup';
+  consolidatedPanelTab: ConsolidatedPanelTab;
 
   // ============= Modal Visibility State =============
 
@@ -173,16 +187,12 @@ interface UIStore {
   /**
    * Set the active tab in the consolidated side panel
    */
-  setConsolidatedPanelTab: (
-    tab: 'pearl' | 'code' | 'output' | 'history' | 'setup'
-  ) => void;
+  setConsolidatedPanelTab: (tab: ConsolidatedPanelTab) => void;
 
   /**
    * Open the consolidated side panel with a specific tab
    */
-  openConsolidatedPanelWith: (
-    tab: 'pearl' | 'code' | 'output' | 'history' | 'setup'
-  ) => void;
+  openConsolidatedPanelWith: (tab: ConsolidatedPanelTab) => void;
 
   /**
    * Toggle the consolidated side panel visibility
