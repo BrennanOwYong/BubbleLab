@@ -2,7 +2,7 @@
 
 Status: COMPLETE
 Branch: feature/nontechnical-prompts
-Commit: (filled after commit — see git log, single commit on top of bf32c04)
+Commit: f328f66 (on top of bf32c04)
 
 ## Files changed
 
