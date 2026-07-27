@@ -3,9 +3,11 @@ import { AvailableModels, type AvailableModel } from './ai-models.js';
 import { ParsedBubbleWithInfoSchema } from './bubble-definition-schema.js';
 import { CredentialType } from './types.js';
 import { ConversationMessageSchema } from './agent-memory.js';
-// Default model for Pearl AI agent
-export const PEARL_DEFAULT_MODEL: AvailableModel =
-  'openrouter/anthropic/claude-sonnet-4.5';
+// Default model for Pearl AI agent.
+// Kept on OpenAI to match the generation path (COFFEE_DEFAULT_MODEL) — the
+// deployed API only carries OPENAI_API_KEY, so OpenRouter/Anthropic models
+// fail at runtime with a missing-credential error.
+export const PEARL_DEFAULT_MODEL: AvailableModel = 'openai/gpt-5.2';
 /**
  * Request schema for Pearl agent
  * Pearl helps users build complete workflows without requiring specific bubbles

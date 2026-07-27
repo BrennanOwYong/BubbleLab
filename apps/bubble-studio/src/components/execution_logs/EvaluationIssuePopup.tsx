@@ -27,7 +27,8 @@ interface EvaluationIssuePopupProps {
 /**
  * Popup dialog that appears when workflow check completes.
  * Shows summary for successful executions, or issue details with fix options for failures.
- * For setup issues, only shows setup instructions (no "Fix with Pearl" button).
+ * Every failure gets an "Explain with Pearl" button: Pearl explains the error in
+ * plain English and says whether it is a user setup action or a workflow fix.
  */
 export function EvaluationIssuePopup({
   isOpen,
@@ -96,14 +97,13 @@ export function EvaluationIssuePopup({
   };
 
   const handleFixWithPearl = () => {
-    const issueContext = `The workflow check found the following issue:\n\n${evaluationResult.summary}\n\nPlease help me fix this issue.`;
+    const issueContext = `The workflow check found the following issue (classified as "${evaluationResult.issueType ?? 'unknown'}"):\n\n${evaluationResult.summary}\n\nExplain this error in plain English. Then tell me: is this something I need to do myself (like setting up an API key or reconnecting an account), or a workflow problem you can fix? Only edit the workflow if it is a workflow problem.`;
     onFixWithPearl(issueContext);
   };
 
-  // Determine if "Fix with Pearl" should be shown
-  // Only show for workflow issues (not setup or input - those require user action outside the workflow)
-  const showFixWithPearl =
-    !evaluationResult.working && evaluationResult.issueType === 'workflow';
+  // Show "Explain with Pearl" for every failure. Pearl explains the error and,
+  // for setup/input issues, states the user action plainly instead of editing code.
+  const showFixWithPearl = !evaluationResult.working;
 
   // Different styling based on success/failure
   const isSuccess = evaluationResult.working;
@@ -246,7 +246,7 @@ export function EvaluationIssuePopup({
                 ) : (
                   <>
                     <Sparkles className="w-4 h-4" />
-                    Fix with Pearl
+                    Explain with Pearl
                   </>
                 )}
               </button>

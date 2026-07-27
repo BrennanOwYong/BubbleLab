@@ -279,8 +279,8 @@ export default function AllEventsView({
 
     // Use specific issue details if provided, otherwise use generic message
     const prompt = issueDetails
-      ? `The workflow check found the following issue:\n\n${issueDetails}\n\nPlease help me fix this issue in my workflow.`
-      : `I'm seeing error(s) in my workflow execution. Can you tell me what I can do address these errors / fix any issues in the workflow as you see fit?`;
+      ? `The workflow check found the following issue:\n\n${issueDetails}\n\nExplain this error in plain English. Then tell me: is this something I need to do myself (like setting up an API key or reconnecting an account), or a workflow problem you can fix? Only edit the workflow if it is a workflow problem.`
+      : `I'm seeing error(s) in my workflow execution (they are in your context). Explain in plain English what went wrong. Then tell me: is this something I need to do myself (like setting up an API key or reconnecting an account), or a workflow problem you can fix? Only edit the workflow if it is a workflow problem.`;
 
     // Trigger Pearl generation (component doesn't subscribe to Pearl state)
     pearl.startGeneration(prompt);
@@ -909,10 +909,11 @@ export default function AllEventsView({
                               </div>
                               <div>
                                 <h4 className="text-xs font-medium text-gray-200">
-                                  Need help fixing these errors?
+                                  Not sure what these errors mean?
                                 </h4>
                                 <p className="text-[10px] text-gray-500">
-                                  Pearl can analyze and suggest fixes
+                                  Pearl explains the error and tells you what to
+                                  do
                                 </p>
                               </div>
                             </div>
@@ -925,7 +926,7 @@ export default function AllEventsView({
                               <Sparkles className="w-3.5 h-3.5" />
                               {pearl.isPending
                                 ? 'Analyzing...'
-                                : 'Fix with Pearl'}
+                                : 'Explain with Pearl'}
                             </button>
                           </div>
                         </div>
@@ -1228,10 +1229,10 @@ export default function AllEventsView({
                         <div className="flex items-center justify-between gap-4">
                           <div>
                             <h4 className="text-sm font-medium text-gray-200 mb-1">
-                              Need help fixing these issues?
+                              Not sure what this issue means?
                             </h4>
                             <p className="text-xs text-gray-400">
-                              Pearl can analyze the results and suggest fixes
+                              Pearl explains the issue and tells you what to do
                             </p>
                           </div>
                           <button
@@ -1245,7 +1246,7 @@ export default function AllEventsView({
                             <Sparkles className="w-4 h-4" />
                             {pearl.isPending
                               ? 'Analyzing...'
-                              : 'Fix with Pearl'}
+                              : 'Explain with Pearl'}
                           </button>
                         </div>
                       </div>
@@ -1442,7 +1443,7 @@ export default function AllEventsView({
                         <div className="flex items-center justify-between gap-3">
                           <div className="flex-1 min-w-0">
                             <h4 className="text-xs font-medium text-gray-200 mb-1">
-                              Need help fixing this error?
+                              Not sure what this error means?
                             </h4>
                             <p className="text-[10px] text-gray-400">
                               Please wait until the flow finishes executing
@@ -1458,7 +1459,7 @@ export default function AllEventsView({
                             <Sparkles className="w-3.5 h-3.5" />
                             {pearl.isPending
                               ? 'Analyzing...'
-                              : 'Fix with Pearl'}
+                              : 'Explain with Pearl'}
                           </button>
                         </div>
                       </div>

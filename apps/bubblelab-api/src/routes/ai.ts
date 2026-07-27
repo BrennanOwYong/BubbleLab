@@ -18,16 +18,35 @@ const app = new OpenAPIHono({
 });
 setupErrorHandler(app);
 
+/**
+ * Build the system-credential record from env, including only keys that are
+ * set and non-blank. Passing `KEY: undefined` (env var absent) fails the
+ * AIAgentBubble input schema with "credentials.X: Required" before the agent
+ * runs, which took Pearl down whenever ANTHROPIC_API_KEY was not configured.
+ */
+function systemAICredentials(): Partial<Record<CredentialType, string>> {
+  const candidates: Array<[CredentialType, string | undefined]> = [
+    [CredentialType.GOOGLE_GEMINI_CRED, env.GOOGLE_API_KEY],
+    [CredentialType.OPENAI_CRED, env.OPENAI_API_KEY],
+    [CredentialType.OPENROUTER_CRED, env.OPENROUTER_API_KEY],
+    [CredentialType.ANTHROPIC_CRED, env.ANTHROPIC_API_KEY],
+    [CredentialType.FIRECRAWL_API_KEY, env.FIRE_CRAWL_API_KEY],
+  ];
+  const credentials: Partial<Record<CredentialType, string>> = {};
+  for (const [type, value] of candidates) {
+    if (value && value.trim() !== '') {
+      credentials[type] = value;
+    }
+  }
+  return credentials;
+}
+
 app.openapi(milkTeaRoute, async (c) => {
   // const userId = getUserId(c);
   const request = c.req.valid('json');
 
   // Execute MilkTea agent
-  const result = await runMilkTea(request, {
-    [CredentialType.GOOGLE_GEMINI_CRED]: env.GOOGLE_API_KEY!,
-    [CredentialType.OPENAI_CRED]: env.OPENAI_API_KEY!,
-    [CredentialType.OPENROUTER_CRED]: env.OPENROUTER_API_KEY!,
-  });
+  const result = await runMilkTea(request, systemAICredentials());
 
   if (!result.success) {
     return c.json(
@@ -47,13 +66,7 @@ app.openapi(pearlRoute, async (c) => {
 
   // If stream is not true, fall back to regular route
   if (!stream) {
-    const result = await runPearl(request, {
-      [CredentialType.GOOGLE_GEMINI_CRED]: env.GOOGLE_API_KEY!,
-      [CredentialType.OPENAI_CRED]: env.OPENAI_API_KEY!,
-      [CredentialType.OPENROUTER_CRED]: env.OPENROUTER_API_KEY!,
-      [CredentialType.ANTHROPIC_CRED]: env.ANTHROPIC_API_KEY!,
-      [CredentialType.FIRECRAWL_API_KEY]: env.FIRE_CRAWL_API_KEY!,
-    });
+    const result = await runPearl(request, systemAICredentials());
 
     if (!result.success) {
       return c.json(
@@ -80,13 +93,7 @@ app.openapi(pearlRoute, async (c) => {
 
       const result = await runPearl(
         request,
-        {
-          [CredentialType.GOOGLE_GEMINI_CRED]: env.GOOGLE_API_KEY!,
-          [CredentialType.OPENAI_CRED]: env.OPENAI_API_KEY!,
-          [CredentialType.OPENROUTER_CRED]: env.OPENROUTER_API_KEY!,
-          [CredentialType.ANTHROPIC_CRED]: env.ANTHROPIC_API_KEY!,
-          [CredentialType.FIRECRAWL_API_KEY]: env.FIRE_CRAWL_API_KEY,
-        },
+        systemAICredentials(),
         streamingCallback
       );
 
@@ -145,12 +152,17 @@ app.openapi(pearlRoute, async (c) => {
         },
         'pearl_error'
       );
+      // Shape must match StreamingEvent: the frontend reads event.data.error
       await stream.writeSSE({
         data: JSON.stringify({
           type: 'error',
-          error:
-            error instanceof Error ? error.message : 'Unknown streaming error',
-          recoverable: false,
+          data: {
+            error:
+              error instanceof Error
+                ? error.message
+                : 'Unknown streaming error',
+            recoverable: false,
+          },
         }),
         event: 'error',
       });
