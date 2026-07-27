@@ -23,6 +23,7 @@ import { useExecutionHistory } from '../hooks/useExecutionHistory';
 import {
   deriveChecklistItems,
   parseConversationMessages,
+  parseConversationThread,
 } from '../utils/flowChecklist';
 import { shallow } from 'zustand/shallow';
 
@@ -36,6 +37,12 @@ export function ConsolidatedSidePanel() {
 
   const conversationMessages = useMemo(
     () => parseConversationMessages(currentFlow?.metadata),
+    [currentFlow?.metadata]
+  );
+  // Full thread (Coffee messages + programmatic workflow-status messages)
+  // drives the Conversation tab badge so "needs info" messages count too.
+  const conversationThreadLength = useMemo(
+    () => parseConversationThread(currentFlow?.metadata).length,
     [currentFlow?.metadata]
   );
   const checklistItems = useMemo(
@@ -77,8 +84,7 @@ export function ConsolidatedSidePanel() {
       id: 'conversation' as const,
       label: 'Conversation',
       icon: MessageSquare,
-      badge:
-        conversationMessages.length > 0 ? conversationMessages.length : null,
+      badge: conversationThreadLength > 0 ? conversationThreadLength : null,
     },
     {
       id: 'output' as const,

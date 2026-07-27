@@ -44,6 +44,10 @@ import ServiceTriggerNode from './nodes/ServiceTriggerNode';
 import { useEditorStore } from '@/stores/editorStore';
 import { getPearlChatStore } from '@/stores/pearlChatStore';
 import { GeneratingOverlay } from './GeneratingOverlay';
+import {
+  applyProfileDefaults,
+  getUserProfileDefaults,
+} from '@/utils/fieldDescriptor';
 
 // Keep backward compatibility - use the shared schema type
 type ParsedBubble = ParsedBubbleWithInfo;
@@ -202,9 +206,16 @@ function FlowVisualizerInner({
   // Track if we've initialized defaults for this flow to avoid loops
   const didInitDefaultsForFlow = useRef<number | null>(null);
 
-  // Initialize execution inputs from defaults once per flow (avoid loops)
+  // Initialize execution inputs from defaults once per flow (avoid loops).
+  // Profile defaults (userProfileDefaults on GET /bubble-flow/:id, when the
+  // response carries them) seed matching input fields as REAL values; the
+  // flow's saved defaultInputs always win over profile defaults.
   useEffect(() => {
-    const defaults = currentFlow?.defaultInputs || {};
+    const defaults = applyProfileDefaults(
+      currentFlow?.inputSchema,
+      currentFlow?.defaultInputs || {},
+      getUserProfileDefaults(currentFlow)
+    );
     const hasDefaults = Object.keys(defaults).length > 0;
     const hasExisting = Object.keys(executionInputs || {}).length > 0;
     if (
@@ -216,7 +227,7 @@ function FlowVisualizerInner({
       setInputs(defaults);
       didInitDefaultsForFlow.current = currentFlow.id;
     }
-  }, [currentFlow?.id, currentFlow?.defaultInputs, executionInputs, setInputs]);
+  }, [currentFlow, executionInputs, setInputs]);
 
   // Check if there are unsaved input changes (comparing executionInputs with flow's defaultInputs)
   const hasUnsavedInputChanges =

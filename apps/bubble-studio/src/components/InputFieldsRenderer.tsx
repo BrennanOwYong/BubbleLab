@@ -26,6 +26,7 @@ import { runIncrementalConsent } from '../lib/incrementalConsent';
 import { credentialsApi } from '../services/credentialsApi';
 import { useQueryClient } from '@tanstack/react-query';
 import type { CredentialResponse } from '@bubblelab/shared-schemas';
+import { resolveFieldText } from '../utils/fieldDescriptor';
 
 interface SchemaField {
   name: string;
@@ -33,6 +34,12 @@ interface SchemaField {
   required?: boolean;
   description?: string;
   default?: unknown;
+  /** Field-descriptor contract: plain-language label (falls back to name) */
+  header?: string;
+  /** Field-descriptor contract: non-technical placeholder hint (falls back to description) */
+  hint?: string;
+  /** Field-descriptor contract: known value rendered as REAL input text */
+  value?: unknown;
   /** Controls whether file upload is enabled for this field. Defaults to true for string fields. */
   canBeFile?: boolean;
   /** Controls whether Google Picker UI is enabled for this field. If true, shows Google Drive picker button. */
@@ -501,6 +508,22 @@ function InputFieldsRenderer({
           | string[]
           | Record<string, unknown>
           | undefined;
+        // C1 rule: a field that HAS a known value (user-provided, saved
+        // default, or descriptor value) shows it as REAL editable input text.
+        // The placeholder carries only the non-technical hint for the
+        // genuinely-empty state — never a value the system already knows.
+        const { displayValue: fieldDisplayValue, placeholder: fieldHint } =
+          resolveFieldText({
+            storedValue:
+              typeof currentValue === 'string' ||
+              typeof currentValue === 'number'
+                ? currentValue
+                : undefined,
+            knownValue:
+              field.value ?? (isArray || isObject ? undefined : field.default),
+            hint: field.hint ?? field.description,
+            name: field.name,
+          });
         const isMissing =
           field.required &&
           (currentValue === undefined ||
@@ -514,7 +537,7 @@ function InputFieldsRenderer({
             className="pb-2 border-b border-neutral-700/30 last:border-b-0 last:pb-0"
           >
             <label className="block text-xs font-semibold text-neutral-200 mb-1">
-              {field.name}
+              {field.header ?? field.name}
               {field.required && (
                 <span className="inline-flex items-center ml-1.5 px-1.5 py-0.5 text-[9px] font-bold bg-red-500/20 text-red-400 rounded border border-red-500/30">
                   REQUIRED
@@ -532,9 +555,9 @@ function InputFieldsRenderer({
                 </span>
               )}
             </label>
-            {field.description && (
+            {(field.hint ?? field.description) && (
               <div className="text-[10px] text-neutral-400 mb-1.5">
-                {field.description}
+                {field.hint ?? field.description}
               </div>
             )}
             {isArray ? (
@@ -906,7 +929,12 @@ function InputFieldsRenderer({
                                                   typeof nestedPropValue ===
                                                     'number'
                                                     ? nestedPropValue
-                                                    : ''
+                                                    : nestedPropSchema.default !==
+                                                        undefined
+                                                      ? String(
+                                                          nestedPropSchema.default
+                                                        )
+                                                      : ''
                                                 }
                                                 onChange={(e) => {
                                                   const val = e.target.value;
@@ -929,13 +957,8 @@ function InputFieldsRenderer({
                                                   }
                                                 }}
                                                 placeholder={
-                                                  nestedPropSchema.default !==
-                                                  undefined
-                                                    ? String(
-                                                        nestedPropSchema.default
-                                                      )
-                                                    : nestedPropSchema.description ||
-                                                      `Enter ${nestedPropName}...`
+                                                  nestedPropSchema.description ||
+                                                  `Enter ${nestedPropName}...`
                                                 }
                                                 disabled={isExecuting}
                                                 className={`nodrag flex-1 px-2 py-1 text-[11px] bg-neutral-900 border-t border-b ${
@@ -976,7 +999,12 @@ function InputFieldsRenderer({
                                                 typeof nestedPropValue ===
                                                   'number'
                                                   ? String(nestedPropValue)
-                                                  : ''
+                                                  : nestedPropSchema.default !==
+                                                      undefined
+                                                    ? String(
+                                                        nestedPropSchema.default
+                                                      )
+                                                    : ''
                                               }
                                               onChange={(
                                                 e: React.ChangeEvent<HTMLTextAreaElement>
@@ -987,13 +1015,8 @@ function InputFieldsRenderer({
                                                 );
                                               }}
                                               placeholder={
-                                                nestedPropSchema.default !==
-                                                undefined
-                                                  ? String(
-                                                      nestedPropSchema.default
-                                                    )
-                                                  : nestedPropSchema.description ||
-                                                    `Enter ${nestedPropName}...`
+                                                nestedPropSchema.description ||
+                                                `Enter ${nestedPropName}...`
                                               }
                                               disabled={isExecuting}
                                               className={`w-full px-2 py-1 text-[11px] bg-neutral-900 border ${
@@ -1038,7 +1061,9 @@ function InputFieldsRenderer({
                                     typeof propValue === 'string' ||
                                     typeof propValue === 'number'
                                       ? propValue
-                                      : ''
+                                      : propSchema.default !== undefined
+                                        ? String(propSchema.default)
+                                        : ''
                                   }
                                   onChange={(e) => {
                                     const val = e.target.value;
@@ -1055,10 +1080,8 @@ function InputFieldsRenderer({
                                     }
                                   }}
                                   placeholder={
-                                    propSchema.default !== undefined
-                                      ? String(propSchema.default)
-                                      : propSchema.description ||
-                                        `Enter ${propName}...`
+                                    propSchema.description ||
+                                    `Enter ${propName}...`
                                   }
                                   disabled={isExecuting}
                                   className={`nodrag flex-1 px-2 py-1.5 text-xs bg-neutral-900 border-t border-b ${
@@ -1096,7 +1119,9 @@ function InputFieldsRenderer({
                                   typeof propValue === 'string' ||
                                   typeof propValue === 'number'
                                     ? String(propValue)
-                                    : ''
+                                    : propSchema.default !== undefined
+                                      ? String(propSchema.default)
+                                      : ''
                                 }
                                 onChange={(
                                   e: React.ChangeEvent<HTMLTextAreaElement>
@@ -1107,10 +1132,8 @@ function InputFieldsRenderer({
                                   );
                                 }}
                                 placeholder={
-                                  propSchema.default !== undefined
-                                    ? String(propSchema.default)
-                                    : propSchema.description ||
-                                      `Enter ${propName}...`
+                                  propSchema.description ||
+                                  `Enter ${propName}...`
                                 }
                                 disabled={isExecuting}
                                 className={`w-full px-2 py-1.5 text-xs bg-neutral-900 border ${
@@ -1135,9 +1158,8 @@ function InputFieldsRenderer({
                 <select
                   title={`Select account for ${field.name}`}
                   value={
-                    typeof currentValue === 'string' &&
-                    accountOptions.some((o) => o.value === currentValue)
-                      ? currentValue
+                    accountOptions.some((o) => o.value === fieldDisplayValue)
+                      ? fieldDisplayValue
                       : ''
                   }
                   onChange={(e) => {
@@ -1178,7 +1200,11 @@ function InputFieldsRenderer({
                   type="button"
                   onClick={() => {
                     const numValue =
-                      typeof currentValue === 'number' ? currentValue : 0;
+                      typeof currentValue === 'number'
+                        ? currentValue
+                        : typeof field.default === 'number'
+                          ? field.default
+                          : 0;
                     onInputChange(field.name, numValue - 1);
                   }}
                   disabled={isExecuting}
@@ -1189,12 +1215,7 @@ function InputFieldsRenderer({
                 </button>
                 <input
                   type="text"
-                  value={
-                    typeof currentValue === 'string' ||
-                    typeof currentValue === 'number'
-                      ? currentValue
-                      : ''
-                  }
+                  value={fieldDisplayValue}
                   onChange={(e) => {
                     const val = e.target.value;
                     if (val === '' || val === '-') {
@@ -1206,11 +1227,7 @@ function InputFieldsRenderer({
                       }
                     }
                   }}
-                  placeholder={
-                    field.default !== undefined
-                      ? String(field.default)
-                      : field.description || `Enter ${field.name}...`
-                  }
+                  placeholder={fieldHint}
                   disabled={isExecuting}
                   className={`nodrag flex-1 px-2 py-1.5 text-xs bg-neutral-900 border-t border-b ${
                     isMissing
@@ -1246,19 +1263,12 @@ function InputFieldsRenderer({
                         (field.type === undefined || field.type === 'string') &&
                         field.canBeFile !== false
                           ? uploadedFileNames[field.name]
-                          : typeof currentValue === 'string' ||
-                              typeof currentValue === 'number'
-                            ? String(currentValue)
-                            : ''
+                          : fieldDisplayValue
                       }
                       onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => {
                         onInputChange(field.name, e.target.value);
                       }}
-                      placeholder={
-                        field.default !== undefined
-                          ? String(field.default)
-                          : field.description || `Enter ${field.name}...`
-                      }
+                      placeholder={fieldHint}
                       disabled={
                         isExecuting ||
                         ((field.type === undefined ||

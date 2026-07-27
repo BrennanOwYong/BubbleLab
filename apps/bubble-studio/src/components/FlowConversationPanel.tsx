@@ -13,9 +13,15 @@ import type {
   CoffeeMessage,
 } from '@bubblelab/shared-schemas';
 import { useBubbleFlow } from '../hooks/useBubbleFlow';
-import { parseConversationMessages } from '../utils/flowChecklist';
+import {
+  parseConversationThread,
+  type WorkflowStatusMessage,
+} from '../utils/flowChecklist';
+import { getUserProfileDefaults } from '../utils/fieldDescriptor';
+import { DefaultValueForm } from './shared/DefaultValueForm';
+import { useExecutionStore, getExecutionStore } from '../stores/executionStore';
 
-function formatTimestamp(timestamp: string): string {
+function formatTimestamp(timestamp: string | number): string {
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return '';
   return date.toLocaleString(undefined, {
@@ -24,6 +30,65 @@ function formatTimestamp(timestamp: string): string {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+/**
+ * Programmatic workflow-status message (generate route contract):
+ * - workflow-done: a system note with the timestamp.
+ * - workflow-done-needs-info: the same note plus the re-created default-value
+ *   form (identical headers, hints and prefilled values as the setup form —
+ *   known values render as REAL editable text, hints only as placeholders).
+ * Edits land in the flow's execution inputs, so the values typed here are the
+ * values the flow runs with.
+ */
+function WorkflowStatusBubble({
+  message,
+  flowId,
+  profileDefaults,
+}: {
+  message: WorkflowStatusMessage;
+  flowId: number;
+  profileDefaults?: Record<string, string>;
+}) {
+  const executionInputs = useExecutionStore(
+    flowId,
+    (state) => state.executionInputs
+  );
+  const timestamp = formatTimestamp(message.timestampMs);
+
+  if (message.kind === 'workflow-done') {
+    return (
+      <div className="text-center px-4">
+        <p className="text-xs text-gray-400 italic">
+          <CheckCircle2 className="w-3.5 h-3.5 text-green-400/80 inline mr-1.5 align-text-bottom" />
+          {message.text}
+        </p>
+        {timestamp && (
+          <p className="text-[10px] text-gray-600 mt-0.5">{timestamp}</p>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1 items-start">
+      <div className="flex items-center gap-2 text-[10px] text-gray-500">
+        <span className="font-medium text-gray-400">Assistant</span>
+        {timestamp && <span>{timestamp}</span>}
+      </div>
+      <div className="max-w-[92%] w-full rounded-lg border px-3 py-2 text-sm leading-relaxed bg-[#0f1115] border-[#30363d] text-gray-200">
+        <p>{message.text}</p>
+        <DefaultValueForm
+          fields={message.fields ?? []}
+          values={executionInputs}
+          onValueChange={(key, value) =>
+            getExecutionStore(flowId).setInput(key, value)
+          }
+          profileDefaults={profileDefaults}
+        />
+      </div>
+    </div>
+  );
 }
 
 function MessageShell({
@@ -253,26 +318,36 @@ function ConversationMessage({
 export function FlowConversationPanel({ flowId }: { flowId: number | null }) {
   const { data: currentFlow } = useBubbleFlow(flowId);
 
-  const messages = useMemo(
-    () => parseConversationMessages(currentFlow?.metadata),
+  // Full thread in persisted order: Coffee planning messages AND programmatic
+  // workflow-status messages (workflow-done / workflow-done-needs-info).
+  const thread = useMemo(
+    () => parseConversationThread(currentFlow?.metadata),
     [currentFlow?.metadata]
+  );
+
+  const profileDefaults = useMemo(
+    () => getUserProfileDefaults(currentFlow),
+    [currentFlow]
   );
 
   // Lookup so clarification answers can echo their question text even when
   // originalQuestions was not persisted on the response message.
   const questionsById = useMemo(() => {
     const map = new Map<string, ClarificationQuestion>();
-    for (const message of messages) {
-      if (message.type === 'clarification_request') {
-        for (const question of message.questions) {
+    for (const entry of thread) {
+      if (
+        entry.kind === 'coffee' &&
+        entry.message.type === 'clarification_request'
+      ) {
+        for (const question of entry.message.questions) {
           map.set(question.id, question);
         }
       }
     }
     return map;
-  }, [messages]);
+  }, [thread]);
 
-  if (!flowId || messages.length === 0) {
+  if (!flowId || thread.length === 0) {
     return (
       <div className="h-full flex items-center justify-center bg-[#1a1a1a]">
         <div className="text-center text-gray-500 px-6">
@@ -299,13 +374,22 @@ export function FlowConversationPanel({ flowId }: { flowId: number | null }) {
         </p>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4">
-        {messages.map((message) => (
-          <ConversationMessage
-            key={message.id}
-            message={message}
-            questionsById={questionsById}
-          />
-        ))}
+        {thread.map((entry, index) =>
+          entry.kind === 'coffee' ? (
+            <ConversationMessage
+              key={entry.message.id}
+              message={entry.message}
+              questionsById={questionsById}
+            />
+          ) : (
+            <WorkflowStatusBubble
+              key={`status-${entry.message.kind}-${entry.message.timestampMs}-${index}`}
+              message={entry.message}
+              flowId={flowId}
+              profileDefaults={profileDefaults}
+            />
+          )
+        )}
       </div>
     </div>
   );

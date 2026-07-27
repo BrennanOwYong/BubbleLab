@@ -1,18 +1,81 @@
 /**
- * Plain-language checklist of what a flow does — the primary view in the
- * slot the raw Code tab used to occupy. Items derive from the flow's parsed
- * `workflow` step graph (falling back to the approved plan in the saved
- * conversation); the raw code stays reachable through the "View code" link.
+ * Plain-language checklist of a flow — the primary view in the slot the raw
+ * Code tab used to occupy. Four sections only (B3): when it runs, what you
+ * need to provide, what it does, and what happens on failure. Items derive
+ * from the flow's parsed `workflow` step graph (falling back to the approved
+ * plan in the saved conversation), the inputSchema, and the trigger config;
+ * the raw code stays reachable through the "View code" link.
  */
 import { useMemo } from 'react';
-import { CheckCircle2, Code, ListChecks } from 'lucide-react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  Code,
+  FileInput,
+  ListChecks,
+} from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { useBubbleFlow } from '../hooks/useBubbleFlow';
 import { useUIStore } from '../stores/uiStore';
 import {
-  deriveChecklistItems,
+  deriveChecklistSections,
   deriveFlowSummary,
   parseConversationMessages,
+  type ChecklistItem,
 } from '../utils/flowChecklist';
+
+function ChecklistSection({
+  title,
+  icon: Icon,
+  items,
+  numbered = false,
+}: {
+  title: string;
+  icon: LucideIcon;
+  items: ChecklistItem[];
+  numbered?: boolean;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <section>
+      <h4 className="flex items-center gap-1.5 text-xs font-semibold text-gray-300 mb-2">
+        <Icon className="w-3.5 h-3.5 text-gray-500" />
+        {title}
+      </h4>
+      <ol className="space-y-2">
+        {items.map((item, index) => (
+          <li
+            key={item.id}
+            className="flex items-start gap-3 rounded-lg border border-[#30363d] bg-[#0f1115] px-3 py-2.5"
+          >
+            <CheckCircle2 className="w-4 h-4 text-green-400/80 mt-0.5 flex-shrink-0" />
+            <div className="min-w-0">
+              <p className="text-sm text-gray-200 leading-relaxed">
+                {numbered && (
+                  <span className="text-gray-500 mr-1.5">{index + 1}.</span>
+                )}
+                {item.text}
+              </p>
+              {item.tools.length > 0 && (
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {item.tools.map((tool) => (
+                    <span
+                      key={tool}
+                      className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-700/50 text-gray-400"
+                    >
+                      {tool}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
 
 export function FlowChecklistPanel({ flowId }: { flowId: number | null }) {
   const { data: currentFlow } = useBubbleFlow(flowId);
@@ -25,12 +88,31 @@ export function FlowChecklistPanel({ flowId }: { flowId: number | null }) {
     [currentFlow?.metadata]
   );
 
-  const items = useMemo(
-    () => deriveChecklistItems(currentFlow?.workflow, messages),
-    [currentFlow?.workflow, messages]
+  const sections = useMemo(
+    () =>
+      deriveChecklistSections({
+        workflow: currentFlow?.workflow,
+        conversationMessages: messages,
+        inputSchema: currentFlow?.inputSchema,
+        eventType: currentFlow?.eventType,
+        cron: currentFlow?.cron,
+        cronActive: currentFlow?.cronActive,
+      }),
+    [
+      currentFlow?.workflow,
+      messages,
+      currentFlow?.inputSchema,
+      currentFlow?.eventType,
+      currentFlow?.cron,
+      currentFlow?.cronActive,
+    ]
   );
 
   const summary = deriveFlowSummary(messages, currentFlow?.description);
+  const hasContent =
+    sections.outcomes.length > 0 ||
+    sections.requiredInputs.length > 0 ||
+    sections.trigger.length > 0;
 
   const viewCodeButton = (
     <button
@@ -43,7 +125,7 @@ export function FlowChecklistPanel({ flowId }: { flowId: number | null }) {
     </button>
   );
 
-  if (!flowId || !currentFlow || items.length === 0) {
+  if (!flowId || !currentFlow || !hasContent) {
     return (
       <div className="h-full flex flex-col bg-[#1a1a1a]">
         <div className="flex-1 flex items-center justify-center">
@@ -84,35 +166,28 @@ export function FlowChecklistPanel({ flowId }: { flowId: number | null }) {
         <div className="flex-shrink-0 pt-0.5">{viewCodeButton}</div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4">
-        <ol className="space-y-3">
-          {items.map((item, index) => (
-            <li
-              key={item.id}
-              className="flex items-start gap-3 rounded-lg border border-[#30363d] bg-[#0f1115] px-3 py-2.5"
-            >
-              <CheckCircle2 className="w-4 h-4 text-green-400/80 mt-0.5 flex-shrink-0" />
-              <div className="min-w-0">
-                <p className="text-sm text-gray-200 leading-relaxed">
-                  <span className="text-gray-500 mr-1.5">{index + 1}.</span>
-                  {item.text}
-                </p>
-                {item.tools.length > 0 && (
-                  <div className="mt-1.5 flex flex-wrap gap-1">
-                    {item.tools.map((tool) => (
-                      <span
-                        key={tool}
-                        className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-700/50 text-gray-400"
-                      >
-                        {tool}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </li>
-          ))}
-        </ol>
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-5">
+        <ChecklistSection
+          title="When it runs"
+          icon={Clock}
+          items={sections.trigger}
+        />
+        <ChecklistSection
+          title="What you need to provide"
+          icon={FileInput}
+          items={sections.requiredInputs}
+        />
+        <ChecklistSection
+          title="What it does"
+          icon={ListChecks}
+          items={sections.outcomes}
+          numbered
+        />
+        <ChecklistSection
+          title="If something goes wrong"
+          icon={AlertTriangle}
+          items={sections.errorResponses}
+        />
       </div>
     </div>
   );
