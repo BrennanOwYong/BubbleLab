@@ -39,7 +39,14 @@ import {
   coffeeResponseToMessage,
   interruptedGenerationMessage,
 } from '../services/conversation-thread.js';
-import type { CoffeeResponse } from '@bubblelab/shared-schemas';
+import type { CoffeeResponse, SystemMessage } from '@bubblelab/shared-schemas';
+import {
+  extractSetupResources,
+  provisionSetupResources,
+  buildSetupFieldDescriptors,
+  buildWorkflowDoneMessage,
+  type SetupProvisioningState,
+} from '../services/setup-provisioning.js';
 import {
   createBubbleFlowRoute,
   createEmptyBubbleFlowRoute,
@@ -690,6 +697,13 @@ app.openapi(getBubbleFlowRoute, async (c) => {
     userId,
     requiredCredentials
   );
+
+  // TODO(userProfileDefaults seam): when the user-profile defaults store
+  // lands (owned by another lane), resolve it here and include it in the
+  // response next to accountEmailDefaults, e.g.
+  //   const userProfileDefaults = await resolveUserProfileDefaults(userId);
+  // and add `userProfileDefaults` to bubbleFlowDetailsResponseSchema. No
+  // source exists in this branch yet, so only the seam is marked.
 
   const response = {
     id: flow.id,
@@ -1668,6 +1682,10 @@ app.openapi(generateBubbleFlowCodeRoute, async (c) => {
         // Clear heartbeat interval once generation is complete
         clearInterval(heartbeatInterval);
 
+        // Programmatic build-completion message (persisted below, streamed
+        // after generation_complete so the studio can render it live).
+        let workflowDoneMessage: SystemMessage | null = null;
+
         // If flowId is provided and generation is successful, update the flow
         if (
           flowId &&
@@ -1693,26 +1711,72 @@ app.openapi(generateBubbleFlowCodeRoute, async (c) => {
                 generationResult.generatedCode
               );
 
-              // Fetch current metadata to merge with existing data (including conversation messages)
+              // Fetch current metadata and defaults to merge with existing
+              // data (conversation messages, prior provisioning records)
               const currentFlow = await db.query.bubbleFlows.findFirst({
                 where: and(
                   eq(bubbleFlows.id, flowId),
                   eq(bubbleFlows.userId, userId)
                 ),
-                columns: { metadata: true },
+                columns: { metadata: true, defaultInputs: true },
               });
 
               const existingMetadata =
                 (currentFlow?.metadata as Record<string, unknown>) || {};
+              const existingDefaultInputs =
+                (currentFlow?.defaultInputs as Record<string, unknown>) || {};
+              const existingProvisioning =
+                (existingMetadata.setupProvisioning as SetupProvisioningState) ||
+                {};
+
+              // SETUP PROVISIONING: the plan can declare resources to create
+              // just for this flow (plan.setupResources — e.g. a Google Sheet
+              // answers pipe into). Create them now with the creator's
+              // connected credential and prefill the created ids as the
+              // flow's default inputs, so the Setup form shows a real id and
+              // the first run cannot fail on a missing spreadsheet. Failures
+              // degrade to a blank field; generation never blocks on this.
+              const setupResources = extractSetupResources(messages);
+              const provisioned = await provisionSetupResources(
+                userId,
+                setupResources,
+                existingDefaultInputs,
+                existingProvisioning
+              );
+              const mergedDefaultInputs = {
+                ...existingDefaultInputs,
+                ...provisioned.defaultInputs,
+              };
+              const mergedProvisioning = {
+                ...existingProvisioning,
+                ...provisioned.provisioning,
+              };
+
+              // Build-completion message: which required inputs are still
+              // missing decides the variant; the Date.now() timestamp is
+              // persisted with the message as proof of build duration.
+              const fieldSummary = buildSetupFieldDescriptors(
+                validationResult.inputSchema || {},
+                mergedDefaultInputs
+              );
+              workflowDoneMessage = buildWorkflowDoneMessage(
+                fieldSummary,
+                Date.now()
+              );
+
+              // Persist the full thread + the done message (the thread is
+              // synthesized from the prompt when the caller sent no messages,
+              // so the done message never dangles without context).
+              const thread = buildThreadFromRequest(prompt, messages);
+              thread.push(workflowDoneMessage);
 
               // Build updated metadata with conversation messages
               const updatedMetadata = {
                 ...existingMetadata,
-                ...(messages && messages.length > 0
-                  ? {
-                      conversationMessages: messages,
-                      lastUpdatedPhase: 'building',
-                    }
+                conversationMessages: thread,
+                lastUpdatedPhase: 'building',
+                ...(Object.keys(mergedProvisioning).length > 0
+                  ? { setupProvisioning: mergedProvisioning }
                   : {}),
               };
 
@@ -1739,6 +1803,7 @@ app.openapi(generateBubbleFlowCodeRoute, async (c) => {
                   cron: validationResult.trigger?.cronSchedule || null,
                   generationError: null, // Clear any previous errors
                   metadata: updatedMetadata,
+                  defaultInputs: mergedDefaultInputs,
                   updatedAt: new Date(),
                 })
                 .where(
@@ -1775,6 +1840,9 @@ app.openapi(generateBubbleFlowCodeRoute, async (c) => {
             }
           } catch (updateError) {
             console.error(`[API] Error updating flow ${flowId}:`, updateError);
+            // The done message rides the successful flow update; a failed
+            // update means nothing was persisted, so do not stream it either.
+            workflowDoneMessage = null;
             // Update with error message
             await db
               .update(bubbleFlows)
@@ -1823,6 +1891,19 @@ app.openapi(generateBubbleFlowCodeRoute, async (c) => {
           }),
           event: 'generation_complete',
         });
+
+        // Stream the persisted build-completion message so the studio can
+        // render it without refetching (it is already stored on
+        // metadata.conversationMessages with its timestampMs).
+        if (workflowDoneMessage) {
+          await stream.writeSSE({
+            data: JSON.stringify({
+              type: 'workflow_done',
+              message: workflowDoneMessage,
+            }),
+            event: 'workflow_done',
+          });
+        }
 
         // Send stream completion
         await stream.writeSSE({
