@@ -2703,7 +2703,10 @@ function FlowVisualizerInner({
           zoomOnPinch={true}
           zoomOnDoubleClick={false}
         >
-          <Controls className="!bg-neutral-900 !border-neutral-600 [&_button]:!bg-neutral-800 [&_button]:!text-neutral-200 [&_button]:!border-neutral-600 [&_button:hover]:!bg-neutral-700" />
+          <Controls
+            showInteractive={false}
+            className="!bg-neutral-900 !border-neutral-600 [&_button]:!bg-neutral-800 [&_button]:!text-neutral-200 [&_button]:!border-neutral-600 [&_button:hover]:!bg-neutral-700"
+          />
           <Background variant={BackgroundVariant.Dots} gap={12} size={1} />
         </ReactFlow>
       )}
