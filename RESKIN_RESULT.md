@@ -7,7 +7,7 @@ DONE. tsc --noEmit clean, vite build passes, placeholder palette verified in the
 ## Branch / commit / push
 
 - Branch: `feature/reskin-gluu` (cut from origin/feature/mvp-oneshot @ ebf398a)
-- Commit: see `git log -1` on the branch (message: "reskin: de-brand to Gluu, neutralize BubbleLab look, centralize color tokens")
+- Commit: `9590d07` "reskin: de-brand to Gluu, neutralize BubbleLab look, centralize color tokens"
 - Pushed: yes, `origin feature/reskin-gluu`
 
 ## Color-token file — where the final Gluu hexes go
