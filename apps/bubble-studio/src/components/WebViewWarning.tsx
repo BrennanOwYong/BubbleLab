@@ -195,7 +195,7 @@ export function WebViewWarning() {
   return (
     <div className="fixed inset-0 z-[9999] bg-[#0a0a0a] flex items-center justify-center p-4">
       <div className="max-w-2xl w-full bg-[#1a1a1a] border border-[#30363d] rounded-2xl p-8 shadow-2xl">
-        {/* Header with Bubble Lab branding */}
+        {/* Header with Gluu branding */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-full mb-4">
             <ExclamationTriangleIcon className="h-8 w-8 text-white" />
@@ -204,7 +204,7 @@ export function WebViewWarning() {
             Browser Not Supported
           </h1>
           <p className="text-gray-400 text-lg font-sans">
-            Bubble Lab does not support this browser
+            Gluu does not support this browser
           </p>
         </div>
 
@@ -218,7 +218,7 @@ export function WebViewWarning() {
 
         <div className="space-y-4 mb-8">
           <h2 className="text-lg font-semibold text-white font-sans">
-            How to access Bubble Lab:
+            How to access Gluu:
           </h2>
 
           <div className="space-y-3">
@@ -261,8 +261,7 @@ export function WebViewWarning() {
                   Use a desktop browser
                 </p>
                 <p className="text-gray-400 text-sm font-sans">
-                  For the best experience, access Bubble Lab from a desktop
-                  browser
+                  For the best experience, access Gluu from a desktop browser
                 </p>
               </div>
             </div>

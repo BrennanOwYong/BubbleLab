@@ -233,7 +233,7 @@ export const UsageDetailsModal: React.FC<UsageDetailsModalProps> = ({
               Managed Credentials Usage Details
             </h2>
             <p className="text-sm text-gray-400 mt-1">
-              Usage of BubbleLab's managed API credentials. You're encouraged to
+              Usage of Gluu's managed API credentials. You're encouraged to
               bring your own API keys — when you do, you'll pay your provider
               directly and this usage won't apply.
             </p>

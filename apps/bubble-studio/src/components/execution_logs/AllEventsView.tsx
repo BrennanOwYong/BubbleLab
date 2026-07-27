@@ -912,7 +912,7 @@ export default function AllEventsView({
                                   Need help fixing these errors?
                                 </h4>
                                 <p className="text-[10px] text-gray-500">
-                                  Pearl can analyze and suggest fixes
+                                  Gluu can analyze and suggest fixes
                                 </p>
                               </div>
                             </div>
@@ -925,7 +925,7 @@ export default function AllEventsView({
                               <Sparkles className="w-3.5 h-3.5" />
                               {pearl.isPending
                                 ? 'Analyzing...'
-                                : 'Fix with Pearl'}
+                                : 'Fix with Gluu'}
                             </button>
                           </div>
                         </div>
@@ -1231,7 +1231,7 @@ export default function AllEventsView({
                               Need help fixing these issues?
                             </h4>
                             <p className="text-xs text-gray-400">
-                              Pearl can analyze the results and suggest fixes
+                              Gluu can analyze the results and suggest fixes
                             </p>
                           </div>
                           <button
@@ -1243,9 +1243,7 @@ export default function AllEventsView({
                             className="flex-shrink-0 flex items-center gap-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:bg-orange-600/50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-md transition-colors"
                           >
                             <Sparkles className="w-4 h-4" />
-                            {pearl.isPending
-                              ? 'Analyzing...'
-                              : 'Fix with Pearl'}
+                            {pearl.isPending ? 'Analyzing...' : 'Fix with Gluu'}
                           </button>
                         </div>
                       </div>
@@ -1456,9 +1454,7 @@ export default function AllEventsView({
                             className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 hover:bg-orange-700 disabled:bg-orange-600/50 disabled:cursor-not-allowed text-white text-xs font-medium rounded-md transition-colors shadow-sm"
                           >
                             <Sparkles className="w-3.5 h-3.5" />
-                            {pearl.isPending
-                              ? 'Analyzing...'
-                              : 'Fix with Pearl'}
+                            {pearl.isPending ? 'Analyzing...' : 'Fix with Gluu'}
                           </button>
                         </div>
                       </div>

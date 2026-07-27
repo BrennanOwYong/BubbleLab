@@ -12,7 +12,7 @@ export function FlowNotFoundView({ flowId, onRetry }: FlowNotFoundViewProps) {
     <div className="h-screen flex flex-col bg-[#1a1a1a] text-gray-100">
       <div className="px-6 py-3 border-b border-[#30363d]">
         <div className="flex items-center justify-between">
-          <div className="text-sm text-gray-300 font-medium">Bubble Studio</div>
+          <div className="text-sm text-gray-300 font-medium">Gluu</div>
           <button
             type="button"
             onClick={() => navigate({ to: '/flows' })}

@@ -195,7 +195,7 @@ export class DailyNewsDigestFlow extends BubbleFlow<'webhook/http'> {
         <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
           <!-- Header -->
           <tr>
-            <td style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 30px; text-align: center;">
+            <td style="background: linear-gradient(135deg, #0d9488 0%, #115e59 100%); padding: 40px 30px; text-align: center;">
               <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 600;">📰 Your Daily News Digest</h1>
               <p style="margin: 10px 0 0 0; color: #e0e7ff; font-size: 14px;">\${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
             </td>
@@ -213,11 +213,11 @@ export class DailyNewsDigestFlow extends BubbleFlow<'webhook/http'> {
           \${digestData.categories.map((category: DigestCategory) => \`
             <tr>
               <td style="padding: 30px;">
-                <h2 style="margin: 0 0 10px 0; color: #667eea; font-size: 20px; font-weight: 600; border-bottom: 2px solid #667eea; padding-bottom: 8px;">\${category.name}</h2>
+                <h2 style="margin: 0 0 10px 0; color: #0d9488; font-size: 20px; font-weight: 600; border-bottom: 2px solid #0d9488; padding-bottom: 8px;">\${category.name}</h2>
                 <p style="margin: 0 0 20px 0; color: #64748b; font-size: 14px; font-style: italic;">\${category.description}</p>
 
                 \${category.headlines.map((headline) => \`
-                  <div style="margin-bottom: 20px; padding: 15px; background-color: #f8fafc; border-radius: 6px; border-left: 4px solid #667eea;">
+                  <div style="margin-bottom: 20px; padding: 15px; background-color: #f8fafc; border-radius: 6px; border-left: 4px solid #0d9488;">
                     <a href="\${headline.url}" style="color: #1e293b; text-decoration: none; font-weight: 600; font-size: 16px; display: block; margin-bottom: 8px;">\${headline.title}</a>
                     <p style="margin: 0 0 8px 0; color: #64748b; font-size: 14px; line-height: 1.5;">\${headline.summary}</p>
                     <span style="color: #94a3b8; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">📍 \${headline.source}</span>
@@ -232,7 +232,7 @@ export class DailyNewsDigestFlow extends BubbleFlow<'webhook/http'> {
             <td style="padding: 30px; background-color: #1e293b; text-align: center;">
               <p style="margin: 0; color: #94a3b8; font-size: 14px;">Stay informed with your personalized daily digest</p>
               <p style="margin: 10px 0 0 0; color: #64748b; font-size: 12px;">
-                Powered by <a href="https://bubblelab.ai" style="color: #667eea; text-decoration: none; font-weight: 600;">bubble lab</a>
+                Powered by <a href="#" style="color: #0d9488; text-decoration: none; font-weight: 600;">Gluu</a>
               </p>
             </td>
           </tr>
@@ -248,7 +248,7 @@ export class DailyNewsDigestFlow extends BubbleFlow<'webhook/http'> {
   // Send email via Resend
   private async sendDigestEmail(email: string, htmlEmail: string): Promise<string> {
     // Sends the formatted HTML news digest to the recipient's email address.
-    // The 'from' parameter is automatically set to Bubble Lab's default sender
+    // The 'from' parameter is automatically set to Gluu's default sender
     // unless you have your own Resend account with a verified domain configured.
     const emailSender = new ResendBubble({
       operation: 'send_email',

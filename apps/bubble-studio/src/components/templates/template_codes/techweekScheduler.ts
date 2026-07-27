@@ -258,16 +258,16 @@ Based on the following product information and list of Techweek events, please c
                 📊 <strong>View Full Techweek Schedule:</strong> <a href="https://docs.google.com/spreadsheets/d/\${SPREADSHEET_ID}/edit" style="color: #ff6b6b; text-decoration: none; font-weight: 600;">Open Spreadsheet</a>
               </p>
               <p style="margin: 0 0 15px 0; color: #495057; font-size: 15px; line-height: 1.6;">
-                ⚡ This workflow is powered by <a href="https://bubblelab.ai" style="color: #ff6b6b; text-decoration: none; font-weight: 600;">Bubble Lab</a> — an open-source AI automation platform (with code exports and observability) launching very soon!
+                ⚡ This workflow is powered by <a href="#" style="color: #ff6b6b; text-decoration: none; font-weight: 600;">Gluu</a> — an open-source AI automation platform (with code exports and observability) launching very soon!
               </p>
               <a href="https://x.com/Selinaliyy" style="display: inline-block; padding: 10px 24px; background-color: #1DA1F2; color: white; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 14px; margin-right: 10px;">Follow on X</a>
               <a href="https://www.instagram.com/selina.builds/" style="display: inline-block; padding: 10px 24px; background-color: #E4405F; color: white; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 14px; margin-right: 10px;">Follow on Instagram</a>
-              <a href="https://github.com/bubblelabai/BubbleLab" style="display: inline-block; padding: 10px 24px; background-color: #212529; color: white; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 14px;">⭐ Star on GitHub</a>
+              <a href="#" style="display: inline-block; padding: 10px 24px; background-color: #212529; color: white; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 14px;">⭐ Star on GitHub</a>
             </td>
           </tr>
           <tr>
             <td style="padding: 30px; background-color: #212529; text-align: center;">
-              <p style="margin: 0; color: #adb5bd; font-size: 14px;">Made with ❤️ by <a href="https://bubblelab.ai" style="color: #ff6b6b; text-decoration: none; font-weight: 600;">Bubble Lab</a></p>
+              <p style="margin: 0; color: #adb5bd; font-size: 14px;">Made with ❤️ by <a href="#" style="color: #ff6b6b; text-decoration: none; font-weight: 600;">Gluu</a></p>
               <p style="margin: 10px 0 0 0; color: #6c757d; font-size: 12px;">Open Source • Agentic Workflows • Launching Soon</p>
             </td>
           </tr>
@@ -283,7 +283,7 @@ Based on the following product information and list of Techweek events, please c
           await new ResendBubble({
             operation: 'send_email',
             to: [email],
-            from: 'Bubble Lab Team <welcome@hello.bubblelab.ai>',
+            from: 'Gluu Team <welcome@hello.bubblelab.ai>',
             subject: \`🚀 Your Techweek Schedule: \${date}\`,
             html: htmlEmail,
           }).action();

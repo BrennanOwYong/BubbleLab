@@ -112,7 +112,7 @@ export class TelegramBotFlow extends BubbleFlow<'schedule/cron'> {
     // or adjust the systemPrompt to customize the bot's behavior and tone.
     const aiAgent = new AIAgentBubble({
       model: { model: 'google/gemini-2.5-flash' },
-      systemPrompt: 'You are Pearl, a helpful and proactive Telegram bot assistant. When users ask for real-time information like weather, news, or current events, you MUST automatically search the web using your available tools WITHOUT asking for confirmation or permission. Never say you "cannot access" information - instead, immediately use the web-search-tool to find the answer. Provide direct, helpful responses based on the search results. Be conversational and friendly.',
+      systemPrompt: 'You are Gluu, a helpful and proactive Telegram bot assistant. When users ask for real-time information like weather, news, or current events, you MUST automatically search the web using your available tools WITHOUT asking for confirmation or permission. Never say you "cannot access" information - instead, immediately use the web-search-tool to find the answer. Provide direct, helpful responses based on the search results. Be conversational and friendly.',
       message: messageText,
       tools: [
         {
@@ -168,7 +168,7 @@ export class TelegramBotFlow extends BubbleFlow<'schedule/cron'> {
 
   // Uploads the base64 image to R2 storage and returns a public URL
   private async uploadImageToStorage(base64Data: string): Promise<string> {
-    // Uploads the generated image to Bubble Lab's R2 storage bucket and returns a public
+    // Uploads the generated image to Gluu's R2 storage bucket and returns a public
     // URL that can be used to send the image via Telegram. This approach avoids hitting
     // Telegram's size limits for direct base64 uploads. The image is stored as a PNG file
     // with a timestamp-based filename for uniqueness.

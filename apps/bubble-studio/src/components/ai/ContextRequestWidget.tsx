@@ -118,7 +118,7 @@ export function ContextRequestWidget({
         <div className="flex items-center gap-2">
           <Database className="w-4 h-4 text-amber-400" />
           <span className="text-sm font-medium text-amber-300">
-            Pearl needs access to gather context
+            Gluu needs access to gather context
           </span>
         </div>
       </div>

@@ -189,7 +189,7 @@ export function BubbleSidePanel() {
               {isPromptView
                 ? `Configure ${selectedBubbleName}`
                 : isGeneralChatView
-                  ? 'Chat with Pearl'
+                  ? 'Chat with Gluu'
                   : 'Add Bubble'}
             </h2>
           </div>
@@ -571,7 +571,7 @@ function BubblePromptView({ bubbleDefinition }: BubblePromptViewProps) {
                     <AlertCircle className="w-4 h-4 text-red-400" />
                   )}
                   <span className="text-xs font-medium text-gray-400">
-                    Pearl
+                    Gluu
                     {message.resultType === 'code' && ' - Code Generated'}
                     {message.resultType === 'question' && ' - Question'}
                     {message.resultType === 'reject' && ' - Error'}

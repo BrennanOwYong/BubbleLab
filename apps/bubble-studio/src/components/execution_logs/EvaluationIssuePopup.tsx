@@ -215,7 +215,7 @@ export function EvaluationIssuePopup({
                 ? 'Please update your settings or credentials to resolve this issue.'
                 : evaluationResult.issueType === 'input'
                   ? 'Please provide valid input data and try again.'
-                  : 'Pearl can analyze the results and suggest fixes for your workflow.'}
+                  : 'Gluu can analyze the results and suggest fixes for your workflow.'}
             </p>
           )}
         </div>
@@ -246,7 +246,7 @@ export function EvaluationIssuePopup({
                 ) : (
                   <>
                     <Sparkles className="w-4 h-4" />
-                    Fix with Pearl
+                    Fix with Gluu
                   </>
                 )}
               </button>

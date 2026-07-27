@@ -190,7 +190,7 @@ export class ChatWithYourDatabaseFlow extends BubbleFlow<'schedule/cron'> {
     htmlReport: string
   ): Promise<string> {
     // Sends the database analysis report via email using Resend. The 'from' parameter
-    // is automatically set to Bubble Lab's default sender unless you have your own
+    // is automatically set to Gluu's default sender unless you have your own
     // Resend account with a verified domain configured.
     const emailSender = new ResendBubble({
       operation: 'send_email',

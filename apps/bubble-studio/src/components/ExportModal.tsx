@@ -349,8 +349,7 @@ export function ExportModal({
                 <p className="text-sm text-gray-400">
                   Get a complete, ready-to-run Node.js project with all
                   dependencies included. You'll need to set up your own hosted
-                  runtime and configure credentials outside of the Bubble Lab
-                  system.
+                  runtime and configure credentials outside of the Gluu system.
                 </p>
 
                 <div className="space-y-3">
@@ -512,7 +511,7 @@ export function ExportModal({
                   <p className="text-sm text-gray-400">
                     Call your workflow via webhook endpoints hosted in Bubble
                     Lab. All executions run on our infrastructure, and you can
-                    view execution history and logs here in Bubble Lab even when
+                    view execution history and logs here in Gluu even when
                     calling from external applications.
                   </p>
                 </div>

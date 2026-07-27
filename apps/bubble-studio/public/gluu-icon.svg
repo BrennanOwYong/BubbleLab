@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- GLUU placeholder mark. Swap fill colors for the final Gluu brand palette:
+       background: --gluu-surface placeholder #14181d
+       glyph:      --gluu-accent  placeholder #14b8a6 -->
+  <rect width="64" height="64" rx="14" fill="#14181d"/>
+  <path d="M42 24a12 12 0 1 0 4 9h-14" fill="none" stroke="#14b8a6" stroke-width="6" stroke-linecap="round"/>
+</svg>
