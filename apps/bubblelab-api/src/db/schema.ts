@@ -25,6 +25,7 @@ export const {
   bubbleFlowExecutions,
   bubbleFlowEvaluations,
   userCredentials,
+  userProfiles,
   derivedCredentials,
   userServiceUsage,
   waitlistedUsers,

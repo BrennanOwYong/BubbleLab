@@ -35,6 +35,7 @@ import oauthRoutes from './routes/oauth.js';
 import webhookRoutes from './routes/webhooks.js';
 import authRoutes from './routes/auth.js';
 import subscriptionRoutes from './routes/subscription.js';
+import userProfileRoutes from './routes/user-profile.js';
 import joinWaitlistRoutes from './routes/join-waitlist.js';
 import { startCronScheduler } from './services/cron-scheduler.js';
 import aiRoutes from './routes/ai.js';
@@ -69,6 +70,7 @@ app.use('/auth/*', authMiddleware);
 app.use('/execute-bubble-flow/*', authMiddleware);
 app.use('/ai/*', authMiddleware);
 app.use('/browserbase/*', authMiddleware);
+app.use('/user-profile/*', authMiddleware);
 
 // Note: webhook and execute-bubble-flow routes will handle verification internally
 // They don't need auth middleware since they use their own authentication
@@ -90,6 +92,7 @@ app.route('/oauth', oauthRoutes);
 app.route('/webhook', webhookRoutes);
 app.route('/auth', authRoutes);
 app.route('/subscription', subscriptionRoutes);
+app.route('/user-profile', userProfileRoutes);
 app.route('/join-waitlist', joinWaitlistRoutes);
 app.route('/ai', aiRoutes);
 app.route('/template-submission', templateSubmissionRoutes);

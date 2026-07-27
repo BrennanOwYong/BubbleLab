@@ -234,6 +234,25 @@ export const waitlistedUsers = pgTable('waitlisted_users', {
     .$defaultFn(() => new Date()),
 });
 
+// Per-user profile: "for me" defaults the flow creator wants auto-filled into
+// flow inputs (their OWN recipient email, their OWN Telegram chat id). Stored
+// OUTSIDE credentials: these are personal facts, not secrets, and they apply
+// across every flow the user creates. One row per user; add future profile
+// fields as new nullable columns here.
+export const userProfiles = pgTable('user_profiles', {
+  userId: text('user_id')
+    .primaryKey()
+    .references(() => users.clerkId, { onDelete: 'cascade' }),
+  recipientEmail: text('recipient_email'), // where "send it to me" emails go
+  telegramChatId: text('telegram_chat_id'), // the user's own Telegram chat id
+  createdAt: timestamp('created_at', { mode: 'date' })
+    .notNull()
+    .$defaultFn(() => new Date()),
+  updatedAt: timestamp('updated_at', { mode: 'date' })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
 export const bubbleFlowsRelations = relations(bubbleFlows, ({ many }) => ({
   executions: many(bubbleFlowExecutions),
   webhooks: many(webhooks),

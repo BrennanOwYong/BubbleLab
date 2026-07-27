@@ -351,6 +351,10 @@ export const bubbleFlowDetailsResponseSchema = z
       description:
         "Per required credential type, the account email a setup field (e.g. gmailAccountEmail) should default to: present only when the user has EXACTLY ONE credential of that type and it carries metadata.email — zero or several credentials leave the field blank for the user to pick. Keys are credential types (e.g. 'GMAIL_CRED').",
     }),
+    userProfileDefaults: z.record(z.string(), z.string()).optional().openapi({
+      description:
+        "Per \"for me\" input field, the value from the user's profile it should prefill to. Keys are the EXACT inputSchema property names of matched fields (e.g. 'recipientEmail', 'chat_id'); values are the stored profile strings (user_profiles.recipient_email / telegram_chat_id). An entry exists only when the flow input matches a profile field AND the profile value is set.",
+    }),
     usedCredentials: z.array(usedCredentialSchema).optional().openapi({
       description:
         'Credentials used in this flow with metadata (for shared workflow visibility)',

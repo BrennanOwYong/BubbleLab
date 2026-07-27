@@ -72,6 +72,8 @@ import {
   unionTwinCredentials,
 } from '../services/credential-auto-bind.js';
 import { resolveAccountEmailDefaults } from '../services/account-email-defaults.js';
+// user-profile lane: "for me" input prefill (see user-profile-defaults.ts)
+import { resolveUserProfileDefaults } from '../services/user-profile-defaults.js';
 import { runBubbleFlow } from '../services/execution.js';
 import {
   BubbleScript,
@@ -691,6 +693,14 @@ app.openapi(getBubbleFlowRoute, async (c) => {
     requiredCredentials
   );
 
+  // user-profile lane: per "for me" input field (recipientEmail, chat_id, ...)
+  // the profile value it should prefill to, keyed by the EXACT inputSchema
+  // property name. Kept as a self-contained block for merge friendliness.
+  const userProfileDefaults = await resolveUserProfileDefaults(
+    userId,
+    flow.inputSchema
+  );
+
   const response = {
     id: flow.id,
     name: flow.name,
@@ -700,6 +710,7 @@ app.openapi(getBubbleFlowRoute, async (c) => {
     requiredCredentials,
     scopeRequirements,
     accountEmailDefaults,
+    userProfileDefaults,
     code: flow.originalCode ?? '', // Return empty string if null/undefined, preserve empty string
     generationError: flow.generationError || undefined,
     displayedBubbleParameters:
