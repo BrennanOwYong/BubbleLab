@@ -171,10 +171,10 @@ const ModelConfigSchema = z.object({
   // .default().optional() does not apply the default when the key is missing).
   backupModel: BackupModelConfigSchema.optional()
     .default({
-      model: RECOMMENDED_MODELS.GOOGLE_FLAGSHIP,
+      model: RECOMMENDED_MODELS.OPENAI_FAST,
     })
     .describe(
-      'Backup model if the primary fails. Defaults to GOOGLE_FLAGSHIP (Gemini 3 Flash) when omitted.'
+      'Backup model if the primary fails. Defaults to OPENAI_FAST (gpt-5-mini) when omitted.'
     ),
 });
 
@@ -322,7 +322,7 @@ const AIAgentParamsSchema = z.object({
     .optional()
     .describe('A friendly name for the AI agent'),
   model: ModelConfigSchema.default({
-    model: RECOMMENDED_MODELS.FLAGSHIP,
+    model: RECOMMENDED_MODELS.OPENAI_FAST,
     temperature: 1,
     maxTokens: 65536,
     maxRetries: 3,
@@ -549,7 +549,7 @@ export class AIAgentBubble extends ServiceBubble<
     params: AIAgentParams = {
       message: 'Hello, how are you?',
       systemPrompt: 'You are a helpful AI assistant',
-      model: { model: RECOMMENDED_MODELS.FAST },
+      model: { model: RECOMMENDED_MODELS.OPENAI_FAST },
     },
     context?: BubbleContext,
     instanceId?: string
