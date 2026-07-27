@@ -3,7 +3,7 @@ import type { SubscriptionStatusResponse } from '@bubblelab/shared-schemas';
 import { ArrowRight, AlertCircle, Info } from 'lucide-react';
 import { UsageDetailsModal } from './UsageDetailsModal';
 import { useBubbleFlowList } from '../hooks/useBubbleFlowList';
-import { useNavigate } from '@tanstack/react-router';
+import { Link } from '@tanstack/react-router';
 import { DISABLE_AUTH } from '../env';
 
 interface MonthlyUsageBarProps {
@@ -17,13 +17,8 @@ export const MonthlyUsageBar: React.FC<MonthlyUsageBarProps> = ({
 }) => {
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const { data: bubbleFlowListResponse } = useBubbleFlowList();
-  const navigate = useNavigate();
 
   console.log('subscription', subscription);
-
-  const handleUpgradeClick = () => {
-    navigate({ to: '/pricing' });
-  };
 
   // Calculate total cost from serviceUsage
   const totalCost = subscription.usage.serviceUsage.reduce(
@@ -183,9 +178,8 @@ export const MonthlyUsageBar: React.FC<MonthlyUsageBarProps> = ({
                   </span>
                 </div>
                 {!DISABLE_AUTH && (
-                  <button
-                    type="button"
-                    onClick={handleUpgradeClick}
+                  <Link
+                    to="/pricing"
                     className={`px-3 py-1.5 ${
                       anyLimitExceeded
                         ? 'bg-orange-500 hover:bg-orange-600 text-white'
@@ -196,7 +190,7 @@ export const MonthlyUsageBar: React.FC<MonthlyUsageBarProps> = ({
                     <span>
                       {anyLimitExceeded ? 'Upgrade Required' : 'Upgrade Plan'}
                     </span>
-                  </button>
+                  </Link>
                 )}
               </div>
 

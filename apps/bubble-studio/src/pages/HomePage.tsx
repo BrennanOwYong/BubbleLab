@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { Link } from '@tanstack/react-router';
 import {
   Trash2,
   MoreHorizontal,
@@ -21,9 +22,11 @@ import { useSubscription } from '../hooks/useSubscription';
 import type { OptimisticBubbleFlowListItem } from '../hooks/useCreateBubbleFlow';
 
 export interface HomePageProps {
-  onFlowSelect: (flowId: number) => void;
+  /** Click guard for the flow-card link; call event.preventDefault() to block navigation. */
+  onFlowSelect: (flowId: number, event: React.MouseEvent) => void;
   onFlowDelete: (flowId: number, event: React.MouseEvent) => void;
-  onNavigateToDashboard: () => void;
+  /** Click guard for the New Flow link; call event.preventDefault() to block navigation. */
+  onNavigateToDashboard: (event: React.MouseEvent) => void;
 }
 
 export const HomePage: React.FC<HomePageProps> = ({
@@ -175,14 +178,14 @@ export const HomePage: React.FC<HomePageProps> = ({
                 Manage and monitor your workflows
               </p>
             </div>
-            <button
-              type="button"
+            <Link
+              to="/home"
               onClick={onNavigateToDashboard}
               className="px-5 py-2.5 bg-white text-black hover:bg-gray-200 text-sm font-medium rounded-full transition-all duration-200 flex items-center gap-2 shadow-lg hover:scale-105"
             >
               <Plus className="h-5 w-5" />
               <span className="font-bold font-sans">New Flow</span>
-            </button>
+            </Link>
           </div>
 
           {/* Search Bar */}
@@ -248,8 +251,19 @@ export const HomePage: React.FC<HomePageProps> = ({
                       ? 'opacity-70 cursor-wait'
                       : 'hover:bg-[#202020] hover:border-white/10 hover:shadow-xl hover:-translate-y-0.5 cursor-pointer'
                   }`}
-                  onClick={() => !isOptimisticLoading && onFlowSelect(flow.id)}
                 >
+                  {/* Full-card anchor: real <a href> so middle/ctrl/cmd-click open a new tab.
+                      Interactive controls (menu, toggles, rename) sit above it via z-index
+                      instead of nesting inside the anchor. */}
+                  {!isOptimisticLoading && (
+                    <Link
+                      to="/flow/$flowId"
+                      params={{ flowId: String(flow.id) }}
+                      onClick={(e) => onFlowSelect(flow.id, e)}
+                      className="absolute inset-0 z-[1] rounded-lg"
+                      aria-label={`Open flow ${flow.name || 'Untitled Flow'}`}
+                    />
+                  )}
                   {/* Loading overlay for optimistic flows */}
                   {isOptimisticLoading && (
                     <div className="absolute inset-0 flex items-center justify-center bg-black/20 rounded-lg z-20">
@@ -293,7 +307,7 @@ export const HomePage: React.FC<HomePageProps> = ({
 
                     {/* Flow Name */}
                     {renamingFlowId === flow.id ? (
-                      <div className="flex items-center gap-2 mb-2">
+                      <div className="relative z-[2] flex items-center gap-2 mb-2">
                         <input
                           title="Rename Flow"
                           ref={inputRef}
@@ -356,10 +370,7 @@ export const HomePage: React.FC<HomePageProps> = ({
 
                     {/* Divider and Date/Toggle Row */}
                     <div className="pt-2 mt-2 border-t border-white/5">
-                      <div
-                        className="flex items-center justify-between flex-wrap gap-4 mt-2"
-                        onClick={(e) => e.stopPropagation()}
-                      >
+                      <div className="relative z-[2] flex items-center justify-between flex-wrap gap-4 mt-2">
                         {/* Cron Toggle or Webhook Toggle - mutually exclusive */}
                         <div>
                           {flow.cronSchedule ? (
@@ -397,7 +408,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                   {/* Menu Button - always visible, disabled when loading */}
                   {!isOptimisticLoading && (
                     <div
-                      className="absolute top-3 right-3"
+                      className="absolute top-3 right-3 z-[2]"
                       ref={openMenuId === flow.id ? menuRef : null}
                     >
                       <button

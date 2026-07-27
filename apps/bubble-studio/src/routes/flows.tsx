@@ -40,12 +40,14 @@ function HomeRoute() {
     }
   };
 
-  const handleFlowSelect = (flowId: number) => {
+  // Click guard for the flow-card <Link>: navigation itself is handled by the
+  // anchor (real href, so middle/ctrl-click open a new tab); this only blocks
+  // in-tab navigation while a generation is streaming.
+  const handleFlowSelect = (_flowId: number, event: React.MouseEvent) => {
     if (isStreaming) {
+      event.preventDefault();
       notifyNavigationLocked();
-      return;
     }
-    navigate({ to: '/flow/$flowId', params: { flowId: flowId.toString() } });
   };
 
   const handleFlowDelete = async (flowId: number, event: React.MouseEvent) => {
@@ -85,12 +87,12 @@ function HomeRoute() {
     }
   };
 
-  const handleNavigateToDashboard = () => {
+  // Click guard for the New Flow <Link to="/home">.
+  const handleNavigateToDashboard = (event: React.MouseEvent) => {
     if (isStreaming) {
+      event.preventDefault();
       notifyNavigationLocked();
-      return;
     }
-    navigate({ to: '/home' });
   };
 
   return (
