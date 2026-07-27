@@ -15,7 +15,11 @@
 import { and, eq } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { bubbleFlows } from '../db/schema.js';
-import type { CoffeeMessage, CoffeeResponse } from '@bubblelab/shared-schemas';
+import type {
+  CoffeeMessage,
+  CoffeeResponse,
+  ConversationEntry,
+} from '@bubblelab/shared-schemas';
 
 export type GenerationPhase = 'planning' | 'building';
 
@@ -27,7 +31,7 @@ export type GenerationPhase = 'planning' | 'building';
 export async function persistConversationThread(
   userId: string,
   flowId: number,
-  messages: CoffeeMessage[],
+  messages: ConversationEntry[],
   phase: GenerationPhase
 ): Promise<boolean> {
   if (messages.length === 0) {
@@ -75,11 +79,13 @@ export async function persistConversationThread(
  */
 export function buildThreadFromRequest(
   prompt: string,
-  messages: CoffeeMessage[] | undefined
-): CoffeeMessage[] {
-  const thread: CoffeeMessage[] = [...(messages ?? [])];
+  messages: ConversationEntry[] | undefined
+): ConversationEntry[] {
+  const thread: ConversationEntry[] = [...(messages ?? [])];
 
-  const hasUserMessage = thread.some((m) => m.type === 'user');
+  // Workflow-done entries carry no `type`; only Coffee messages can be the
+  // user's side of the round.
+  const hasUserMessage = thread.some((m) => 'type' in m && m.type === 'user');
   if (!hasUserMessage && prompt) {
     thread.push({
       id: `user-${Date.now()}`,

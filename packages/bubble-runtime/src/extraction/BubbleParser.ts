@@ -1030,6 +1030,17 @@ export class BubbleParser {
       if (jsDocInfo.canBeGoogleFile !== undefined) {
         propSchema.canBeGoogleFile = jsDocInfo.canBeGoogleFile;
       }
+      // Setup-form tags: label, help text, and user-profile source for the
+      // field descriptor the API builds from this schema.
+      if (jsDocInfo.header !== undefined) {
+        propSchema.header = jsDocInfo.header;
+      }
+      if (jsDocInfo.hint !== undefined) {
+        propSchema.hint = jsDocInfo.hint;
+      }
+      if (jsDocInfo.fromUserProfile !== undefined) {
+        propSchema.fromUserProfile = jsDocInfo.fromUserProfile;
+      }
 
       properties[keyName] = propSchema;
       if (!m.optional) required.push(keyName);
@@ -2526,11 +2537,18 @@ export class BubbleParser {
    * Extract JSDoc info including description, @canBeFile, and @canBeGoogleFile tags from a node's preceding comments.
    * The @canBeFile tag controls whether file upload is enabled for string fields in the UI.
    * The @canBeGoogleFile tag enables Google Picker UI for Google Drive file/folder ID fields.
+   * The @header tag carries a short human label for the input's Setup form field.
+   * The @hint tag carries a plain-language question/help text for the field.
+   * The @fromUserProfile tag marks a "for me" field filled from the user's
+   * profile (value is the profile key, e.g. `email` or `telegramChatId`).
    */
   private extractJSDocForNode(node: TSESTree.Node): {
     description?: string;
     canBeFile?: boolean;
     canBeGoogleFile?: boolean;
+    header?: string;
+    hint?: string;
+    fromUserProfile?: string;
   } {
     // Get the line number where this node starts
     const nodeLine = node.loc?.start.line;
@@ -2605,6 +2623,36 @@ export class BubbleParser {
       canBeGoogleFile = canBeGoogleFileMatch[1].toLowerCase() === 'true';
     }
 
+    // Free-text tags capture the rest of their line; trailing comment
+    // terminators (`*/`) are stripped so single-line JSDoc works too.
+    const cleanTagText = (raw: string): string | undefined => {
+      const cleaned = raw.replace(/\*\/\s*$/, '').trim();
+      return cleaned.length > 0 ? cleaned : undefined;
+    };
+
+    // Parse @header tag (short human label for the Setup form field)
+    let header: string | undefined;
+    const headerMatch = fullComment.match(/@header\s+([^\n]+)/);
+    if (headerMatch) {
+      header = cleanTagText(headerMatch[1]);
+    }
+
+    // Parse @hint tag (plain-language question/help text for the field)
+    let hint: string | undefined;
+    const hintMatch = fullComment.match(/@hint\s+([^\n]+)/);
+    if (hintMatch) {
+      hint = cleanTagText(hintMatch[1]);
+    }
+
+    // Parse @fromUserProfile tag (profile key filling this "for me" field)
+    let fromUserProfile: string | undefined;
+    const fromUserProfileMatch = fullComment.match(
+      /@fromUserProfile\s+([A-Za-z_][\w]*)/
+    );
+    if (fromUserProfileMatch) {
+      fromUserProfile = fromUserProfileMatch[1];
+    }
+
     let description: string | undefined;
 
     if (isBlockComment) {
@@ -2617,7 +2665,10 @@ export class BubbleParser {
           (line) =>
             line.length > 0 &&
             !line.startsWith('@canBeFile') &&
-            !line.startsWith('@canBeGoogleFile')
+            !line.startsWith('@canBeGoogleFile') &&
+            !line.startsWith('@header') &&
+            !line.startsWith('@hint') &&
+            !line.startsWith('@fromUserProfile')
         )
         .join(' ')
         .trim();
@@ -2629,7 +2680,10 @@ export class BubbleParser {
           (line) =>
             line.length > 0 &&
             !line.startsWith('@canBeFile') &&
-            !line.startsWith('@canBeGoogleFile')
+            !line.startsWith('@canBeGoogleFile') &&
+            !line.startsWith('@header') &&
+            !line.startsWith('@hint') &&
+            !line.startsWith('@fromUserProfile')
         )
         .join(' ')
         .trim();
@@ -2639,6 +2693,9 @@ export class BubbleParser {
       description: description || undefined,
       canBeFile,
       canBeGoogleFile,
+      header,
+      hint,
+      fromUserProfile,
     };
   }
 

@@ -34,10 +34,10 @@ import { db } from '../db/index.js';
 import { derivedCredentials, userCredentials } from '../db/schema.js';
 import {
   CredentialType,
-  type CoffeeMessage,
+  type ConversationEntry,
   type SetupFieldDescriptor,
   type SetupResource,
-  type SystemMessage,
+  type WorkflowDoneMessage,
 } from '@bubblelab/shared-schemas';
 import { GoogleSheetsBubble } from '@bubblelab/bubble-core';
 import { oauthService } from './oauth-service.js';
@@ -73,12 +73,12 @@ export interface ProvisionOutcome {
  * instructing the model; this schema field is where the declaration lands).
  */
 export function extractSetupResources(
-  messages: CoffeeMessage[] | undefined
+  messages: ConversationEntry[] | undefined
 ): SetupResource[] {
   if (!messages) return [];
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
-    if (message.type === 'plan') {
+    if ('type' in message && message.type === 'plan') {
       return message.plan.setupResources ?? [];
     }
   }
@@ -262,9 +262,22 @@ export function humanizeInputKey(key: string): string {
     .join(' ');
 }
 
-/** Minimal JSON-schema surface of bubble_flows.input_schema. */
+/**
+ * Minimal JSON-schema surface of bubble_flows.input_schema. header/hint/
+ * fromUserProfile are lifted from the payload interface's @header/@hint/
+ * @fromUserProfile JSDoc tags by BubbleParser.
+ */
 interface FlowInputSchema {
-  properties?: Record<string, { type?: string; description?: string }>;
+  properties?: Record<
+    string,
+    {
+      type?: string;
+      description?: string;
+      header?: string;
+      hint?: string;
+      fromUserProfile?: string;
+    }
+  >;
   required?: string[];
 }
 
@@ -276,9 +289,12 @@ export interface SetupFieldSummary {
 }
 
 /**
- * Field descriptors { key, header, hint, value? } for the Setup form, built
- * from the flow's input JSON schema plus the known defaults (provisioned ids,
- * user-saved defaultInputs). value is omitted for unfilled fields.
+ * Field descriptors { key, header, hint, value?, fromUserProfile? } for the
+ * Setup form, built from the flow's input JSON schema plus the known
+ * defaults (provisioned ids, user-saved defaultInputs, profile values).
+ * header/hint prefer the schema's JSDoc-lifted tags and fall back to
+ * key-humanization/property description. value is omitted for unfilled
+ * fields.
  */
 export function buildSetupFieldDescriptors(
   inputSchema: unknown,
@@ -296,11 +312,17 @@ export function buildSetupFieldDescriptors(
       known === undefined || known === null || known === ''
         ? undefined
         : String(known);
+    const fromUserProfile =
+      property.fromUserProfile === 'email' ||
+      property.fromUserProfile === 'telegramChatId'
+        ? property.fromUserProfile
+        : undefined;
     const descriptor: SetupFieldDescriptor = {
       key,
-      header: humanizeInputKey(key),
-      hint: property.description ?? '',
+      header: property.header ?? humanizeInputKey(key),
+      hint: property.hint ?? property.description ?? '',
       ...(value !== undefined ? { value } : {}),
+      ...(fromUserProfile !== undefined ? { fromUserProfile } : {}),
     };
     fields.push(descriptor);
     if (required.has(key) && value === undefined) {
@@ -311,8 +333,10 @@ export function buildSetupFieldDescriptors(
 }
 
 /**
- * The programmatic build-completion message. timestampMs (Date.now() ms) is
- * persisted with the message — durable proof of when the build finished.
+ * The programmatic build-completion message, discriminated on role+kind (NOT
+ * the CoffeeMessage `type` field — the studio's renderer matches this exact
+ * shape). timestampMs (Date.now() ms) is persisted with the message —
+ * durable proof of when the build finished.
  * - every required input known -> kind 'workflow-done'
  * - required inputs missing -> kind 'workflow-done-needs-info' with the FULL
  *   field list (known values included) so the form renders complete.
@@ -320,20 +344,20 @@ export function buildSetupFieldDescriptors(
 export function buildWorkflowDoneMessage(
   summary: SetupFieldSummary,
   timestampMs: number
-): SystemMessage {
+): WorkflowDoneMessage {
   const needsInfo = summary.missingRequired.length > 0;
-  const text = needsInfo
-    ? 'Workflow done, but I still need some information'
-    : 'Workflow done! Check it out now';
-  return {
-    id: `workflow-done-${timestampMs}`,
-    timestamp: new Date(timestampMs).toISOString(),
-    type: 'system',
-    role: 'system',
-    kind: needsInfo ? 'workflow-done-needs-info' : 'workflow-done',
-    timestampMs,
-    text,
-    content: text,
-    ...(needsInfo ? { fields: summary.fields } : {}),
-  };
+  return needsInfo
+    ? {
+        role: 'system',
+        kind: 'workflow-done-needs-info',
+        timestampMs,
+        text: 'Workflow done, but I still need some information',
+        fields: summary.fields,
+      }
+    : {
+        role: 'system',
+        kind: 'workflow-done',
+        timestampMs,
+        text: 'Workflow done! Check it out now',
+      };
 }
