@@ -207,14 +207,15 @@ function FlowVisualizerInner({
   const didInitDefaultsForFlow = useRef<number | null>(null);
 
   // Initialize execution inputs from defaults once per flow (avoid loops).
-  // Profile defaults (userProfileDefaults on GET /bubble-flow/:id, when the
-  // response carries them) seed matching input fields as REAL values; the
-  // flow's saved defaultInputs always win over profile defaults.
+  // userProfileDefaults (keyed by input FIELD KEY) and accountEmailDefaults
+  // (keyed by CREDENTIAL TYPE) on GET /bubble-flow/:id seed matching input
+  // fields as REAL values; the flow's saved defaultInputs always win.
   useEffect(() => {
     const defaults = applyProfileDefaults(
       currentFlow?.inputSchema,
       currentFlow?.defaultInputs || {},
-      getUserProfileDefaults(currentFlow)
+      getUserProfileDefaults(currentFlow),
+      currentFlow?.accountEmailDefaults
     );
     const hasDefaults = Object.keys(defaults).length > 0;
     const hasExisting = Object.keys(executionInputs || {}).length > 0;
