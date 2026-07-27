@@ -7,7 +7,7 @@ Complete.
 ## Branch / commit / push
 
 - Branch: `feature/studio-refine` (base 797e40f)
-- Commit: e53deea "studio: remove brand logos, plain-language actions/outcomes checklist" (+ a docs amend for this file)
+- Commit: 8a89865 "studio: remove brand logos, plain-language actions/outcomes checklist" (+ a follow-up docs commit recording this hash)
 - Pushed: `origin feature/studio-refine`
 
 ## 1. Logos removed
