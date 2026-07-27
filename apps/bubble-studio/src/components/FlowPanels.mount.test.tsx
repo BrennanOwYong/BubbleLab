@@ -73,6 +73,64 @@ describe('FlowConversationPanel', () => {
     expect(text).toContain('You answered');
   });
 
+  it('renders workflow-status messages and the inline needs-info form', async () => {
+    const data = flowData();
+    data.metadata = {
+      conversationMessages: [
+        ...(flow21.metadata.conversationMessages as unknown[]),
+        {
+          role: 'system',
+          kind: 'workflow-done',
+          timestampMs: 1753600000000,
+          text: 'Workflow done! Check it out now',
+        },
+        {
+          role: 'system',
+          kind: 'workflow-done-needs-info',
+          timestampMs: 1753600001000,
+          text: 'Workflow done, but I still need some information',
+          fields: [
+            {
+              key: 'notionDatabaseId',
+              header: 'Notion database ID',
+              hint: 'The long ID from your Notion database link',
+              value: '1234567890abcdef1234567890abcdef',
+            },
+            {
+              key: 'telegramChatId',
+              header: 'Telegram chat ID',
+              hint: 'Where the digest should be delivered',
+            },
+          ],
+        },
+      ],
+    };
+    const container = await renderWithFlow(
+      <FlowConversationPanel flowId={FLOW_ID} />,
+      data
+    );
+    const text = container.textContent ?? '';
+
+    expect(text).toContain('Workflow done! Check it out now');
+    expect(text).toContain('Workflow done, but I still need some information');
+    expect(text).toContain('Notion database ID');
+    expect(text).toContain('Telegram chat ID');
+
+    // C1: the known value renders as REAL input text, not placeholder
+    const notionInput = container.querySelector<HTMLInputElement>(
+      '#needs-info-notionDatabaseId'
+    );
+    expect(notionInput?.value).toBe('1234567890abcdef1234567890abcdef');
+    // No known value -> empty value, hint as placeholder
+    const telegramInput = container.querySelector<HTMLInputElement>(
+      '#needs-info-telegramChatId'
+    );
+    expect(telegramInput?.value).toBe('');
+    expect(telegramInput?.placeholder).toBe(
+      'Where the digest should be delivered'
+    );
+  });
+
   it('shows the empty state when no conversation is saved', async () => {
     const data = flowData();
     data.metadata = {};
@@ -95,15 +153,19 @@ describe('FlowChecklistPanel', () => {
     const text = container.textContent ?? '';
 
     expect(text).toContain('What this flow does');
-    // Step lines derived from the parsed workflow's descriptions
-    expect(text).toContain('Queries your Notion deals database');
+    // Step lines derived from the parsed workflow's descriptions,
+    // plain-language ('Queries' -> 'Looks up')
+    expect(text).toContain('Looks up your Notion deals database');
     expect(text).toContain(
       'classify whether a deal looks stalled and propose actionable next steps'
     );
     expect(text).toContain('Sends one Telegram message');
-    // Tool chips resolved from the workflow bubbles map
-    expect(text).toContain('AI Agent');
+    // Tool chips resolved from the workflow bubbles map ('ai-agent' -> 'AI')
+    expect(text).toContain('Notion');
     expect(text).toContain('Telegram');
+    // B3 sections: outcomes and error responses render; no technical tokens
+    expect(text).toContain('If something goes wrong');
+    expect(text).not.toMatch(/ISO-8601|JSON\b|\b2D array\b/);
     // Raw code demoted to a link, still reachable
     expect(text).toContain('View code');
   });
