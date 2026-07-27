@@ -72,7 +72,12 @@ Render path for the acceptance case (two independent guarantees):
 ## Deviations
 
 1. **Seed via SQL, not API PUT** — see above; no defaultInputs-only PUT exists.
-2. **`accountEmailDefaults` has NO studio consumer today** — it rides GET /bubble-flow/:id (`bubble-flows.ts:702`) but nothing in `apps/bubble-studio/src` reads it; the brief's "mirror how accountEmailDefaults is consumed" could not be followed literally. F-studio instead consumes `userProfileDefaults` at the executionInputs seed (FlowVisualizer) so profile values become REAL values everywhere (setup form, canvas nodes, conversation form), degrading to a no-op when the key is absent. Matching: exact field-name key, then normalized key (case/separator-insensitive), then semantic groups (`email*` keys → fields naming email; `*chatId` keys → fields naming chat id).
+2. **`accountEmailDefaults` had NO studio consumer before this lane** — it rode GET /bubble-flow/:id (`bubble-flows.ts:702`) unread. Both default maps are now consumed at the executionInputs seed (FlowVisualizer → `applyProfileDefaults`), per the locked contract from the user-profile lane:
+   - `userProfileDefaults` is keyed by INPUT FIELD KEY (payload inputSchema property name). Lookup: exact key, then a normalized case/separator-insensitive match of the same key. No semantic guessing.
+   - `accountEmailDefaults` stays keyed by CREDENTIAL TYPE; fields naming an account (gmailAccountEmail, ...) map to types via `getAccountCredentialTypesForField` (the same heuristic the account dropdown uses).
+   - Precedence: saved defaultInputs > userProfileDefaults > accountEmailDefaults. Both maps degrade to a no-op when absent.
+   - `FieldDescriptor.fromUserProfile?: string` (known values 'email' | 'telegramChatId') is accepted as an informational marker; the field-key lookup resolves the value.
+     Contract locked in `fieldDescriptor.test.ts` (exact-key hit, cross-field guess rejected, credential-type account fill, precedence).
 3. **FlowVisualizer touched** (not in the named file list) — it owns the only defaults→inputs seed seam; prefilling anywhere else would show values the flow would not run with.
 4. **Pre-existing test failure repaired** — `FlowPanels.mount.test.tsx` failed on HEAD before this work (expected 'Queries your Notion deals database' / 'AI Agent'; the sanitizer has emitted 'Looks up…' / 'AI' since before this lane). Assertions updated to the real plain-language output.
 5. **B3 error-responses section is derived, not stored** — no per-flow error-handling metadata exists, so the line derives from trigger type (scheduled flows note the next run still happens). Recorded so a future lane can replace it with real error-policy data (errors-as-events bus).

@@ -10,6 +10,7 @@
  *   greyed placeholder text makes users believe the value was not received.
  * - `hint` renders as the placeholder ONLY when no value exists yet.
  */
+import { getAccountCredentialTypesForField } from '../lib/authMethods';
 
 export interface FieldDescriptor {
   /** Payload key the value is stored under (e.g. `telegramChatId`) */
@@ -20,6 +21,12 @@ export interface FieldDescriptor {
   hint: string;
   /** Known value (user-provided, auto-provisioned, or profile default) */
   value?: string;
+  /**
+   * Codegen marker confirming the field is profile-backed (known values:
+   * 'email', 'telegramChatId'). Informational only — the field-key lookup in
+   * userProfileDefaults is what resolves the value.
+   */
+  fromUserProfile?: string;
 }
 
 /** Runtime guard for one descriptor coming out of persisted metadata. */
@@ -30,7 +37,9 @@ export function isFieldDescriptor(entry: unknown): entry is FieldDescriptor {
     typeof candidate.key === 'string' &&
     typeof candidate.header === 'string' &&
     typeof candidate.hint === 'string' &&
-    (candidate.value === undefined || typeof candidate.value === 'string')
+    (candidate.value === undefined || typeof candidate.value === 'string') &&
+    (candidate.fromUserProfile === undefined ||
+      typeof candidate.fromUserProfile === 'string')
   );
 }
 
@@ -108,11 +117,31 @@ function normalizeKey(key: string): string {
 }
 
 /**
- * Profile default for one input field. Matches the field name against the
- * profile map by exact key first, then normalized key, then the two semantic
- * groups the profile carries today:
- * - recipient-email keys (`recipientEmail`, `email`) -> fields naming an email
- * - telegram-chat-id keys (`telegramChatId`, `chatId`) -> fields naming a chat id
+ * Account-email default for one input field. `accountEmailDefaults` (GET
+ * /bubble-flow/:id) is keyed by CREDENTIAL TYPE; the field->credential-type
+ * mapping reuses the same heuristic that decides when a field renders the
+ * account dropdown (getAccountCredentialTypesForField), so the prefilled
+ * value and the dropdown options always agree.
+ */
+export function matchAccountEmailDefault(
+  fieldName: string,
+  accountEmailDefaults: Record<string, string> | undefined
+): string | undefined {
+  if (!accountEmailDefaults) return undefined;
+  const credentialTypes = getAccountCredentialTypesForField(fieldName);
+  if (!credentialTypes) return undefined;
+  for (const credentialType of credentialTypes) {
+    const email = accountEmailDefaults[credentialType];
+    if (email !== undefined && email.length > 0) return email;
+  }
+  return undefined;
+}
+
+/**
+ * Profile default for one input field. `userProfileDefaults` is keyed by
+ * INPUT FIELD KEY (the payload inputSchema property name) — contract locked
+ * with the user-profile lane — so the lookup is the exact field key, with a
+ * normalized (case/separator-insensitive) match as the only tolerance.
  */
 export function matchProfileDefault(
   fieldName: string,
@@ -126,27 +155,25 @@ export function matchProfileDefault(
   for (const [key, value] of Object.entries(profileDefaults)) {
     if (normalizeKey(key) === normalizedField) return value;
   }
-  const fieldIsEmail = /email/i.test(fieldName);
-  const fieldIsChatId = /chat.?id/i.test(fieldName);
-  for (const [key, value] of Object.entries(profileDefaults)) {
-    const normalizedKey = normalizeKey(key);
-    if (fieldIsEmail && /email/.test(normalizedKey)) return value;
-    if (fieldIsChatId && /chatid/.test(normalizedKey)) return value;
-  }
   return undefined;
 }
 
 /**
- * Seed map for execution inputs: profile defaults mapped onto the flow's
- * inputSchema field names, overlaid by the flow's saved defaultInputs (saved
- * values always win over profile defaults).
+ * Seed map for execution inputs from the flow's inputSchema field names:
+ * - `userProfileDefaults` (keyed by INPUT FIELD KEY) prefills the matching
+ *   field directly,
+ * - `accountEmailDefaults` (keyed by CREDENTIAL TYPE, as before) prefills
+ *   fields that name an account (gmailAccountEmail, ...) via the same
+ *   field->credential-type heuristic the account dropdown uses,
+ * - the flow's saved defaultInputs always win over both.
  */
 export function applyProfileDefaults(
   inputSchema: unknown,
   defaultInputs: Record<string, unknown>,
-  profileDefaults: Record<string, string> | undefined
+  profileDefaults: Record<string, string> | undefined,
+  accountEmailDefaults?: Record<string, string>
 ): Record<string, unknown> {
-  if (!profileDefaults) return defaultInputs;
+  if (!profileDefaults && !accountEmailDefaults) return defaultInputs;
   const properties =
     typeof inputSchema === 'object' &&
     inputSchema !== null &&
@@ -158,7 +185,15 @@ export function applyProfileDefaults(
   const seeded: Record<string, unknown> = {};
   for (const fieldName of Object.keys(properties)) {
     const profileValue = matchProfileDefault(fieldName, profileDefaults);
-    if (profileValue !== undefined) seeded[fieldName] = profileValue;
+    if (profileValue !== undefined) {
+      seeded[fieldName] = profileValue;
+      continue;
+    }
+    const accountValue = matchAccountEmailDefault(
+      fieldName,
+      accountEmailDefaults
+    );
+    if (accountValue !== undefined) seeded[fieldName] = accountValue;
   }
   return { ...seeded, ...defaultInputs };
 }
