@@ -7,7 +7,7 @@ COMPLETE (pending: live sheet-creation check needs a real Google credential — 
 ## Branch / commit
 
 - Branch: `feature/setup-provisioning`
-- Commit: (hash recorded on push; single commit on top of bf32c04)
+- Commit: `4a75131` (final contract: role+kind done messages, ConversationEntry union, JSDoc tag extraction). An intermediate snapshot `47e83bb` (type:'system' done-message iteration) was committed mid-lane; `4a75131` supersedes its message shape.
 
 ## Files changed
 
