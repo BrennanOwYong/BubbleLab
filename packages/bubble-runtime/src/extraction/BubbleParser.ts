@@ -2605,6 +2605,16 @@ export class BubbleParser {
       canBeGoogleFile = canBeGoogleFileMatch[1].toLowerCase() === 'true';
     }
 
+    // Machine-read field tags that must never leak into the user-facing
+    // description text (@header/@hint/@fromUserProfile join @canBeFile/
+    // @canBeGoogleFile as configuration, not prose).
+    const isTagLine = (line: string): boolean =>
+      line.startsWith('@canBeFile') ||
+      line.startsWith('@canBeGoogleFile') ||
+      line.startsWith('@header') ||
+      line.startsWith('@hint') ||
+      line.startsWith('@fromUserProfile');
+
     let description: string | undefined;
 
     if (isBlockComment) {
@@ -2613,26 +2623,26 @@ export class BubbleParser {
         .replace(/\s*\*\/\s*$/, '')
         .split('\n')
         .map((line) => line.replace(/^\s*\*\s?/, '').trim())
-        .filter(
-          (line) =>
-            line.length > 0 &&
-            !line.startsWith('@canBeFile') &&
-            !line.startsWith('@canBeGoogleFile')
-        )
+        .filter((line) => line.length > 0 && !isTagLine(line))
         .join(' ')
         .trim();
     } else {
       description = fullComment
         .split('\n')
         .map((line) => line.replace(/^\/\/\s?/, '').trim())
-        .filter(
-          (line) =>
-            line.length > 0 &&
-            !line.startsWith('@canBeFile') &&
-            !line.startsWith('@canBeGoogleFile')
-        )
+        .filter((line) => line.length > 0 && !isTagLine(line))
         .join(' ')
         .trim();
+    }
+
+    // The @hint tag is the field's non-technical, personalized setup prompt
+    // ("Who should receive this email?"). When present it IS the user-facing
+    // description the setup form and done-message hint read; it overrides any
+    // plain comment text so the hint is clean (no code identifiers).
+    const hintMatch = fullComment.match(/@hint\s+(.+)/);
+    if (hintMatch) {
+      const hint = hintMatch[1].replace(/\*\/\s*$/, '').trim();
+      if (hint.length > 0) description = hint;
     }
 
     return {
