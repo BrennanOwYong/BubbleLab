@@ -2,7 +2,7 @@
 
 Status: DONE
 Branch: feature/studio-default-forms
-Commit: (see `git log -1` on this branch; recorded below after commit)
+Commit: c1e0a62771f72c17cb743c86fa133ad267aa8dfa (feature commit; this hash note added in a follow-up docs commit)
 
 ## Files changed
 
