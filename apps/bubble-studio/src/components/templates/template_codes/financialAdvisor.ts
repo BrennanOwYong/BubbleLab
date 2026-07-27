@@ -139,7 +139,7 @@ export class StockAnalysisFlow extends BubbleFlow<'webhook/http'> {
     analysis: string
   ): Promise<void> {
     // Sends stock analysis via email using Resend. The 'from' parameter is automatically
-    // set to Bubble Lab's default sender unless you have your own Resend account configured.
+    // set to Gluu's default sender unless you have your own Resend account configured.
     const emailSender = new ResendBubble({
       operation: 'send_email',
       to: [recipientEmail],

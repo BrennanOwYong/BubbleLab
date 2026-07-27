@@ -36,8 +36,8 @@ export const SignInModal: React.FC<SignInModalProps> = ({
             <div className="flex items-center justify-center gap-3 mb-4">
               <div className="flex items-center gap-3">
                 <img
-                  src="/favicon.ico"
-                  alt="Bubble Lab"
+                  src="/gluu-icon.svg"
+                  alt="Gluu"
                   className="w-12 h-12 rounded-lg"
                 />
               </div>
@@ -45,7 +45,7 @@ export const SignInModal: React.FC<SignInModalProps> = ({
 
             <div className="space-y-2">
               <p className="text-gray-300 text-2xl font-semibold">
-                Welcome to Bubble Lab
+                Welcome to Gluu
               </p>
               <p className="text-gray-400 text-sm">
                 Sign in to start automating!

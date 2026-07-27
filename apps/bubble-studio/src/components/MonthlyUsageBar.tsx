@@ -129,8 +129,8 @@ export const MonthlyUsageBar: React.FC<MonthlyUsageBarProps> = ({
     executions: {
       title: 'Execution limit reached.',
       message:
-        "You've hit your monthly execution cap. Upgrade your plan to run more Bubble Lab workflows this month.",
-      full: "You've reached your plan's cap on executions. Upgrade your plan to run more Bubble Lab workflows this month.",
+        "You've hit your monthly execution cap. Upgrade your plan to run more Gluu workflows this month.",
+      full: "You've reached your plan's cap on executions. Upgrade your plan to run more Gluu workflows this month.",
     },
     activeFlows: {
       title: 'Active flow limit reached.',

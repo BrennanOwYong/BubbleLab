@@ -81,7 +81,7 @@ function generatePackageJson(projectName: string): string {
     version: '0.1.0',
     type: 'module',
     private: true,
-    description: 'BubbleFlow exported from BubbleLab Studio',
+    description: 'BubbleFlow exported from Gluu Studio',
     scripts: {
       dev: 'tsx src/index.ts',
       build: 'tsc',
@@ -332,7 +332,7 @@ function generateReadme(
 
   return `# ${flowName}
 
-**A complete, ready-to-run BubbleFlow project exported from BubbleLab Studio.**
+**A complete, ready-to-run BubbleFlow project exported from Gluu Studio.**
 
 This is a standalone Node.js project with all dependencies, configuration files, and your flow code pre-configured. Just extract, install, and run!
 
@@ -430,19 +430,9 @@ runner.injector.changeBubbleParameters(
 
 Create additional flow files in \`src/\` and import them in \`index.ts\`.
 
-## 📖 Learn More
-
-- [BubbleLab Documentation](https://github.com/bubblelabai/BubbleLab)
-- [BubbleLab Studio](https://bubblelab.dev)
-
-## 💬 Support
-
-- **Issues**: [GitHub Issues](https://github.com/bubblelabai/BubbleLab/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/bubblelabai/BubbleLab/discussions)
-
 ## 📄 License
 
-Apache-2.0 © Bubble Lab, Inc.
+Apache-2.0
 
 ---
 

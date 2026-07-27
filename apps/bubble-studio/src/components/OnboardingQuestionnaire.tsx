@@ -230,7 +230,7 @@ export const OnboardingQuestionnaire: React.FC<
                 How did you discover us?
               </h2>
               <p className="text-gray-400 text-sm">
-                We'd love to know where you found Bubble Lab
+                We'd love to know where you found Gluu
               </p>
             </div>
             <div className="grid grid-cols-2 gap-3">

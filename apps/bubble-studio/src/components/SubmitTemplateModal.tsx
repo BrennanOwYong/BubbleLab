@@ -123,7 +123,7 @@ export const SubmitTemplateModal: React.FC<SubmitTemplateModalProps> = ({
               Submit Your Template
             </h2>
             <p className="text-sm text-gray-400">
-              Share your Bubble Lab automation with the community
+              Share your Gluu automation with the community
             </p>
           </div>
           <button

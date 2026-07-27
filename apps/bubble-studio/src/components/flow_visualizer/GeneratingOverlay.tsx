@@ -1,5 +1,5 @@
 /**
- * Overlay shown when Pearl is generating workflow code
+ * Overlay shown when Gluu is generating workflow code
  */
 
 export function GeneratingOverlay() {
@@ -56,7 +56,7 @@ export function GeneratingOverlay() {
           </div>
 
           <p className="text-gray-300 text-base font-medium">
-            Please be patient, Pearl is generating your workflow...
+            Please be patient, Gluu is generating your workflow...
           </p>
         </div>
       </div>

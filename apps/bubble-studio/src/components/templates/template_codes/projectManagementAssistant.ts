@@ -132,7 +132,7 @@ export class SlackDigestAndEmailWorkflow extends BubbleFlow<'webhook/http'> {
           </h2>
           <ul style="list-style: none; padding: 0; margin: 0;">
             \${items.map(item => \`
-              <li style="padding: 12px; margin-bottom: 8px; background-color: #f8fafc; border-radius: 6px; border-left: 4px solid #667eea;">
+              <li style="padding: 12px; margin-bottom: 8px; background-color: #f8fafc; border-radius: 6px; border-left: 4px solid #0d9488;">
                 \${item}
               </li>
             \`).join('')}
@@ -156,7 +156,7 @@ export class SlackDigestAndEmailWorkflow extends BubbleFlow<'webhook/http'> {
         <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
           <!-- Header -->
           <tr>
-            <td style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 30px; text-align: center;">
+            <td style="background: linear-gradient(135deg, #0d9488 0%, #115e59 100%); padding: 40px 30px; text-align: center;">
               <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 600;">💬 Daily Slack Digest</h1>
               <p style="margin: 10px 0 0 0; color: #e0e7ff; font-size: 16px;">#\${channelName}</p>
               <p style="margin: 5px 0 0 0; color: #e0e7ff; font-size: 14px;">\${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
@@ -181,7 +181,7 @@ export class SlackDigestAndEmailWorkflow extends BubbleFlow<'webhook/http'> {
             <td style="padding: 30px; background-color: #1e293b; text-align: center;">
               <p style="margin: 0; color: #94a3b8; font-size: 14px;">Stay aligned with your team's progress</p>
               <p style="margin: 10px 0 0 0; color: #64748b; font-size: 12px;">
-                Powered by <a href="https://bubblelab.ai" style="color: #667eea; text-decoration: none; font-weight: 600;">bubble lab</a>
+                Powered by <a href="#" style="color: #0d9488; text-decoration: none; font-weight: 600;">Gluu</a>
               </p>
             </td>
           </tr>

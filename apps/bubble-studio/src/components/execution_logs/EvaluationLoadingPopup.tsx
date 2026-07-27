@@ -132,8 +132,8 @@ export function EvaluationLoadingPopup({
                 }}
               >
                 <img
-                  src="/pearl.png"
-                  alt="Pearl"
+                  src="/gluu-icon.svg"
+                  alt="Gluu"
                   className="w-full h-full object-cover"
                 />
               </motion.div>

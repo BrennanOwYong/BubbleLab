@@ -61,7 +61,7 @@ export function ConsolidatedSidePanel() {
   const tabs = [
     {
       id: 'pearl' as const,
-      label: 'Pearl',
+      label: 'Gluu',
       icon: Code, // Placeholder, not used for Pearl tab
       badge: null,
     },
@@ -125,7 +125,7 @@ export function ConsolidatedSidePanel() {
               }`}
             >
               {isPearl ? (
-                <img src="/pearl.png" alt="Pearl" className="w-4 h-4" />
+                <img src="/gluu-icon.svg" alt="Gluu" className="w-4 h-4" />
               ) : (
                 <Icon className="w-4 h-4" />
               )}

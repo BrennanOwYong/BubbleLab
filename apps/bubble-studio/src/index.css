@@ -1,5 +1,55 @@
 @import 'tailwindcss';
 
+/* ==========================================================================
+   GLUU BRAND TOKENS — single source of truth for the app's accent colors.
+   PLACEHOLDER PALETTE: primary accent = teal, secondary accent = amber,
+   background = graphite. Replace the hex values below with the final Gluu
+   brand colors; every purple-* and pink-* Tailwind utility in the codebase
+   resolves to these variables (Tailwind v4 theme override), so this block
+   is the only place the final palette needs to land.
+   ========================================================================== */
+@theme {
+  /* Primary accent scale (remaps Tailwind `purple-*`; was BubbleLab purple) */
+  --color-purple-50: #f0fdfa;
+  --color-purple-100: #ccfbf1;
+  --color-purple-200: #99f6e4;
+  --color-purple-300: #5eead4;
+  --color-purple-400: #2dd4bf;
+  --color-purple-500: #14b8a6;
+  --color-purple-600: #0d9488;
+  --color-purple-700: #0f766e;
+  --color-purple-800: #115e59;
+  --color-purple-900: #134e4a;
+  --color-purple-950: #042f2e;
+
+  /* Secondary accent scale (remaps Tailwind `pink-*`; was BubbleLab pink) */
+  --color-pink-50: #fffbeb;
+  --color-pink-100: #fef3c7;
+  --color-pink-200: #fde68a;
+  --color-pink-300: #fcd34d;
+  --color-pink-400: #fbbf24;
+  --color-pink-500: #f59e0b;
+  --color-pink-600: #d97706;
+  --color-pink-700: #b45309;
+  --color-pink-800: #92400e;
+  --color-pink-900: #78350f;
+  --color-pink-950: #451a03;
+
+  /* Gradient partners (remaps the few `indigo-*`/`violet-*` gradient stops) */
+  --color-indigo-600: #0f766e;
+  --color-indigo-700: #115e59;
+  --color-violet-500: #14b8a6;
+  --color-violet-600: #0d9488;
+}
+
+:root {
+  /* App-shell tokens (used by plain CSS below and inline styles) */
+  --gluu-bg: #101418; /* page background; was BubbleLab navy #0f0f23 */
+  --gluu-fg: #cccccc; /* base text */
+  --gluu-accent: #14b8a6; /* = --color-purple-500 placeholder */
+  --gluu-accent-strong: #0d9488; /* = --color-purple-600 placeholder */
+}
+
 /* Monaco Editor codicon font - load from public directory */
 @font-face {
   font-family: 'codicon';
@@ -55,7 +105,7 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background-color: #0f0f23;
+  background-color: var(--gluu-bg);
   color: #cccccc;
   font-family: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
 }
@@ -105,39 +155,36 @@ body {
 
 /* Monaco Editor highlighting styles */
 .monaco-editor .highlighted-line {
-  background-color: rgba(
-    147,
-    51,
-    234,
+  background-color: rgba(13, 148, 136,
     0.15
   ) !important; /* Purple highlight with transparency */
-  border-left: 3px solid #9333ea !important;
+  border-left: 3px solid var(--gluu-accent-strong) !important;
   animation: highlight-pulse 0.5s ease-in-out;
 }
 
 .monaco-editor .highlighted-line-margin {
-  background-color: rgba(147, 51, 234, 0.2) !important;
-  border-left: 3px solid #9333ea !important;
+  background-color: rgba(13, 148, 136, 0.2) !important;
+  border-left: 3px solid var(--gluu-accent-strong) !important;
 }
 
 .monaco-editor .highlighted-line-inline {
-  background-color: rgba(147, 51, 234, 0.2) !important;
-  border-left: 3px solid #9333ea !important;
+  background-color: rgba(13, 148, 136, 0.2) !important;
+  border-left: 3px solid var(--gluu-accent-strong) !important;
 }
 
 .monaco-editor .highlighted-line-glyph {
-  background-color: rgba(147, 51, 234, 0.3) !important;
-  border-left: 3px solid #9333ea !important;
+  background-color: rgba(13, 148, 136, 0.3) !important;
+  border-left: 3px solid var(--gluu-accent-strong) !important;
 }
 
 .monaco-editor .highlighted-line-after {
-  color: #9333ea !important;
+  color: var(--gluu-accent-strong) !important;
   font-weight: bold !important;
   padding-left: 6px;
 }
 
 .monaco-editor .highlighted-line-before {
-  color: #9333ea !important;
+  color: var(--gluu-accent-strong) !important;
   font-weight: bold !important;
   margin-right: 4px;
 }
@@ -175,13 +222,13 @@ body {
 
 @keyframes highlight-pulse {
   0% {
-    background-color: rgba(147, 51, 234, 0.3);
+    background-color: rgba(13, 148, 136, 0.3);
   }
   50% {
-    background-color: rgba(147, 51, 234, 0.1);
+    background-color: rgba(13, 148, 136, 0.1);
   }
   100% {
-    background-color: rgba(147, 51, 234, 0.15);
+    background-color: rgba(13, 148, 136, 0.15);
   }
 }
 

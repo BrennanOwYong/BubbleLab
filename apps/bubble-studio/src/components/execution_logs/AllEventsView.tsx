@@ -912,7 +912,7 @@ export default function AllEventsView({
                                   Not sure what these errors mean?
                                 </h4>
                                 <p className="text-[10px] text-gray-500">
-                                  Pearl explains the error and tells you what to
+                                  Gluu explains the error and tells you what to
                                   do
                                 </p>
                               </div>
@@ -926,7 +926,7 @@ export default function AllEventsView({
                               <Sparkles className="w-3.5 h-3.5" />
                               {pearl.isPending
                                 ? 'Analyzing...'
-                                : 'Explain with Pearl'}
+                                : 'Explain with Gluu'}
                             </button>
                           </div>
                         </div>
@@ -1232,7 +1232,7 @@ export default function AllEventsView({
                               Not sure what this issue means?
                             </h4>
                             <p className="text-xs text-gray-400">
-                              Pearl explains the issue and tells you what to do
+                              Gluu explains the issue and tells you what to do
                             </p>
                           </div>
                           <button
@@ -1246,7 +1246,7 @@ export default function AllEventsView({
                             <Sparkles className="w-4 h-4" />
                             {pearl.isPending
                               ? 'Analyzing...'
-                              : 'Explain with Pearl'}
+                              : 'Explain with Gluu'}
                           </button>
                         </div>
                       </div>
@@ -1459,7 +1459,7 @@ export default function AllEventsView({
                             <Sparkles className="w-3.5 h-3.5" />
                             {pearl.isPending
                               ? 'Analyzing...'
-                              : 'Explain with Pearl'}
+                              : 'Explain with Gluu'}
                           </button>
                         </div>
                       </div>

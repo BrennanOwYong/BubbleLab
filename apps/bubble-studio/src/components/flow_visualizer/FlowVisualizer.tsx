@@ -520,7 +520,7 @@ function FlowVisualizerInner({
           sourceHandle: 'bottom',
           targetHandle: 'top',
           style: {
-            stroke: isEdgeHighlighted ? '#9333ea' : '#9ca3af',
+            stroke: isEdgeHighlighted ? 'var(--gluu-accent-strong)' : '#9ca3af',
             strokeWidth: isEdgeHighlighted ? 3 : 2,
           },
         });
@@ -1260,7 +1260,7 @@ function FlowVisualizerInner({
         if (nodes.some((n) => n.id === firstBubbleId)) {
           // Determine edge color based on trigger type
           const getEntryEdgeColor = () => {
-            if (eventType === 'schedule/cron') return '#9333ea'; // purple
+            if (eventType === 'schedule/cron') return '#d97706'; // GLUU secondary accent (amber placeholder)
             if (eventType && eventType !== 'webhook/http') return '#14b8a6'; // teal for service triggers
             return '#60a5fa'; // blue for webhook
           };
@@ -1307,7 +1307,9 @@ function FlowVisualizerInner({
             type: 'straight',
             animated: true,
             style: {
-              stroke: isSequentialEdgeHighlighted ? '#9333ea' : '#9ca3af',
+              stroke: isSequentialEdgeHighlighted
+                ? 'var(--gluu-accent-strong)'
+                : '#9ca3af',
               strokeWidth: isSequentialEdgeHighlighted ? 3 : 2,
               strokeDasharray: '5,5',
             },

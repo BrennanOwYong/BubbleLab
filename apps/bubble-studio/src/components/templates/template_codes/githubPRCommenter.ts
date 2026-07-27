@@ -173,7 +173,7 @@ export class GithubPRCommenter extends BubbleFlow<'webhook/http'> {
     title: string;
     body: string;
   }): string {
-    return \`### Suggested PR title from Pearl\\n\\n**Title:** \\\`\${suggestion.title}\\\`\\n\\n**Body:**\\n\${suggestion.body}\`;
+    return \`### Suggested PR title from Gluu\\n\\n**Title:** \\\`\${suggestion.title}\\\`\\n\\n**Body:**\\n\${suggestion.body}\`;
   }
 
   // Posts the AI-generated PR suggestions as a comment on the pull request

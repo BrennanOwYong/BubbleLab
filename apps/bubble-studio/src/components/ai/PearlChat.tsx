@@ -644,12 +644,12 @@ export function PearlChat() {
             {/* Header */}
             <div className="mb-6 text-center">
               <img
-                src="/pearl.png"
-                alt="Pearl"
+                src="/gluu-icon.svg"
+                alt="Gluu"
                 className="w-12 h-12 mb-3 mx-auto"
               />
               <h3 className="text-base font-medium text-gray-200 mb-1">
-                Chat with Pearl
+                Chat with Gluu
               </h3>
             </div>
 
