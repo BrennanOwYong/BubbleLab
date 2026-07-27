@@ -54,28 +54,125 @@ export function findPlanMessage(
   return undefined;
 }
 
-/** 'ai-agent' -> 'AI Agent', 'google-sheets' -> 'Google Sheets' */
+/**
+ * Chip names a non-technical person recognizes. Bubbles whose internal name
+ * is an implementation term get a plain name; app bubbles keep the app name.
+ */
+const FRIENDLY_TOOL_NAMES: Record<string, string> = {
+  'ai-agent': 'AI',
+  http: 'Web',
+  postgresql: 'Database',
+  storage: 'File storage',
+};
+
+/** 'ai-agent' -> 'AI', 'google-sheets' -> 'Google Sheets' */
 export function humanizeToolName(bubbleName: string): string {
-  const ALL_CAPS = new Set(['ai', 'api', 'http', 'sql', 'ai-agent']);
+  const friendly = FRIENDLY_TOOL_NAMES[bubbleName.toLowerCase()];
+  if (friendly) return friendly;
   return bubbleName
     .split(/[-_]/)
     .filter(Boolean)
-    .map((word) =>
-      ALL_CAPS.has(word.toLowerCase())
-        ? word.toUpperCase()
-        : word.charAt(0).toUpperCase() + word.slice(1)
-    )
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
 }
 
-/** 'queryRecentDeals' -> 'Query recent deals' */
+/**
+ * Ordered replacements that turn generation-time step descriptions into
+ * language a non-technical reader follows. Compound phrases come before the
+ * single words they contain.
+ */
+const PLAIN_REPLACEMENTS: Array<[RegExp, string]> = [
+  [/\ban AI agent in JSON mode\b/gi, 'AI'],
+  [/\bAI agents?\b/gi, 'AI'],
+  [/\bLLM\b/gi, 'AI'],
+  [/\bprompts?\b/gi, 'instructions'],
+  [/\b2D array\b/gi, 'table'],
+  [/\barrays?\b/gi, 'list'],
+  [/\bA1 range\b/gi, 'cell range'],
+  [/\bJSON mode\b/gi, 'structured mode'],
+  [/\bJSON\b/gi, 'structured data'],
+  [/\braw XML\b/gi, 'raw data'],
+  [/\bXML\b/gi, 'data'],
+  [/\bHTML email\b/gi, 'email'],
+  [/\bHTML\s+/gi, ''],
+  [/\bHTML\b/gi, 'formatted text'],
+  [/\bUTC\s+/gi, ''],
+  [/\bRSS\s+/gi, 'news '],
+  [/\bAPI\b/gi, 'service'],
+  [/\bparses\b/gi, 'reads'],
+  [/\bparsed\b/gi, 'read'],
+  [/\bparsing\b/gi, 'reading'],
+  [/\bparse\b/gi, 'read'],
+  [/\bdeterministically\b/gi, 'reliably'],
+  [/\bdownstream\b/gi, 'later'],
+  [/\bconfigured\b/gi, 'chosen'],
+  [/\bendpoints?\b/gi, 'address'],
+  [/\bpayloads?\b/gi, 'data'],
+  [/\bbooleans?\b/gi, 'yes/no value'],
+  [/\bregexp?\b/gi, 'pattern'],
+  [/\bwebhooks?\b/gi, 'automatic trigger'],
+  [/\bcron\b/gi, 'schedule'],
+  [/\bquery\b/gi, 'look up'],
+  [/\bqueries\b/gi, 'looks up'],
+  [/\brenders\b/gi, 'creates'],
+  [/\brender\b/gi, 'create'],
+];
+
+/**
+ * Rewrite one checklist line into plain language: swap technical terms for
+ * everyday ones and spell out identifiers (chat_id -> chat id,
+ * sendReminderEmail -> send reminder email).
+ */
+export function toPlainLanguage(text: string): string {
+  let result = text;
+  for (const [pattern, replacement] of PLAIN_REPLACEMENTS) {
+    result = result.replace(pattern, replacement);
+  }
+  // snake_case identifiers -> spaced words
+  result = result.replace(/\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/g, (token) =>
+    token.replace(/_/g, ' ')
+  );
+  // camelCase identifiers -> spaced lowercase words
+  result = result.replace(/\b[a-z][a-z0-9]*(?:[A-Z][a-z0-9]*)+\b/g, (token) =>
+    token.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase()
+  );
+  result = result.replace(/\s{2,}/g, ' ').trim();
+  return result.charAt(0).toUpperCase() + result.slice(1);
+}
+
+/**
+ * Coder verbs -> everyday verbs for lines derived from a function name
+ * (used only when a step carries no written description).
+ */
+const VERB_MAP: Record<string, string> = {
+  transform: 'prepares',
+  build: 'creates',
+  builds: 'creates',
+  construct: 'creates',
+  generate: 'creates',
+  render: 'creates',
+  compute: 'works out',
+  calculate: 'works out',
+  fetch: 'gets',
+  execute: 'runs',
+  init: 'sets up',
+  initialize: 'sets up',
+  validate: 'checks',
+  handle: 'processes',
+};
+
+/** 'transformSheetRange' -> 'Prepares sheet range' */
 export function humanizeFunctionName(functionName: string): string {
   const spaced = functionName
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
     .replace(/[-_]/g, ' ')
     .toLowerCase()
     .trim();
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+  const words = spaced.split(' ');
+  const mapped = VERB_MAP[words[0]];
+  if (mapped) words[0] = mapped;
+  const sentence = words.join(' ');
+  return toPlainLanguage(sentence.charAt(0).toUpperCase() + sentence.slice(1));
 }
 
 /**
@@ -96,14 +193,16 @@ function deriveFromWorkflow(workflow: ParsedWorkflow): ChecklistItem[] {
     if (step.id === 'step-main') {
       return {
         id: step.id,
-        text: 'Sets up the tools this flow uses',
+        text: 'Connects the apps this flow uses',
         tools: Array.from(toolNames),
       };
     }
 
     return {
       id: step.id,
-      text: step.description || humanizeFunctionName(step.functionName),
+      text: step.description
+        ? toPlainLanguage(step.description)
+        : humanizeFunctionName(step.functionName),
       tools: Array.from(toolNames),
     };
   });
@@ -113,7 +212,7 @@ function deriveFromWorkflow(workflow: ParsedWorkflow): ChecklistItem[] {
 function deriveFromPlan(plan: PlanMessage): ChecklistItem[] {
   return plan.plan.steps.map((step, index) => ({
     id: `plan-step-${index}`,
-    text: step.description || step.title,
+    text: toPlainLanguage(step.description || step.title),
     tools: (step.bubblesUsed ?? []).map(humanizeToolName),
   }));
 }
@@ -147,5 +246,6 @@ export function deriveFlowSummary(
   flowDescription: string | undefined
 ): string | undefined {
   const plan = findPlanMessage(conversationMessages);
-  return plan?.plan.summary || flowDescription || undefined;
+  const summary = plan?.plan.summary || flowDescription;
+  return summary ? toPlainLanguage(summary) : undefined;
 }

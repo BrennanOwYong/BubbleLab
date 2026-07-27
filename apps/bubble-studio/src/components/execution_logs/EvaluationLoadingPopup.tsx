@@ -116,11 +116,13 @@ export function EvaluationLoadingPopup({
                 </svg>
               </motion.div>
 
-              {/* Pearl Image */}
+              {/* Center orb */}
               <motion.div
                 className="relative w-16 h-16 rounded-full overflow-hidden"
                 style={{
                   boxShadow: '0 0 30px rgba(168, 85, 247, 0.3)',
+                  background:
+                    'radial-gradient(circle at 35% 30%, rgba(168, 85, 247, 0.5) 0%, rgba(88, 28, 135, 0.35) 60%, rgba(17, 24, 39, 0.6) 100%)',
                 }}
                 animate={{
                   scale: [1, 1.02, 1],
@@ -130,13 +132,7 @@ export function EvaluationLoadingPopup({
                   repeat: Infinity,
                   ease: 'easeInOut',
                 }}
-              >
-                <img
-                  src="/gluu-icon.svg"
-                  alt="Gluu"
-                  className="w-full h-full object-cover"
-                />
-              </motion.div>
+              />
             </div>
 
             {/* Text Container */}

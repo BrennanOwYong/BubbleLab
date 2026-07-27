@@ -1,11 +1,11 @@
 import {
-  Code,
   Activity,
   ArrowLeft,
   Clock,
   KeyRound,
   ListChecks,
   MessageSquare,
+  Sparkles,
 } from 'lucide-react';
 import { useMemo } from 'react';
 import { PearlChat } from './ai/PearlChat';
@@ -62,7 +62,7 @@ export function ConsolidatedSidePanel() {
     {
       id: 'pearl' as const,
       label: 'Gluu',
-      icon: Code, // Placeholder, not used for Pearl tab
+      icon: Sparkles,
       badge: null,
     },
     {
@@ -111,7 +111,6 @@ export function ConsolidatedSidePanel() {
           const isActive =
             activeTab === tab.id ||
             (tab.id === 'checklist' && activeTab === 'code');
-          const isPearl = tab.id === 'pearl';
 
           return (
             <button
@@ -124,11 +123,7 @@ export function ConsolidatedSidePanel() {
                   : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-[#161b22]'
               }`}
             >
-              {isPearl ? (
-                <img src="/gluu-icon.svg" alt="Gluu" className="w-4 h-4" />
-              ) : (
-                <Icon className="w-4 h-4" />
-              )}
+              <Icon className="w-4 h-4" />
               <span className="hidden md:inline">{tab.label}</span>
               {tab.badge !== null && (
                 <span

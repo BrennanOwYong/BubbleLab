@@ -12,6 +12,7 @@ import {
   humanizeFunctionName,
   humanizeToolName,
   parseConversationMessages,
+  toPlainLanguage,
 } from './flowChecklist';
 import flow21 from './__fixtures__/flow21.json';
 
@@ -81,24 +82,60 @@ describe('deriveFlowSummary', () => {
     expect(summary).toContain('Notion');
   });
 
-  it('falls back to the flow description', () => {
+  it('falls back to the flow description (sentence-cased)', () => {
     expect(deriveFlowSummary([], 'stored description')).toBe(
-      'stored description'
+      'Stored description'
     );
   });
 });
 
 describe('humanizers', () => {
-  it('humanizes bubble names', () => {
-    expect(humanizeToolName('ai-agent')).toBe('AI Agent');
+  it('gives tool chips user-recognizable names', () => {
+    expect(humanizeToolName('ai-agent')).toBe('AI');
+    expect(humanizeToolName('http')).toBe('Web');
     expect(humanizeToolName('google-sheets')).toBe('Google Sheets');
     expect(humanizeToolName('telegram')).toBe('Telegram');
   });
 
-  it('humanizes function names', () => {
-    expect(humanizeFunctionName('queryRecentDeals')).toBe('Query recent deals');
+  it('turns function names into everyday phrases', () => {
+    expect(humanizeFunctionName('queryRecentDeals')).toBe(
+      'Look up recent deals'
+    );
     expect(humanizeFunctionName('buildTelegramDigestMessages')).toBe(
-      'Build telegram digest messages'
+      'Creates telegram digest messages'
+    );
+    expect(humanizeFunctionName('transformSheetRange')).toBe(
+      'Prepares sheet range'
+    );
+  });
+});
+
+describe('toPlainLanguage', () => {
+  it('replaces technical terms with everyday ones', () => {
+    expect(
+      toPlainLanguage(
+        'Reads the client table from Google Sheets as a 2D array including the header row.'
+      )
+    ).toBe(
+      'Reads the client table from Google Sheets as a table including the header row.'
+    );
+    expect(
+      toPlainLanguage(
+        'Uses an AI agent in JSON mode to parse RSS items and filter to the last 7 days.'
+      )
+    ).toBe('Uses AI to read news items and filter to the last 7 days.');
+    expect(
+      toPlainLanguage(
+        'Sends the final digest text as a single Telegram message to the configured chat_id.'
+      )
+    ).toBe(
+      'Sends the final digest text as a single Telegram message to the chosen chat id.'
+    );
+  });
+
+  it('spells out camelCase identifiers leaked into descriptions', () => {
+    expect(toPlainLanguage('Calls sendReminderEmail for each row.')).toBe(
+      'Calls send reminder email for each row.'
     );
   });
 });

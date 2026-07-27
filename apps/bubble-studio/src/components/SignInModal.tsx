@@ -33,16 +33,6 @@ export const SignInModal: React.FC<SignInModalProps> = ({
           )}
 
           <div className="text-center space-y-6">
-            <div className="flex items-center justify-center gap-3 mb-4">
-              <div className="flex items-center gap-3">
-                <img
-                  src="/gluu-icon.svg"
-                  alt="Gluu"
-                  className="w-12 h-12 rounded-lg"
-                />
-              </div>
-            </div>
-
             <div className="space-y-2">
               <p className="text-gray-300 text-2xl font-semibold">
                 Welcome to Gluu

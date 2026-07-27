@@ -41,23 +41,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle, ref }) => {
         >
           <span className="w-12 flex-none flex justify-center p-2">
             {isOpen ? (
-              <div className="relative w-8 h-8">
-                <img
-                  src="/gluu-icon.svg"
-                  alt="Gluu"
-                  className="w-8 h-8 rounded-lg transition-opacity group-hover:opacity-0"
-                />
-                <PanelLeftClose className="w-6 h-6 text-gray-200 absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity" />
-              </div>
+              <PanelLeftClose className="w-6 h-6 text-gray-200" />
             ) : (
-              <div className="relative w-8 h-8">
-                <img
-                  src="/gluu-icon.svg"
-                  alt="Gluu"
-                  className="w-8 h-8 rounded-lg transition-opacity group-hover:opacity-0"
-                />
-                <PanelLeft className="w-6 h-6 text-gray-200 absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity" />
-              </div>
+              <PanelLeft className="w-6 h-6 text-gray-200" />
             )}
           </span>
           {/* Gluu text when expanded */}
