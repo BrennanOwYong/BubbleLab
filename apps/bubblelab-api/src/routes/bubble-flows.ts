@@ -39,7 +39,11 @@ import {
   coffeeResponseToMessage,
   interruptedGenerationMessage,
 } from '../services/conversation-thread.js';
-import type { CoffeeResponse, SystemMessage } from '@bubblelab/shared-schemas';
+import type {
+  CoffeeResponse,
+  WorkflowDoneMessage,
+} from '@bubblelab/shared-schemas';
+import { isCoffeeMessage } from '@bubblelab/shared-schemas';
 import {
   extractSetupResources,
   provisionSetupResources,
@@ -1581,7 +1585,9 @@ app.openapi(generateBubbleFlowCodeRoute, async (c) => {
               {
                 prompt,
                 flowId,
-                messages,
+                // Programmatic workflow-done entries are UI-only; the agent
+                // sees the Coffee chat messages.
+                messages: messages?.filter(isCoffeeMessage),
               },
               credentials,
               streamingCallback
@@ -1640,7 +1646,9 @@ app.openapi(generateBubbleFlowCodeRoute, async (c) => {
           {
             prompt,
             credentials,
-            messages,
+            // Programmatic workflow-done entries are UI-only; the agent sees
+            // the Coffee chat messages.
+            messages: messages?.filter(isCoffeeMessage),
             planContext,
           },
           async (event: StreamingEvent) => {
@@ -1687,7 +1695,7 @@ app.openapi(generateBubbleFlowCodeRoute, async (c) => {
 
         // Programmatic build-completion message (persisted below, streamed
         // after generation_complete so the studio can render it live).
-        let workflowDoneMessage: SystemMessage | null = null;
+        let workflowDoneMessage: WorkflowDoneMessage | null = null;
 
         // If flowId is provided and generation is successful, update the flow
         if (

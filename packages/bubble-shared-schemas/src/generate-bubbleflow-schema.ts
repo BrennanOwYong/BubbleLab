@@ -3,7 +3,7 @@ import { z } from '@hono/zod-openapi';
 import { BubbleParameterType } from './bubble-definition-schema';
 import { CredentialType } from './types';
 import { ServiceUsageSchema } from './bubbleflow-execution-schema';
-import { CoffeeMessageSchema } from './coffee';
+import { ConversationEntrySchema } from './coffee';
 
 // BubbleFlow generation schemas
 export const generateBubbleFlowCodeSchema = z.object({
@@ -17,10 +17,12 @@ export const generateBubbleFlowCodeSchema = z.object({
       'Optional flow ID to update with generated code (for async generation)',
     example: 123,
   }),
-  // Coffee agent unified messages (for planning phase)
-  messages: z.array(CoffeeMessageSchema).optional().openapi({
+  // Conversation history: Coffee chat messages plus programmatic
+  // workflow-done messages appended by earlier successful builds (the union
+  // keeps threads containing done messages round-trippable).
+  messages: z.array(ConversationEntrySchema).optional().openapi({
     description:
-      'Full conversation history including clarification Q&A, context results, plan approvals',
+      'Full conversation history including clarification Q&A, context results, plan approvals, and programmatic workflow-done messages',
   }),
   // Plan context (passed to Boba for enriched code generation)
   planContext: z.string().optional().openapi({

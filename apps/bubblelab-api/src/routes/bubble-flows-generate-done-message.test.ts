@@ -27,10 +27,11 @@ import { db } from '../db/index.js';
 import { bubbleFlows } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import type {
-  CoffeeMessage,
+  ConversationEntry,
   GenerationResult,
-  SystemMessage,
+  WorkflowDoneMessage,
 } from '@bubblelab/shared-schemas';
+import { isWorkflowDoneMessage } from '@bubblelab/shared-schemas';
 import type { SetupProvisioningState } from '../services/setup-provisioning.js';
 import * as bobaModule from '../services/ai/boba.js';
 
@@ -58,6 +59,11 @@ export interface Output {
 }
 
 export interface CustomWebhookPayload extends WebhookEvent {
+  /**
+   * Google Sheets spreadsheet the answers land in
+   * @header Answers spreadsheet
+   * @hint Which spreadsheet should the answers go to?
+   */
   spreadsheetId: string;
 }
 
@@ -122,7 +128,7 @@ async function seedFlow(
 }
 
 async function readFlow(flowId: number): Promise<{
-  conversationMessages: CoffeeMessage[];
+  conversationMessages: ConversationEntry[];
   setupProvisioning: SetupProvisioningState;
   defaultInputs: Record<string, unknown>;
 }> {
@@ -133,17 +139,17 @@ async function readFlow(flowId: number): Promise<{
   const metadata = (flow?.metadata ?? {}) as Record<string, unknown>;
   return {
     conversationMessages:
-      (metadata.conversationMessages as CoffeeMessage[]) ?? [],
+      (metadata.conversationMessages as ConversationEntry[]) ?? [],
     setupProvisioning:
       (metadata.setupProvisioning as SetupProvisioningState) ?? {},
     defaultInputs: (flow?.defaultInputs as Record<string, unknown>) ?? {},
   };
 }
 
-function lastMessageAsDone(messages: CoffeeMessage[]): SystemMessage {
+function lastMessageAsDone(messages: ConversationEntry[]): WorkflowDoneMessage {
   const last = messages[messages.length - 1];
-  expect(last.type).toBe('system');
-  return last as SystemMessage;
+  expect(isWorkflowDoneMessage(last)).toBe(true);
+  return last as WorkflowDoneMessage;
 }
 
 async function postBuilding(body: Record<string, unknown>): Promise<string> {
@@ -176,10 +182,18 @@ describe('workflow-done message + setup provisioning on successful builds', () =
     expect(done.kind).toBe('workflow-done-needs-info');
     expect(done.text).toBe('Workflow done, but I still need some information');
     expect(typeof done.timestampMs).toBe('number');
-    expect(done.timestampMs!).toBeGreaterThanOrEqual(before);
+    expect(done.timestampMs).toBeGreaterThanOrEqual(before);
+    // header/hint come from the @header/@hint JSDoc tags on the payload
+    // interface, lifted by the real BubbleParser during validation.
     expect(done.fields).toEqual([
-      { key: 'spreadsheetId', header: 'Spreadsheet Id', hint: '' },
+      {
+        key: 'spreadsheetId',
+        header: 'Answers spreadsheet',
+        hint: 'Which spreadsheet should the answers go to?',
+      },
     ]);
+    // The persisted entry has NO CoffeeMessage `type` field.
+    expect('type' in done).toBe(false);
   });
 
   it('AC-2: emits the satisfied variant when required inputs are already known', async () => {
@@ -259,6 +273,51 @@ describe('workflow-done message + setup provisioning on successful builds', () =
     expect(done.kind).toBe('workflow-done-needs-info');
     // The incoming thread (user + plan) precedes the done message
     expect(conversationMessages.length).toBe(3);
-    expect(conversationMessages[1].type).toBe('plan');
+    const planEntry = conversationMessages[1];
+    expect('type' in planEntry && planEntry.type).toBe('plan');
+  });
+
+  it('AC-4: a thread containing a prior workflow-done message round-trips through the route', async () => {
+    mock.module('../services/ai/boba.js', () => ({
+      ...bobaModule,
+      runBoba: async (): Promise<GenerationResult> => successfulGeneration(),
+    }));
+
+    const flowId = await seedFlow('done-roundtrip-flow', {
+      spreadsheetId: 'sheet-preexisting',
+    });
+    const priorDone: ConversationEntry = {
+      role: 'system',
+      kind: 'workflow-done-needs-info',
+      timestampMs: 1753500000000,
+      text: 'Workflow done, but I still need some information',
+      fields: [
+        { key: 'spreadsheetId', header: 'Answers spreadsheet', hint: '' },
+      ],
+    };
+    const messages: ConversationEntry[] = [
+      {
+        id: 'msg-user-1',
+        timestamp: '2026-07-27T00:00:00.000Z',
+        type: 'user',
+        content: 'Rebuild the flow',
+      },
+      priorDone,
+    ];
+
+    const sse = await postBuilding({
+      prompt: 'Rebuild the flow',
+      flowId,
+      messages,
+    });
+    // Route accepted the union shape (a 400 would carry no generation events)
+    expect(sse).toContain('generation_complete');
+
+    const { conversationMessages } = await readFlow(flowId);
+    // prior user + prior done + fresh done
+    expect(conversationMessages.length).toBe(3);
+    expect(conversationMessages[1]).toEqual(priorDone);
+    const done = lastMessageAsDone(conversationMessages);
+    expect(done.kind).toBe('workflow-done');
   });
 });

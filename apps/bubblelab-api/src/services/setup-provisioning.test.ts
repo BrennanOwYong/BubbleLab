@@ -13,7 +13,7 @@ import { userCredentials, derivedCredentials } from '../db/schema.js';
 import { CredentialEncryption } from '../utils/encryption.js';
 import {
   CredentialType,
-  type CoffeeMessage,
+  type ConversationEntry,
   type SetupResource,
 } from '@bubblelab/shared-schemas';
 import {
@@ -42,7 +42,7 @@ const SHEET_RESOURCE: SetupResource = {
 function planMessage(
   setupResources?: SetupResource[],
   id = 'plan-1'
-): CoffeeMessage {
+): ConversationEntry {
   return {
     id,
     timestamp: new Date().toISOString(),
@@ -77,7 +77,7 @@ async function seedSheetsOauthCredential(
 
 describe('extractSetupResources', () => {
   it('returns the latest plan message declaration', () => {
-    const messages: CoffeeMessage[] = [
+    const messages: ConversationEntry[] = [
       planMessage([SHEET_RESOURCE], 'plan-old'),
       planMessage(
         [{ ...SHEET_RESOURCE, title: 'Survey answers v2' }],
@@ -93,6 +93,19 @@ describe('extractSetupResources', () => {
     expect(extractSetupResources(undefined)).toEqual([]);
     expect(extractSetupResources([])).toEqual([]);
     expect(extractSetupResources([planMessage(undefined)])).toEqual([]);
+  });
+
+  it('skips workflow-done entries (no type field) without crashing', () => {
+    const done: ConversationEntry = {
+      role: 'system',
+      kind: 'workflow-done',
+      timestampMs: 1,
+      text: 'Workflow done! Check it out now',
+    };
+    expect(extractSetupResources([done])).toEqual([]);
+    expect(
+      extractSetupResources([planMessage([SHEET_RESOURCE]), done])
+    ).toEqual([SHEET_RESOURCE]);
   });
 });
 
@@ -266,6 +279,35 @@ describe('buildSetupFieldDescriptors', () => {
     expect(summary.missingRequired.map((f) => f.key)).toEqual(['subreddit']);
   });
 
+  it('prefers JSDoc-lifted header/hint tags and carries fromUserProfile', () => {
+    const summary = buildSetupFieldDescriptors(
+      {
+        type: 'object',
+        properties: {
+          notifyEmail: {
+            type: 'string',
+            description: 'fallback description',
+            header: 'Your email',
+            hint: 'Where should we send the report?',
+            fromUserProfile: 'email',
+          },
+        },
+        required: ['notifyEmail'],
+      },
+      {}
+    );
+
+    expect(summary.fields).toEqual([
+      {
+        key: 'notifyEmail',
+        header: 'Your email',
+        hint: 'Where should we send the report?',
+        fromUserProfile: 'email',
+      },
+    ]);
+    expect(summary.missingRequired.map((f) => f.key)).toEqual(['notifyEmail']);
+  });
+
   it('handles an empty/absent schema', () => {
     expect(buildSetupFieldDescriptors({}, {})).toEqual({
       fields: [],
@@ -293,20 +335,19 @@ describe('buildWorkflowDoneMessage', () => {
   };
   const MISSING = { key: 'subreddit', header: 'Subreddit', hint: '' };
 
-  it('emits the all-satisfied variant without fields', () => {
+  it('emits the all-satisfied variant without fields (role+kind shape, no type)', () => {
     const now = Date.now();
     const message = buildWorkflowDoneMessage(
       { fields: [FILLED], missingRequired: [] },
       now
     );
 
-    expect(message.type).toBe('system');
-    expect(message.role).toBe('system');
-    expect(message.kind).toBe('workflow-done');
-    expect(message.timestampMs).toBe(now);
-    expect(message.text).toBe('Workflow done! Check it out now');
-    expect(message.content).toBe(message.text!);
-    expect(message.fields).toBeUndefined();
+    expect(message).toEqual({
+      role: 'system',
+      kind: 'workflow-done',
+      timestampMs: now,
+      text: 'Workflow done! Check it out now',
+    });
   });
 
   it('emits the needs-info variant with the FULL field list', () => {
@@ -316,11 +357,12 @@ describe('buildWorkflowDoneMessage', () => {
       now
     );
 
-    expect(message.kind).toBe('workflow-done-needs-info');
-    expect(message.timestampMs).toBe(now);
-    expect(message.text).toBe(
-      'Workflow done, but I still need some information'
-    );
-    expect(message.fields).toEqual([FILLED, MISSING]);
+    expect(message).toEqual({
+      role: 'system',
+      kind: 'workflow-done-needs-info',
+      timestampMs: now,
+      text: 'Workflow done, but I still need some information',
+      fields: [FILLED, MISSING],
+    });
   });
 });
