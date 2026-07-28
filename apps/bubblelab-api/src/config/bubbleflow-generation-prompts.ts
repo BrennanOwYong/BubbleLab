@@ -136,7 +136,26 @@ The validator is only a PROXY. After validation, the runtime RE-PARSES your sour
 28. PER-INPUT HEADER AND HINT: every field in the payload interface carries two JSDoc tags, personalized to THIS flow: @header - a 2-4 word plain-language label naming the input (e.g. "Recipient email"); @hint - one short plain-language question telling the user what to enter (e.g. "Who should receive this email?"). Write both for a non-technical reader: no code identifiers, no jargon. The setup form shows header and hint next to each input; the field's destructuring default remains the prefilled value.
 29. PROFILE-BACKED "FOR ME" INPUTS: when results go to the user themselves ("send it to me", "message me", "do it for me"), do NOT ask for their address or chat id and do NOT invent one. Mark the field with the JSDoc tag @fromUserProfile followed by the profile key: @fromUserProfile email for the user's own email address, @fromUserProfile telegramChatId for the user's own Telegram chat. The server fills these from the flow creator's stored profile; keep the field in the payload interface with @header/@hint as usual and give it a realistic default.
 30. CHECKLIST-READY DESCRIPTIONS: every piece of user-facing descriptive text the flow carries (input headers and hints, method and bubble comments) must fit one of four plain-language buckets: (1) what the user provides (required inputs), (2) what the flow produces (expected outcomes), (3) when it runs (said in everyday words - "every Monday at 9am", "whenever a new form answer arrives"), (4) what the user is told when something goes wrong (e.g. "you get a message saying the spreadsheet could not be reached"). The flow's checklist is built from exactly these four buckets, so phrase all of them without technical terms.
-31. SETUP-PROVISIONED ITEMS: when an item was created during planning specifically for this flow (a spreadsheet, form, or database made "just for this flow"), its REAL id - provided in the plan or conversation context - is the destructuring default for that input. NEVER ask the user for the id of something that does not exist yet, and NEVER leave a placeholder for it (rule 21).
+31. SETUP vs REPEATABLE BOUNDARY (hard invariant): a BubbleFlow stores ONLY the repeatable work - the idempotent sequence that runs identically on every execution. One-time SETUP is everything that makes a fixed resource exist for the flow to reuse across runs (a spreadsheet it appends to every run, a database, a folder). Setup happens at BUILD time via the plan's setupResources declaration: the system creates the resource once and its REAL id - provided in the plan or conversation context - becomes the destructuring default of a payload input (with @header/@hint per rule 28). handle() and every private method ASSUME that resource already exists and use its id directly.
+   - NEVER create fixed reused infrastructure anywhere in the flow: no create_spreadsheet/create_database/create-folder call for a resource the flow reads or writes on later runs.
+   - NEVER write a create-if-missing guard for such a resource: no "fetch the resource's info, and create it when the fetch fails" (ensure-style logic), in handle() or in any private method. If the resource's id is a flow input, it exists; use it.
+   - NEVER ask the user for the id of something that does not exist yet, and NEVER leave a placeholder for it (rule 21): the plan-provisioned REAL id is the destructuring default.
+   - ALLOWED and unchanged: creating a FRESH artifact each run as the flow's OUTPUT (e.g. a new dated report spreadsheet produced by every execution). That is repeatable work; create it unconditionally, never behind an existence check.
+   BAD (forbidden - setup leaked into the repeatable body):
+     // Checks whether the pipeline spreadsheet exists and creates it when missing
+     const info = await new GoogleSheetsBubble({ operation: 'get_spreadsheet_info', spreadsheet_id: spreadsheetId }).action();
+     if (!info.success) {
+       const created = await new GoogleSheetsBubble({ operation: 'create_spreadsheet', title: 'Pipeline' }).action();
+     }
+   GOOD (setup stayed at build time; the flow only repeats):
+     const { spreadsheetId = '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms' } = payload; // real id provisioned at build
+     // Adds the new answer row to the answers spreadsheet
+     const appendResult = await new GoogleSheetsBubble({
+       operation: 'append_values',
+       spreadsheet_id: spreadsheetId,
+       range: 'Answers!A:C',
+       values: [[name, email, answer]],
+     }).action();
 
 ADDITIONAL CONDUCT:
 - DO NOT repeat the user's request in your response or thinking process. Do not include "The user says: <user's request>" in your response.

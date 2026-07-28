@@ -2210,6 +2210,293 @@ export const noPlaceholderValuesRule: LintRule = {
 };
 
 /**
+ * Operations whose result answers "does this resource exist / what is it"
+ * rather than reading row data. Used to recognize existence probes.
+ */
+const EXISTENCE_CHECK_OPERATION = /^(get_|list_|search_|find_)/;
+
+/**
+ * Operations that bring a new resource into existence.
+ */
+const CREATE_OPERATION = /^create_/;
+
+/** One bubble instantiation with a literal operation param, found in a method */
+interface BubbleOperationCall {
+  className: string;
+  operation: string;
+  newExpr: ts.NewExpression;
+  /** const x = await new C({...}).action() -> 'x'; null when not bound */
+  resultVarName: string | null;
+}
+
+/**
+ * Collects every `new <ImportedBubble>({ operation: '<literal>' ... })`
+ * inside the given node.
+ */
+function collectBubbleOperationCalls(
+  root: ts.Node,
+  importedBubbleClasses: Set<string>
+): BubbleOperationCall[] {
+  const calls: BubbleOperationCall[] = [];
+
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isNewExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      importedBubbleClasses.has(node.expression.text) &&
+      node.arguments &&
+      node.arguments.length > 0 &&
+      ts.isObjectLiteralExpression(node.arguments[0])
+    ) {
+      let operation: string | null = null;
+      for (const prop of node.arguments[0].properties) {
+        if (
+          ts.isPropertyAssignment(prop) &&
+          ts.isIdentifier(prop.name) &&
+          prop.name.text === 'operation' &&
+          ts.isStringLiteral(prop.initializer)
+        ) {
+          operation = prop.initializer.text;
+          break;
+        }
+      }
+      if (operation !== null) {
+        // Walk up through `.action()`, await, parens to find `const x = ...`
+        let parent: ts.Node = node.parent;
+        while (
+          ts.isPropertyAccessExpression(parent) ||
+          ts.isCallExpression(parent) ||
+          ts.isAwaitExpression(parent) ||
+          ts.isParenthesizedExpression(parent) ||
+          ts.isNonNullExpression(parent)
+        ) {
+          parent = parent.parent;
+        }
+        const resultVarName =
+          ts.isVariableDeclaration(parent) && ts.isIdentifier(parent.name)
+            ? parent.name.text
+            : null;
+        calls.push({
+          className: node.expression.text,
+          operation,
+          newExpr: node,
+          resultVarName,
+        });
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  visit(root);
+  return calls;
+}
+
+/**
+ * Determines how a condition expression references `varName`:
+ * `success` polarity means the condition is true when the referenced result
+ * succeeded/exists (e.g. `info.success`); `failure` polarity means the
+ * condition is true when it failed/is missing (e.g. `!info.success`,
+ * `info.success === false`, `info.data == null`). A variable can appear with
+ * both polarities in one compound condition.
+ */
+function analyzeConditionPolarity(
+  condition: ts.Expression,
+  varName: string
+): { success: boolean; failure: boolean } {
+  const result = { success: false, failure: false };
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isIdentifier(node) && node.text === varName) {
+      // Only treat the identifier as a chain ROOT (not `foo.varName`)
+      const parentAccess = node.parent;
+      const isChainRoot = !(
+        ts.isPropertyAccessExpression(parentAccess) &&
+        parentAccess.name === node
+      );
+      if (isChainRoot) {
+        // Climb the property-access chain rooted at the variable
+        let cur: ts.Node = node;
+        while (
+          (ts.isPropertyAccessExpression(cur.parent) &&
+            cur.parent.expression === cur) ||
+          ts.isNonNullExpression(cur.parent)
+        ) {
+          cur = cur.parent;
+        }
+        // Count logical negations (through parentheses)
+        let negations = 0;
+        let outer: ts.Node = cur;
+        while (true) {
+          const p: ts.Node = outer.parent;
+          if (ts.isParenthesizedExpression(p)) {
+            outer = p;
+            continue;
+          }
+          if (
+            ts.isPrefixUnaryExpression(p) &&
+            p.operator === ts.SyntaxKind.ExclamationToken
+          ) {
+            negations++;
+            outer = p;
+            continue;
+          }
+          break;
+        }
+        // Base polarity from a comparison against a literal, if present
+        let positive = true;
+        const cmp = outer.parent;
+        if (
+          ts.isBinaryExpression(cmp) &&
+          (cmp.left === outer || cmp.right === outer)
+        ) {
+          const other = cmp.left === outer ? cmp.right : cmp.left;
+          const op = cmp.operatorToken.kind;
+          const isEq =
+            op === ts.SyntaxKind.EqualsEqualsEqualsToken ||
+            op === ts.SyntaxKind.EqualsEqualsToken;
+          const isNeq =
+            op === ts.SyntaxKind.ExclamationEqualsEqualsToken ||
+            op === ts.SyntaxKind.ExclamationEqualsToken;
+          const otherIsFalsy =
+            other.kind === ts.SyntaxKind.FalseKeyword ||
+            other.kind === ts.SyntaxKind.NullKeyword ||
+            (ts.isIdentifier(other) && other.text === 'undefined');
+          const otherIsTrue = other.kind === ts.SyntaxKind.TrueKeyword;
+          if (isEq && otherIsFalsy) positive = false;
+          else if (isNeq && otherIsTrue) positive = false;
+          else if (isNeq && otherIsFalsy) positive = true;
+          else if (isEq && otherIsTrue) positive = true;
+        }
+        if (negations % 2 === 1) positive = !positive;
+        if (positive) result.success = true;
+        else result.failure = true;
+        return; // Chain handled; no need to descend into it
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  visit(condition);
+  return result;
+}
+
+/** True when the statement ends in a return on its success path (guard clause) */
+function isGuardReturn(statement: ts.Statement): boolean {
+  if (ts.isReturnStatement(statement)) return true;
+  if (ts.isBlock(statement)) {
+    const last = statement.statements[statement.statements.length - 1];
+    return last !== undefined && ts.isReturnStatement(last);
+  }
+  return false;
+}
+
+/**
+ * Lint rule that forbids the create-if-missing (ensure-style) setup pattern
+ * inside the flow: an existence probe (a get_, list_, search_, or find_
+ * operation) whose FAILURE gates a create_ operation of the same bubble
+ * class. Fixed
+ * infrastructure the flow reuses across runs is one-time SETUP: it is
+ * provisioned at build time (plan setupResources) and its real id arrives as
+ * a flow input, so the flow must assume it exists.
+ *
+ * Deliberately conservative to avoid false positives on legitimate per-run
+ * output artifacts: an unguarded create_* is NEVER flagged, a create gated by
+ * data reads (read_values etc.) is never flagged, and cross-service pairs
+ * (probe one service, create in another) are never flagged. Only a
+ * failure-gated create of the SAME bubble class as the probe, inside the same
+ * method, is reported.
+ */
+export const noCreateIfMissingRule: LintRule = {
+  name: 'no-create-if-missing',
+  validate(context: LintRuleContext): LintError[] {
+    const errors: LintError[] = [];
+    if (!context.bubbleFlowClass) return errors;
+
+    const flowClass: ts.ClassDeclaration = context.bubbleFlowClass;
+    for (const member of flowClass.members) {
+      if (!ts.isMethodDeclaration(member) || !member.body) continue;
+      const methodBody: ts.Block = member.body;
+
+      const calls = collectBubbleOperationCalls(
+        methodBody,
+        context.importedBubbleClasses
+      );
+      const checks = calls.filter(
+        (c) =>
+          EXISTENCE_CHECK_OPERATION.test(c.operation) &&
+          c.resultVarName !== null
+      );
+      const creates = calls.filter((c) => CREATE_OPERATION.test(c.operation));
+      if (checks.length === 0 || creates.length === 0) continue;
+
+      for (const create of creates) {
+        for (const check of checks) {
+          if (check.className !== create.className) continue;
+          if (check.newExpr.getStart() >= create.newExpr.getStart()) continue;
+          const varName = check.resultVarName as string;
+
+          let gatedOnFailure = false;
+
+          // Case A/B: create sits in a branch of an if that tests the probe
+          let child: ts.Node = create.newExpr;
+          let parent: ts.Node = child.parent;
+          while (parent !== methodBody && parent.parent !== undefined) {
+            if (ts.isIfStatement(parent)) {
+              const polarity = analyzeConditionPolarity(
+                parent.expression,
+                varName
+              );
+              if (parent.thenStatement === child && polarity.failure) {
+                gatedOnFailure = true;
+                break;
+              }
+              if (parent.elseStatement === child && polarity.success) {
+                gatedOnFailure = true;
+                break;
+              }
+            }
+            child = parent;
+            parent = parent.parent;
+          }
+
+          // Case C: a guard clause `if (<probe succeeded>) return ...;`
+          // earlier in the method body, with the create after it
+          if (!gatedOnFailure) {
+            for (const statement of methodBody.statements) {
+              if (statement.getStart() >= create.newExpr.getStart()) break;
+              if (
+                ts.isIfStatement(statement) &&
+                statement.elseStatement === undefined &&
+                isGuardReturn(statement.thenStatement) &&
+                analyzeConditionPolarity(statement.expression, varName).success
+              ) {
+                gatedOnFailure = true;
+                break;
+              }
+            }
+          }
+
+          if (gatedOnFailure) {
+            const { line, character } =
+              context.sourceFile.getLineAndCharacterOfPosition(
+                create.newExpr.getStart(context.sourceFile)
+              );
+            errors.push({
+              line: line + 1,
+              column: character + 1,
+              message: `Create-if-missing setup detected: '${create.operation}' runs only when '${check.operation}' fails. A fixed resource the flow reuses across runs is one-time SETUP: it is provisioned at build time (plan setupResources) and its real id arrives as a flow input, so the flow must assume it already exists. Remove the existence check and the in-flow creation and take the resource id from the payload. A fresh output artifact produced each run may still be created, but unconditionally, never behind an existence check.`,
+            });
+            break; // One report per create is enough
+          }
+        }
+      }
+    }
+
+    return errors;
+  },
+};
+
+/**
  * Default registry instance with all rules registered
  */
 export const defaultLintRuleRegistry = new LintRuleRegistry();
@@ -2232,3 +2519,4 @@ defaultLintRuleRegistry.register(payloadMustExtendTriggerEventRule);
 defaultLintRuleRegistry.register(noNestedThrowInHandleRule);
 defaultLintRuleRegistry.register(noWideningCastRule);
 defaultLintRuleRegistry.register(noPlaceholderValuesRule);
+defaultLintRuleRegistry.register(noCreateIfMissingRule);

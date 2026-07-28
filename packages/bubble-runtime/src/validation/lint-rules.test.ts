@@ -14,6 +14,7 @@ import {
   noPlaceholderValuesRule,
   noMethodCallingMethodRule,
   noMethodInvocationInComplexExpressionRule,
+  noCreateIfMissingRule,
   LintRuleRegistry,
 } from './lint-rules.js';
 
@@ -1113,5 +1114,251 @@ export class MyFlow extends BubbleFlow<'webhook/http'> {
       noMethodInvocationInComplexExpressionRule
     );
     expect(errors).toEqual([]);
+  });
+});
+
+describe('no-create-if-missing lint rule', () => {
+  it('flags create_spreadsheet gated on a failed get_spreadsheet_info (then-branch negation)', () => {
+    const code = `
+import { BubbleFlow, GoogleSheetsBubble } from '@bubblelab/bubble-core';
+
+export class MyFlow extends BubbleFlow<'webhook/http'> {
+  async handle(payload: WebhookEvent): Promise<{ id: string }> {
+    const id = await this.ensurePipelineSpreadsheet('abc');
+    return { id };
+  }
+
+  // Makes sure the pipeline spreadsheet exists, creating it when missing
+  private async ensurePipelineSpreadsheet(spreadsheetId: string): Promise<string> {
+    const info = await new GoogleSheetsBubble({
+      operation: 'get_spreadsheet_info',
+      spreadsheet_id: spreadsheetId,
+    }).action();
+    if (!info.success) {
+      const created = await new GoogleSheetsBubble({
+        operation: 'create_spreadsheet',
+        title: 'Pipeline',
+      }).action();
+      return created.data?.spreadsheet_id ?? '';
+    }
+    return spreadsheetId;
+  }
+}
+`;
+    const errors = lint(code, noCreateIfMissingRule);
+    expect(errors.length).toBe(1);
+    expect(errors[0].message).toContain('Create-if-missing');
+    expect(errors[0].message).toContain('create_spreadsheet');
+    expect(errors[0].message).toContain('get_spreadsheet_info');
+  });
+
+  it('flags a create in the else branch of a positive existence check', () => {
+    const code = `
+import { BubbleFlow, GoogleSheetsBubble } from '@bubblelab/bubble-core';
+
+export class MyFlow extends BubbleFlow<'webhook/http'> {
+  async handle(payload: WebhookEvent): Promise<{ id: string }> {
+    const id = await this.resolveSheet('abc');
+    return { id };
+  }
+
+  // Resolves the tracking spreadsheet, creating it when the lookup fails
+  private async resolveSheet(spreadsheetId: string): Promise<string> {
+    const info = await new GoogleSheetsBubble({
+      operation: 'get_spreadsheet_info',
+      spreadsheet_id: spreadsheetId,
+    }).action();
+    if (info.success) {
+      return spreadsheetId;
+    } else {
+      const created = await new GoogleSheetsBubble({
+        operation: 'create_spreadsheet',
+        title: 'Tracking',
+      }).action();
+      return created.data?.spreadsheet_id ?? '';
+    }
+  }
+}
+`;
+    const errors = lint(code, noCreateIfMissingRule);
+    expect(errors.length).toBe(1);
+    expect(errors[0].message).toContain('create_spreadsheet');
+  });
+
+  it('flags a create after a success guard-clause return', () => {
+    const code = `
+import { BubbleFlow, GoogleSheetsBubble } from '@bubblelab/bubble-core';
+
+export class MyFlow extends BubbleFlow<'webhook/http'> {
+  async handle(payload: WebhookEvent): Promise<{ id: string }> {
+    const id = await this.resolveSheet('abc');
+    return { id };
+  }
+
+  // Returns the market watch spreadsheet id, creating the sheet when absent
+  private async resolveSheet(spreadsheetId: string): Promise<string> {
+    const info = await new GoogleSheetsBubble({
+      operation: 'get_spreadsheet_info',
+      spreadsheet_id: spreadsheetId,
+    }).action();
+    if (info.success) return spreadsheetId;
+    const created = await new GoogleSheetsBubble({
+      operation: 'create_spreadsheet',
+      title: 'MarketWatch',
+    }).action();
+    return created.data?.spreadsheet_id ?? '';
+  }
+}
+`;
+    const errors = lint(code, noCreateIfMissingRule);
+    expect(errors.length).toBe(1);
+    expect(errors[0].message).toContain('create_spreadsheet');
+  });
+
+  it('does not flag an unguarded per-run create (fresh output artifact)', () => {
+    const code = `
+import { BubbleFlow, GoogleSheetsBubble } from '@bubblelab/bubble-core';
+
+export class MyFlow extends BubbleFlow<'webhook/http'> {
+  async handle(payload: WebhookEvent): Promise<{ id: string }> {
+    const id = await this.createDailyReport();
+    return { id };
+  }
+
+  // Creates a fresh dated report spreadsheet on every run
+  private async createDailyReport(): Promise<string> {
+    const created = await new GoogleSheetsBubble({
+      operation: 'create_spreadsheet',
+      title: 'Daily Report',
+    }).action();
+    return created.data?.spreadsheet_id ?? '';
+  }
+}
+`;
+    const errors = lint(code, noCreateIfMissingRule);
+    expect(errors).toEqual([]);
+  });
+
+  it('does not flag a create preceded by an existence probe without failure gating', () => {
+    const code = `
+import { BubbleFlow, GoogleSheetsBubble } from '@bubblelab/bubble-core';
+
+export class MyFlow extends BubbleFlow<'webhook/http'> {
+  async handle(payload: WebhookEvent): Promise<{ id: string }> {
+    const id = await this.copyFromTemplate('tmpl');
+    return { id };
+  }
+
+  // Reads the template spreadsheet's layout and creates a fresh copy for this run
+  private async copyFromTemplate(templateId: string): Promise<string> {
+    const info = await new GoogleSheetsBubble({
+      operation: 'get_spreadsheet_info',
+      spreadsheet_id: templateId,
+    }).action();
+    if (!info.success) return '';
+    const created = await new GoogleSheetsBubble({
+      operation: 'create_spreadsheet',
+      title: 'Run Copy',
+    }).action();
+    return created.data?.spreadsheet_id ?? '';
+  }
+}
+`;
+    const errors = lint(code, noCreateIfMissingRule);
+    expect(errors).toEqual([]);
+  });
+
+  it('does not flag a create gated by a data read of the same class', () => {
+    const code = `
+import { BubbleFlow, GoogleSheetsBubble } from '@bubblelab/bubble-core';
+
+export class MyFlow extends BubbleFlow<'webhook/http'> {
+  async handle(payload: WebhookEvent): Promise<{ id: string }> {
+    const id = await this.reportOverdue('abc');
+    return { id };
+  }
+
+  // Builds a fresh overdue-tasks report spreadsheet when overdue rows were read
+  private async reportOverdue(spreadsheetId: string): Promise<string> {
+    const rowsResult = await new GoogleSheetsBubble({
+      operation: 'read_values',
+      spreadsheet_id: spreadsheetId,
+      range: 'Tasks!A2:C',
+    }).action();
+    if (!rowsResult.success) {
+      const created = await new GoogleSheetsBubble({
+        operation: 'create_spreadsheet',
+        title: 'Overdue Report',
+      }).action();
+      return created.data?.spreadsheet_id ?? '';
+    }
+    return spreadsheetId;
+  }
+}
+`;
+    const errors = lint(code, noCreateIfMissingRule);
+    expect(errors).toEqual([]);
+  });
+
+  it('does not flag a failure-gated create in a DIFFERENT bubble class', () => {
+    const code = `
+import { BubbleFlow, GoogleSheetsBubble, NotionBubble } from '@bubblelab/bubble-core';
+
+export class MyFlow extends BubbleFlow<'webhook/http'> {
+  async handle(payload: WebhookEvent): Promise<{ ok: boolean }> {
+    const ok = await this.recordFailure('abc');
+    return { ok };
+  }
+
+  // Writes a Notion page describing the unreachable spreadsheet
+  private async recordFailure(spreadsheetId: string): Promise<boolean> {
+    const info = await new GoogleSheetsBubble({
+      operation: 'get_spreadsheet_info',
+      spreadsheet_id: spreadsheetId,
+    }).action();
+    if (!info.success) {
+      const page = await new NotionBubble({
+        operation: 'create_page',
+        title: 'Spreadsheet unreachable',
+      }).action();
+      return page.success;
+    }
+    return true;
+  }
+}
+`;
+    const errors = lint(code, noCreateIfMissingRule);
+    expect(errors).toEqual([]);
+  });
+
+  it('flags the success === false comparison form', () => {
+    const code = `
+import { BubbleFlow, GoogleSheetsBubble } from '@bubblelab/bubble-core';
+
+export class MyFlow extends BubbleFlow<'webhook/http'> {
+  async handle(payload: WebhookEvent): Promise<{ id: string }> {
+    const id = await this.resolveSheet('abc');
+    return { id };
+  }
+
+  // Resolves the log spreadsheet, creating it when the lookup fails
+  private async resolveSheet(spreadsheetId: string): Promise<string> {
+    const info = await new GoogleSheetsBubble({
+      operation: 'get_spreadsheet_info',
+      spreadsheet_id: spreadsheetId,
+    }).action();
+    if (info.success === false) {
+      const created = await new GoogleSheetsBubble({
+        operation: 'create_spreadsheet',
+        title: 'Log',
+      }).action();
+      return created.data?.spreadsheet_id ?? '';
+    }
+    return spreadsheetId;
+  }
+}
+`;
+    const errors = lint(code, noCreateIfMissingRule);
+    expect(errors.length).toBe(1);
   });
 });
