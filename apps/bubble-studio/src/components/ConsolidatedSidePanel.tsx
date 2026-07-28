@@ -108,8 +108,9 @@ export function ConsolidatedSidePanel() {
 
   return (
     <div className="h-full flex flex-col bg-[#1a1a1a] border-l border-[#30363d]">
-      {/* Tab Bar */}
-      <div className="flex border-b border-[#30363d] bg-[#0f1115]">
+      {/* Tab Bar — horizontally scrollable; each tab is icon-only and expands
+          to show its word only while active (clicking one collapses the rest). */}
+      <div className="flex overflow-x-auto border-b border-[#30363d] bg-[#0f1115]">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           // The code view is a sub-view of the checklist tab, so keep the
@@ -122,18 +123,29 @@ export function ConsolidatedSidePanel() {
             <button
               key={tab.id}
               type="button"
+              title={tab.label}
+              aria-label={tab.label}
               onClick={() => setConsolidatedPanelTab(tab.id)}
-              className={`flex-1 flex items-center justify-center gap-2 px-3 py-3 text-sm font-medium transition-all duration-200 border-b-2 ${
+              className={`flex-shrink-0 flex items-center justify-center px-3 py-3 text-sm font-medium transition-all duration-200 border-b-2 whitespace-nowrap ${
                 isActive
                   ? 'border-white text-white bg-[#1a1a1a]'
                   : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-[#161b22]'
               }`}
             >
-              <Icon className="w-4 h-4" />
-              <span className="hidden md:inline">{tab.label}</span>
+              <Icon className="w-4 h-4 flex-shrink-0" />
+              {/* Label collapses to zero width when inactive; expands when active */}
+              <span
+                className={`overflow-hidden transition-all duration-200 ${
+                  isActive
+                    ? 'max-w-[140px] opacity-100 ml-2'
+                    : 'max-w-0 opacity-0'
+                }`}
+              >
+                {tab.label}
+              </span>
               {tab.badge !== null && (
                 <span
-                  className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                  className={`ml-1.5 flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded-full ${
                     tab.badge === 'running'
                       ? 'bg-gray-700 text-white animate-pulse'
                       : 'bg-gray-700/50 text-gray-400'
