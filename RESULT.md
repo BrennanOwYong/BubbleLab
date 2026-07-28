@@ -2,7 +2,7 @@
 
 - **Status:** complete
 - **Branch:** feature/setup-repeatable-boundary
-- **Commit:** (see git log; single commit on top of 1d84e06)
+- **Commit:** 7ac08db (single feature commit on top of 1d84e06)
 - **Files changed:**
   - `apps/bubblelab-api/src/config/bubbleflow-generation-prompts.ts` (rule 31 replaced)
   - `apps/bubblelab-api/src/services/ai/coffee.ts` (SETUP PROVISIONING RESPONSIBILITY section replaced)
