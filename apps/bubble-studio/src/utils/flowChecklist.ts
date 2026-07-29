@@ -167,6 +167,10 @@ const PLAIN_REPLACEMENTS: Array<[RegExp, string]> = [
   [/\bJSON\b/gi, 'structured data'],
   [/\braw XML\b/gi, 'raw data'],
   [/\bXML\b/gi, 'data'],
+  // "HTML parse mode" / "parse mode" before the HTML and parse rules —
+  // otherwise they compose into the factually wrong "read mode"
+  [/\bHTML parse mode\b/gi, 'formatted text'],
+  [/\bparse mode\b/gi, 'formatting'],
   [/\bHTML email\b/gi, 'email'],
   [/\bHTML\s+/gi, ''],
   [/\bHTML\b/gi, 'formatted text'],
@@ -187,8 +191,13 @@ const PLAIN_REPLACEMENTS: Array<[RegExp, string]> = [
   [/\bregexp?\b/gi, 'pattern'],
   [/\bwebhooks?\b/gi, 'automatic trigger'],
   [/\bcron\b/gi, 'schedule'],
-  [/\bquery\b/gi, 'look up'],
-  [/\bqueries\b/gi, 'looks up'],
+  // Compound first so "search query" never becomes "search search"
+  [/\bsearch queries\b/gi, 'searches'],
+  [/\bsearch query\b/gi, 'search'],
+  // Noun-safe: "a query" -> "a search", "Queries Gmail" -> "Searches Gmail"
+  // (the old "look up" swap broke noun uses: "a Gmail search look up")
+  [/\bquery\b/gi, 'search'],
+  [/\bqueries\b/gi, 'searches'],
   [/\brenders\b/gi, 'creates'],
   [/\brender\b/gi, 'create'],
   [/\bmarkdown\b/gi, 'formatted text'],
@@ -207,6 +216,9 @@ const PLAIN_REPLACEMENTS: Array<[RegExp, string]> = [
   [/\bconcatenates?\b/gi, 'combines'],
   [/\biterates? over\b/gi, 'goes through'],
   [/`([^`]+)`/g, '$1'],
+  // Bracketed technical asides ("the [since, until] window") add nothing in
+  // plain language — drop them
+  [/\s*\[[^\][\n]{0,60}\]/g, ''],
 ];
 
 /**
@@ -227,6 +239,9 @@ export function toPlainLanguage(text: string): string {
   result = result.replace(/\b[a-z][a-z0-9]*(?:[A-Z][a-z0-9]*)+\b/g, (token) =>
     token.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase()
   );
+  // Identifier spacing can duplicate a word ("since sinceIso" -> "since
+  // since iso"); collapse immediate repeats
+  result = result.replace(/\b([A-Za-z]+)( \1\b)+/gi, '$1');
   result = result.replace(/\s{2,}/g, ' ').trim();
   return result.charAt(0).toUpperCase() + result.slice(1);
 }
@@ -245,6 +260,7 @@ const VERB_MAP: Record<string, string> = {
   compute: 'works out',
   calculate: 'works out',
   fetch: 'gets',
+  query: 'looks up',
   execute: 'runs',
   init: 'sets up',
   initialize: 'sets up',
@@ -264,6 +280,67 @@ export function humanizeFunctionName(functionName: string): string {
   if (mapped) words[0] = mapped;
   const sentence = words.join(' ');
   return toPlainLanguage(sentence.charAt(0).toUpperCase() + sentence.slice(1));
+}
+
+/**
+ * Turn a step-graph edge label ("if aiResult.isMatch === true", "else",
+ * "else if deals.length > 0") into a short phrase a non-technical viewer
+ * reads as the reason a branch is taken. Used by the flow canvas to label
+ * conditional edges.
+ */
+export function humanizeConditionLabel(label: string): string {
+  const trimmed = label.trim();
+  if (/^else$/i.test(trimmed)) return 'otherwise';
+  const match = trimmed.match(/^(else if|if)\s*(.*)$/i);
+  const prefix = match
+    ? match[1].toLowerCase() === 'else if'
+      ? 'or if'
+      : 'if'
+    : '';
+  let expr = match ? match[2] : trimmed;
+
+  expr = expr
+    .replace(/\?\./g, '.')
+    // Common boolean shapes first, so they read as phrases not equations
+    .replace(/\s*(?:===|==)\s*true\b/g, '')
+    .replace(/(\S+)\s*(?:===|==)\s*false\b/g, 'not $1')
+    .replace(/(\S+)\s*(?:!==|!=)\s*(?:null|undefined)\b/g, '$1 exists')
+    .replace(/(\S+)\s*(?:===|==)\s*(?:null|undefined)\b/g, '$1 is empty')
+    .replace(/!==|!=/g, ' is not ')
+    .replace(/===|==/g, ' is ')
+    .replace(/>=/g, ' at least ')
+    .replace(/<=/g, ' at most ')
+    .replace(/>/g, ' more than ')
+    .replace(/</g, ' less than ')
+    .replace(/&&/g, ' and ')
+    .replace(/\|\|/g, ' or ')
+    .replace(/!\s*([A-Za-z_$])/g, 'not $1')
+    .replace(/\.length\b/g, ' count')
+    .replace(/\btrue\b/g, 'yes')
+    .replace(/\bfalse\b/g, 'no')
+    .replace(/\b(?:null|undefined)\b/g, 'empty')
+    .replace(/[()]/g, ' ');
+
+  // Object paths -> their last segment, then space out identifiers
+  expr = expr.replace(
+    /\b[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+/g,
+    (path) => path.split('.').pop() ?? path
+  );
+  expr = expr.replace(/\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/g, (token) =>
+    token.replace(/_/g, ' ')
+  );
+  expr = expr.replace(/\b[a-z][a-z0-9]*(?:[A-Z][a-z0-9]*)+\b/g, (token) =>
+    token.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase()
+  );
+  expr = expr.replace(/\s{2,}/g, ' ').trim();
+  // "if is match" (from isMatch) reads better as "if match"
+  expr = expr.replace(/^is (?=[a-z])/, '');
+
+  if (expr.length > 46) {
+    expr = `${expr.slice(0, 45).trimEnd()}…`;
+  }
+  const phrase = prefix ? `${prefix} ${expr}`.trim() : expr;
+  return phrase || 'condition';
 }
 
 /**

@@ -1,16 +1,9 @@
-import { memo, useEffect, useMemo, useState } from 'react';
-import { Handle, Position } from '@xyflow/react';
+import { memo, useMemo, useState } from 'react';
+import { Handle, Position, useNodeId } from '@xyflow/react';
 import { CogIcon } from '@heroicons/react/24/outline';
-import { BookOpen, Code } from 'lucide-react';
-import {
-  CredentialType,
-  AvailableModels,
-  BubbleParameterType,
-} from '@bubblelab/shared-schemas';
-import type {
-  BubbleParameter,
-  CredentialResponse,
-} from '@bubblelab/shared-schemas';
+import { BookOpen, ChevronDown, Cpu, Info, Layers } from 'lucide-react';
+import { CredentialType, AvailableModels } from '@bubblelab/shared-schemas';
+import type { CredentialResponse } from '@bubblelab/shared-schemas';
 import { CreateCredentialModal } from '@/pages/CredentialsPage';
 import { bindCredentialToAllSteps } from '@/lib/credentialBinding';
 import { useCreateCredential } from '@/hooks/useCredentials';
@@ -21,11 +14,12 @@ import {
 } from '@bubblelab/shared-schemas';
 import type { ParsedBubbleWithInfo } from '@bubblelab/shared-schemas';
 import BubbleExecutionBadge from '@/components/flow_visualizer/BubbleExecutionBadge';
-import BubbleDetailsOverlay from '@/components/flow_visualizer/BubbleDetailsOverlay';
 import {
   BUBBLE_COLORS,
   BADGE_COLORS,
 } from '@/components/flow_visualizer/BubbleColors';
+import { SchemaParamsSection } from '@/components/flow_visualizer/param-editors/SchemaParamsSection';
+import { FLOW_LAYOUT } from '@/components/flow_visualizer/flowLayoutConstants';
 import { useUIStore } from '@/stores/uiStore';
 import { useExecutionStore } from '@/stores/executionStore';
 import { useCredentials } from '@/hooks/useCredentials';
@@ -37,7 +31,10 @@ import {
 import { useBubbleFlow } from '@/hooks/useBubbleFlow';
 import { useEditor } from '@/hooks/useEditor';
 import { extractParamValue } from '@/utils/bubbleParamEditor';
-import { getAllInlineParamConfigs } from '@/config/bubbleInlineParams';
+import {
+  getModelParamConfig,
+  getExcludedParamNames,
+} from '@/config/bubbleInlineParams';
 import { emitTelemetry } from '@/lib/telemetry';
 
 export interface BubbleNodeData {
@@ -45,11 +42,6 @@ export interface BubbleNodeData {
   bubble: ParsedBubbleWithInfo;
   bubbleKey: string | number;
   requiredCredentialTypes?: string[]; // Static data from flow - not execution state
-  onParameterChange?: (paramName: string, newValue: unknown) => void;
-  onHighlightChange?: () => void;
-  onBubbleClick?: () => void;
-  // Request to edit a specific parameter in code (show code + highlight line)
-  onParamEditInCode?: (paramName: string) => void;
   hasSubBubbles?: boolean;
   isCustomToolBubble?: boolean; // Whether this bubble is inside a custom tool container (rendered smaller)
   usedHandles?: {
@@ -64,241 +56,9 @@ interface BubbleNodeProps {
   data: BubbleNodeData;
 }
 
-/**
- * Number input that uses a text field for better UX
- * (avoids spinner/increment issues with native number input)
- */
-function NumberInput({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  onChange: (value: number) => void;
-}) {
-  const [inputValue, setInputValue] = useState(String(value));
-
-  // Sync input value when prop changes
-  useEffect(() => setInputValue(String(value)), [value]);
-
-  const handleBlur = () => {
-    const parsed = Number(inputValue);
-    if (!isNaN(parsed) && parsed !== value) {
-      onChange(parsed);
-    } else if (isNaN(parsed)) {
-      // Reset to original value if invalid
-      setInputValue(String(value));
-    }
-  };
-
-  return (
-    <div className="space-y-1">
-      <label className="block text-xs font-medium text-purple-300">
-        {label}
-      </label>
-      <input
-        type="text"
-        inputMode="numeric"
-        title={label}
-        value={inputValue}
-        onClick={(e) => e.stopPropagation()}
-        onChange={(e) => setInputValue(e.target.value)}
-        onBlur={handleBlur}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.currentTarget.blur();
-          }
-        }}
-        className="w-full px-2 py-1 text-xs bg-neutral-700 border border-neutral-500 rounded text-neutral-100 focus:border-purple-500 focus:outline-none"
-      />
-    </div>
-  );
-}
-
-/**
- * Boolean toggle switch for better UX than checkbox
- */
-function BooleanToggle({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: boolean;
-  onChange: (value: boolean) => void;
-}) {
-  return (
-    <div className="space-y-1">
-      <label className="block text-xs font-medium text-purple-300">
-        {label}
-      </label>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={value}
-        title={`${label}: ${value ? 'On' : 'Off'}`}
-        onClick={(e) => {
-          e.stopPropagation();
-          onChange(!value);
-        }}
-        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-neutral-800 ${
-          value ? 'bg-purple-600' : 'bg-neutral-600'
-        }`}
-      >
-        <span
-          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-            value ? 'translate-x-6' : 'translate-x-1'
-          }`}
-        />
-      </button>
-    </div>
-  );
-}
-
-/**
- * Generic inline params component - renders based on config
- */
-interface BubbleInlineParamsProps {
-  bubbleName: string | undefined;
-  paramNames: string[]; // All param names from the bubble
-  variableId: number;
-  getParam: (
-    variableId: number,
-    paramName: string
-  ) => BubbleParameter | undefined;
-  updateBubbleParam: (
-    variableId: number,
-    paramName: string,
-    newValue: unknown
-  ) => void;
-  onOpenDetails: () => void;
-}
-
-function BubbleInlineParams({
-  bubbleName,
-  paramNames,
-  variableId,
-  getParam,
-  updateBubbleParam,
-  onOpenDetails,
-}: BubbleInlineParamsProps) {
-  // Get configs including wildcards that match the bubble's params
-  const configs = getAllInlineParamConfigs(bubbleName, paramNames);
-
-  if (configs.length === 0) {
-    return null;
-  }
-
-  return (
-    <div className="mt-4 space-y-3">
-      {configs.map((config) => {
-        const extracted = extractParamValue(
-          getParam(variableId, config.paramName),
-          config.paramPath,
-          bubbleName
-        );
-
-        if (!extracted?.shouldBeEditable) {
-          return null;
-        }
-
-        const value = extracted.value;
-
-        // Model dropdown
-        if (config.isModel && config.inlineDisplay === 'dropdown') {
-          return (
-            <div key={config.paramName} className="space-y-1">
-              <label className="block text-xs font-medium text-purple-300">
-                {config.label || config.paramName}
-              </label>
-              <select
-                title={`Select ${config.label || config.paramName}`}
-                value={value as string}
-                onClick={(e) => e.stopPropagation()}
-                onChange={(e) =>
-                  updateBubbleParam(
-                    variableId,
-                    config.paramPath,
-                    e.target.value
-                  )
-                }
-                className="w-full px-2 py-1 text-xs bg-neutral-700 border border-neutral-500 rounded text-neutral-100 focus:border-purple-500 focus:outline-none"
-              >
-                {AvailableModels.options.map((model) => (
-                  <option key={model} value={model}>
-                    {model}
-                  </option>
-                ))}
-              </select>
-            </div>
-          );
-        }
-
-        // Number input (text field that accepts numbers only)
-        if (
-          config.inlineDisplay === 'preview' &&
-          extracted.type === BubbleParameterType.NUMBER
-        ) {
-          return (
-            <NumberInput
-              key={config.paramName}
-              label={config.label || config.paramName}
-              value={value as number}
-              onChange={(newValue) =>
-                updateBubbleParam(variableId, config.paramPath, newValue)
-              }
-            />
-          );
-        }
-
-        // Boolean toggle switch
-        if (
-          config.inlineDisplay === 'preview' &&
-          extracted.type === BubbleParameterType.BOOLEAN
-        ) {
-          return (
-            <BooleanToggle
-              key={config.paramName}
-              label={config.label || config.paramName}
-              value={value as boolean}
-              onChange={(newValue) =>
-                updateBubbleParam(variableId, config.paramPath, newValue)
-              }
-            />
-          );
-        }
-
-        // Preview (truncated text that opens details on click)
-        if (
-          config.inlineDisplay === 'preview' &&
-          typeof value === 'string' &&
-          value
-        ) {
-          return (
-            <div key={config.paramName} className="space-y-1">
-              <label className="block text-xs font-medium text-purple-300">
-                {config.label || config.paramName}
-              </label>
-              <p
-                className="px-2 py-1.5 text-[11px] bg-neutral-800 border border-neutral-600 rounded text-neutral-300 truncate cursor-pointer hover:bg-neutral-700 transition-colors"
-                title={value}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onOpenDetails();
-                }}
-              >
-                {value.length > 80 ? value.substring(0, 80) + '...' : value}
-              </p>
-            </div>
-          );
-        }
-
-        return null;
-      })}
-    </div>
-  );
-}
+// Left/right handles sit at the vertical center of the collapsed plate so
+// spine edges stay horizontal when the node expands downward.
+const PLATE_HANDLE_TOP = FLOW_LAYOUT.EXPANDED.PLATE_HEIGHT / 2;
 
 function BubbleNode({ data }: BubbleNodeProps) {
   const {
@@ -306,8 +66,6 @@ function BubbleNode({ data }: BubbleNodeProps) {
     bubble,
     bubbleKey,
     requiredCredentialTypes: propRequiredCredentialTypes = [],
-    onBubbleClick,
-    onParamEditInCode,
     hasSubBubbles = false,
     isCustomToolBubble = false,
     usedHandles = {},
@@ -317,6 +75,10 @@ function BubbleNode({ data }: BubbleNodeProps) {
   const bubbleId = bubble.variableId
     ? String(bubble.variableId)
     : String(bubbleKey);
+
+  // React Flow node id - the identity used for inline expansion (unique even
+  // for dependency-graph sub-bubbles whose variableId can be -1)
+  const reactFlowNodeId = useNodeId() ?? bubbleId;
 
   // Determine numeric root ID for expansion checks (expandedRootIds/suppressedRootIds are number[])
   const rootId =
@@ -359,11 +121,16 @@ function BubbleNode({ data }: BubbleNodeProps) {
     (s) => s.toggleRootExpansion
   );
 
+  // Inline parameter-form expansion (one node at a time, global UI state)
+  const expandedFlowNodeId = useUIStore((s) => s.expandedFlowNodeId);
+  const toggleExpandedFlowNode = useUIStore((s) => s.toggleExpandedFlowNode);
+  const isExpanded = expandedFlowNodeId === reactFlowNodeId;
+
   // Get flow data to find clones
   const { data: currentFlow } = useBubbleFlow(flowId);
 
   // Get editor functions for accessing/updating params
-  const { getParam, updateBubbleParam } = useEditor(flowId);
+  const { updateBubbleParam } = useEditor(flowId);
 
   // Get sub-bubble visibility state from store
   const expandedRootIds = useExecutionStore(flowId, (s) => s.expandedRootIds);
@@ -515,15 +282,12 @@ function BubbleNode({ data }: BubbleNodeProps) {
     });
   };
 
-  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [logoError, setLogoError] = useState(false);
   const [createModalForType, setCreateModalForType] = useState<string | null>(
     null
   );
   const [showDocsTooltip, setShowDocsTooltip] = useState(false);
-  const [showCodeTooltip, setShowCodeTooltip] = useState(false);
 
-  const { showEditor } = useUIStore();
   const logo = useMemo(
     () =>
       findLogoForBubble({
@@ -556,6 +320,19 @@ function BubbleNode({ data }: BubbleNodeProps) {
 
   const createCredentialMutation = useCreateCredential();
 
+  // Model section config (same params the details popup used to surface)
+  const modelConfig = getModelParamConfig(bubble.bubbleName);
+  const modelParam = modelConfig
+    ? bubble.parameters.find((p) => p.name === modelConfig.paramName)
+    : undefined;
+  const modelExtracted =
+    modelParam && modelConfig
+      ? extractParamValue(modelParam, modelConfig.paramPath, bubble.bubbleName)
+      : undefined;
+  const currentModel = modelExtracted?.value as string | undefined;
+  const isModelEditable = modelExtracted?.shouldBeEditable ?? false;
+  const excludedParamNames = getExcludedParamNames(bubble.bubbleName);
+
   const handleErrorClick = () => {
     // Navigate to the console showing this bubble's last log
     const liveOutputStore = getLiveOutputStore(flowId);
@@ -571,7 +348,7 @@ function BubbleNode({ data }: BubbleNodeProps) {
 
   return (
     <div
-      className={`bg-neutral-800/90 rounded-lg border transition-all duration-300 cursor-pointer ${
+      className={`bg-neutral-800/90 rounded-[28px] border transition-all duration-300 ${
         isCompleted ? 'overflow-visible' : 'overflow-hidden'
       } ${
         isSmallBubble
@@ -588,17 +365,14 @@ function BubbleNode({ data }: BubbleNodeProps) {
                 ? `${BUBBLE_COLORS.SELECTED.border} ${BUBBLE_COLORS.SELECTED.background}`
                 : BUBBLE_COLORS.DEFAULT.border
       }`}
-      onClick={() => {
-        // Don't open overlay if credential creation modal is open
-        if (createModalForType) return;
-        onBubbleClick?.();
-        setIsDetailsOpen(true);
-      }}
     >
       {/* Node handles for horizontal (main flow) and vertical (dependencies) connections */}
       {/* Left Handle - Shows "Input" button after execution - only render if used */}
       {usedHandles.left && (
-        <div className="absolute left-0 top-1/2 -translate-y-1/2 z-10">
+        <div
+          className="absolute left-0 z-10 -translate-y-1/2"
+          style={{ top: PLATE_HANDLE_TOP }}
+        >
           <Handle
             type="target"
             position={Position.Left}
@@ -646,7 +420,10 @@ function BubbleNode({ data }: BubbleNodeProps) {
 
       {/* Right Handle - Shows "Output" button after execution - only render if used */}
       {usedHandles.right && (
-        <div className="absolute right-0 top-1/2 -translate-y-1/2 z-10">
+        <div
+          className="absolute right-0 z-10 -translate-y-1/2"
+          style={{ top: PLATE_HANDLE_TOP }}
+        >
           <Handle
             type="source"
             position={Position.Right}
@@ -730,74 +507,97 @@ function BubbleNode({ data }: BubbleNodeProps) {
         />
       )}
 
-      {/* Header */}
+      {/* Collapsed name plate - click toggles the inline parameter form */}
       <div
-        className={`p-4 relative ${bubble.parameters.length > 0 ? 'border-b border-neutral-600' : ''}`}
+        className="flex items-center gap-3 px-5 cursor-pointer select-none"
+        style={{ height: FLOW_LAYOUT.EXPANDED.PLATE_HEIGHT }}
+        onClick={() => {
+          // Keep the node stable while the credential creation modal is open
+          if (createModalForType) return;
+          toggleExpandedFlowNode(reactFlowNodeId);
+        }}
       >
-        <div className="absolute top-4 right-4 flex items-center gap-2">
-          {(hasError ||
-            isCompleted ||
-            isExecuting ||
-            hasMissingRequirements ||
-            bubble.parameters.length > 0) && (
-            <>
-              {/* Show Error badge when error, otherwise show standard badge */}
-              {hasError ? (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleErrorClick();
-                  }}
-                  className="flex-shrink-0 flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-red-500/20 text-red-300 border border-red-600/40 hover:bg-red-500/30 transition-colors cursor-pointer"
-                  title="View error in console"
-                >
-                  <span>❌</span>
-                  <span>Error</span>
-                </button>
-              ) : (
-                <BubbleExecutionBadge
-                  hasError={false}
-                  isCompleted={isCompleted}
-                  isExecuting={isExecuting}
-                  executionStats={executionStats}
-                  bubbleId={bubbleId}
-                  flowId={flowId}
-                />
-              )}
-              {!hasError && !isExecuting && hasMissingRequirements && (
-                <div className="flex-shrink-0">
-                  <div
-                    title="Missing credentials"
-                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium ${BADGE_COLORS.MISSING.background} ${BADGE_COLORS.MISSING.text} border ${BADGE_COLORS.MISSING.border}`}
-                  >
-                    <span>⚠️</span>
-                    <span>Missing</span>
-                  </div>
-                </div>
-              )}
-            </>
+        {logo && !logoError ? (
+          <img
+            src={logo.file}
+            alt={`${logo.name} logo`}
+            className="h-7 w-7 object-contain flex-shrink-0"
+            loading="lazy"
+            onError={() => setLogoError(true)}
+          />
+        ) : (
+          <div
+            className={`h-7 w-7 rounded-full flex-shrink-0 flex items-center justify-center ${
+              isHighlighted ? 'bg-purple-600' : 'bg-blue-600'
+            }`}
+          >
+            <CogIcon className="h-4 w-4 text-white" />
+          </div>
+        )}
+
+        <h3
+          className="flex-1 min-w-0 text-sm font-semibold text-neutral-100 truncate"
+          title={bubble.variableName}
+        >
+          {bubble.variableName}
+        </h3>
+
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {hasError ? (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleErrorClick();
+              }}
+              className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-red-500/20 text-red-300 border border-red-600/40 hover:bg-red-500/30 transition-colors cursor-pointer"
+              title="View error in console"
+            >
+              <span>❌</span>
+              <span>Error</span>
+            </button>
+          ) : (
+            (isCompleted || isExecuting) && (
+              <BubbleExecutionBadge
+                hasError={false}
+                isCompleted={isCompleted}
+                isExecuting={isExecuting}
+                executionStats={executionStats}
+                bubbleId={bubbleId}
+                flowId={flowId}
+              />
+            )
           )}
-          {!isSmallBubble && (
-            <div className="relative">
-              <button
-                title={'View Code'}
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onBubbleClick?.();
-                }}
-                onMouseEnter={() => setShowCodeTooltip(true)}
-                onMouseLeave={() => setShowCodeTooltip(false)}
-                className="inline-flex items-center justify-center p-1.5 rounded text-neutral-300 hover:bg-neutral-700 hover:text-neutral-100 transition-colors"
-              >
-                <Code className="w-3.5 h-3.5" />
-              </button>
-              {showCodeTooltip && (
-                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 px-2 py-1 text-xs font-medium text-white bg-neutral-900 rounded shadow-lg whitespace-nowrap border border-neutral-700 z-50">
-                  {showEditor ? 'Hide Code' : 'View Code'}
-                </div>
-              )}
+          {!hasError && !isExecuting && hasMissingRequirements && (
+            <div
+              title="Missing credentials"
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${BADGE_COLORS.MISSING.background} ${BADGE_COLORS.MISSING.text} border ${BADGE_COLORS.MISSING.border}`}
+            >
+              <span>⚠️</span>
+              <span>Missing</span>
             </div>
+          )}
+          {hasSubBubbles && (
+            <button
+              type="button"
+              title={
+                areSubBubblesVisibleLocal
+                  ? 'Hide sub bubbles'
+                  : 'Show sub bubbles'
+              }
+              onClick={(event) => {
+                event.stopPropagation();
+                if (!isNaN(rootId)) {
+                  toggleRootExpansion(rootId);
+                }
+              }}
+              className={`inline-flex items-center justify-center p-1.5 rounded-full transition-colors ${
+                areSubBubblesVisibleLocal
+                  ? 'bg-purple-700/40 text-purple-200'
+                  : 'text-purple-300 hover:bg-purple-900/40'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+            </button>
           )}
           {docsUrl && (
             <div className="relative">
@@ -808,7 +608,7 @@ function BubbleNode({ data }: BubbleNodeProps) {
                 onClick={(e) => e.stopPropagation()}
                 onMouseEnter={() => setShowDocsTooltip(true)}
                 onMouseLeave={() => setShowDocsTooltip(false)}
-                className="inline-flex items-center justify-center p-1.5 rounded text-neutral-300 hover:bg-neutral-700 hover:text-neutral-100 transition-colors"
+                className="inline-flex items-center justify-center p-1.5 rounded-full text-neutral-300 hover:bg-neutral-700 hover:text-neutral-100 transition-colors"
               >
                 <BookOpen className="w-3.5 h-3.5" />
               </a>
@@ -819,83 +619,112 @@ function BubbleNode({ data }: BubbleNodeProps) {
               )}
             </div>
           )}
+          <ChevronDown
+            className={`w-4 h-4 text-neutral-400 transition-transform duration-200 ${
+              isExpanded ? 'rotate-180' : ''
+            }`}
+          />
         </div>
-        {/* Icon on top, details below */}
-        <div className="w-full">
-          <div className="mb-3">
-            {logo && !logoError ? (
-              <img
-                src={logo.file}
-                alt={`${logo.name} logo`}
-                className="h-8 w-8 object-contain"
-                loading="lazy"
-                onError={() => setLogoError(true)}
-              />
-            ) : (
-              <div
-                className={`h-8 w-8 rounded-lg flex items-center justify-center ${
-                  isHighlighted ? 'bg-purple-600' : 'bg-blue-600'
-                }`}
-              >
-                <CogIcon className="h-4 w-4 text-white" />
-              </div>
-            )}
-          </div>
+      </div>
 
-          {/* Content */}
-          <div className="flex items-start gap-3 w-full">
-            <div className="flex-1 min-w-0">
-              <h3 className="text-sm font-semibold text-neutral-100 truncate">
-                {bubble.variableName}
-              </h3>
+      {/* Inline parameter form - the node grows downward to reveal it */}
+      {isExpanded && (
+        <div
+          // Fixed height (not max-height): layout reserves exactly
+          // PANEL_HEIGHT below the plate, and sequential nodes anchor at
+          // their vertical center - a content-sized panel would pull the
+          // plate off the spine. Long forms scroll inside.
+          className="nowheel nodrag border-t border-neutral-600 overflow-y-auto cursor-default"
+          style={{ height: FLOW_LAYOUT.EXPANDED.PANEL_HEIGHT }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {(bubble.bubbleName || bubble.description) && (
+            <div className="px-5 pt-4">
+              {bubble.bubbleName && (
+                <span className="inline-block rounded-full border border-purple-500/40 px-2.5 py-0.5 text-[10px] uppercase tracking-wide text-purple-200">
+                  {bubble.bubbleName}
+                </span>
+              )}
               {bubble.description && (
-                <p className="text-xs text-neutral-400 mt-1.5 break-words">
+                <p className="mt-2 text-xs text-neutral-400 break-words">
                   {bubble.description}
                 </p>
               )}
-              {/* <p className="text-xs text-neutral-400 truncate mt-1">
-                {bubble.bubbleName}
-              </p> */}
-              {/* {bubble.location && bubble.location.startLine > 0 && (
-                <p className="text-xs text-neutral-500 truncate mt-1">
-                  Line {bubble.location.startLine}:{bubble.location.startCol}
-                  {bubble.location.startLine !== bubble.location.endLine &&
-                    ` - ${bubble.location.endLine}:${bubble.location.endCol}`}
-                </p>
-              )} */}
             </div>
+          )}
+
+          {/* Model Section - Only for bubbles with model config */}
+          {modelConfig && (
+            <div className="px-5 pt-4">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-neutral-400">
+                <Cpu className="h-3.5 w-3.5" />
+                Model
+              </div>
+              <div className="mt-2 space-y-2 rounded-xl border border-neutral-700 bg-neutral-900/60 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-xs font-semibold text-neutral-100">
+                    {modelConfig.label || 'AI Model'}
+                  </p>
+                  {!isModelEditable && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/20 px-2 py-0.5 text-[10px] font-medium text-blue-300 border border-blue-500/30">
+                      Dynamic
+                    </span>
+                  )}
+                </div>
+                {isModelEditable ? (
+                  <select
+                    title="Select AI Model"
+                    className="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-2 py-1.5 text-xs text-neutral-100 focus:border-purple-500 focus:outline-none"
+                    value={currentModel}
+                    onChange={(e) =>
+                      updateBubbleParam(
+                        bubble.variableId,
+                        modelConfig.paramPath,
+                        e.target.value
+                      )
+                    }
+                  >
+                    {AvailableModels.options.map((model) => (
+                      <option key={model} value={model}>
+                        {model}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <pre className="w-full rounded-lg border border-neutral-700 bg-neutral-950/50 px-2 py-1.5 text-xs text-neutral-400 font-mono">
+                    {currentModel || 'Variable'}
+                  </pre>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Parameters Section - same form the details popup used to show */}
+          <div className="px-5 pt-4">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-neutral-400 mb-3">
+              <Info className="h-3.5 w-3.5" />
+              Parameters
+            </div>
+            <SchemaParamsSection
+              bubble={bubble}
+              updateBubbleParam={updateBubbleParam}
+              excludedParamNames={excludedParamNames}
+            />
           </div>
-        </div>
 
-        {/* Credentials Section - Full Width, Left Aligned */}
-        {(() => {
-          const filteredCredentialTypes = requiredCredentialTypes.filter(
-            (credType) => {
-              const systemCred = isSystemCredential(credType as CredentialType);
-              const hasSelection =
-                selectedBubbleCredentials[credType] !== undefined &&
-                selectedBubbleCredentials[credType] !== null;
-
-              // Hide system credentials that are using the default (no selection)
-              if (systemCred && !hasSelection) {
-                return false;
-              }
-              return true;
-            }
-          );
-
-          // Only show the entire credentials section if there are credentials to display
-          if (filteredCredentialTypes.length === 0) {
-            return null;
-          }
-
-          return (
-            <div className="mt-4 space-y-2">
-              <label className="block text-xs font-medium text-blue-300">
-                Credentials
-              </label>
+          {/* Credentials Section */}
+          <div className="px-5 py-4">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-neutral-400 mb-3">
+              <Info className="h-3.5 w-3.5" />
+              Credentials
+            </div>
+            {requiredCredentialTypes.length === 0 ? (
+              <p className="rounded-xl border border-neutral-700 bg-neutral-900/60 px-3 py-4 text-xs text-neutral-400">
+                This bubble does not require credentials.
+              </p>
+            ) : (
               <div className="grid grid-cols-1 gap-2">
-                {filteredCredentialTypes.map((credType) => {
+                {requiredCredentialTypes.map((credType) => {
                   const availableForType = getCredentialsForType(credType);
                   const systemCred = isSystemCredential(
                     credType as CredentialType
@@ -913,11 +742,6 @@ function BubbleNode({ data }: BubbleNodeProps) {
                     <div key={credType} className={`space-y-1`}>
                       <label className="block text-[11px] text-neutral-300">
                         {credType}
-                        {/* {systemCred && (
-                        <span className="ml-1 text-[10px] px-1.5 py-0.5 bg-neutral-600 text-neutral-200 rounded">
-                          System Managed
-                        </span>
-                      )} */}
                         {!systemCred &&
                           !optionalCred &&
                           availableForType.length > 0 && (
@@ -969,59 +793,10 @@ function BubbleNode({ data }: BubbleNodeProps) {
                   );
                 })}
               </div>
-            </div>
-          );
-        })()}
-
-        {/* Inline Params - Model dropdowns & preview text based on config */}
-        <BubbleInlineParams
-          bubbleName={bubble.bubbleName}
-          paramNames={bubble.parameters.map((p) => p.name)}
-          variableId={bubble.variableId}
-          getParam={getParam}
-          updateBubbleParam={updateBubbleParam}
-          onOpenDetails={() => setIsDetailsOpen(true)}
-        />
-      </div>
-
-      {hasSubBubbles && (
-        <div className="px-4 py-3 border-t border-neutral-600 bg-neutral-800/70">
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              if (!isNaN(rootId)) {
-                toggleRootExpansion(rootId);
-              }
-            }}
-            className={`w-full inline-flex items-center justify-center gap-1 px-3 py-1.5 text-[11px] font-medium rounded ${
-              areSubBubblesVisibleLocal
-                ? 'bg-purple-700/40 text-purple-200 border border-purple-500/60'
-                : 'bg-purple-900/40 text-purple-200 border border-purple-700/60 hover:bg-purple-800/50'
-            }`}
-          >
-            {areSubBubblesVisibleLocal
-              ? 'Hide Sub Bubbles'
-              : 'Show Sub Bubbles'}
-          </button>
+            )}
+          </div>
         </div>
       )}
-      <BubbleDetailsOverlay
-        isOpen={isDetailsOpen}
-        onClose={() => setIsDetailsOpen(false)}
-        flowId={flowId}
-        bubble={bubble}
-        logo={logo}
-        logoErrored={logoError}
-        docsUrl={docsUrl}
-        requiredCredentialTypes={requiredCredentialTypes}
-        selectedBubbleCredentials={selectedBubbleCredentials}
-        availableCredentials={availableCredentials}
-        onCredentialChange={handleCredentialChange}
-        onParamEditInCode={onParamEditInCode}
-        onViewCode={() => onBubbleClick?.()}
-        showEditor={showEditor}
-      />
 
       {/* Create Credential Modal */}
       {createModalForType && (

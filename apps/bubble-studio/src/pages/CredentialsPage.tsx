@@ -622,7 +622,7 @@ export function CreateCredentialModal({
     }
   };
 
-  // Portal to document.body (mirrors BubbleDetailsOverlay): call sites inside
+  // Portal to document.body: call sites inside
   // React Flow nodes sit under a CSS transform that turns position:fixed into
   // position-relative-to-node, and the node's overflow-hidden clips the
   // dialog. The portal makes it a true full-screen centered dialog everywhere.

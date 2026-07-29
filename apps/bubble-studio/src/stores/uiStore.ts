@@ -12,13 +12,12 @@ export type SidePanelMode = 'closed' | 'bubbleList' | 'milktea' | 'pearl';
 
 /**
  * Tabs in the consolidated side panel. 'checklist' is the primary view of
- * what the flow does; 'code' stays a valid tab id (reached via the
- * checklist's "View code" link and showEditorPanel) but has no tab button.
+ * what the flow does; raw code has no tab and is never displayed in the
+ * flow editor.
  */
 export type ConsolidatedPanelTab =
   | 'pearl'
   | 'checklist'
-  | 'code'
   | 'conversation'
   | 'output'
   | 'history'
@@ -96,6 +95,13 @@ interface UIStore {
    */
   showPrompt: boolean;
 
+  /**
+   * React Flow node id of the flow-visualizer node whose inline parameter
+   * form is expanded. One node at a time: expanding a node collapses the
+   * previously expanded one.
+   */
+  expandedFlowNodeId: string | null;
+
   // ============= Visual Indicators =============
 
   // ============= Actions =============
@@ -106,14 +112,22 @@ interface UIStore {
   selectFlow: (flowId: number | null) => void;
 
   /**
+   * Toggle a flow-visualizer node's inline parameter form. Passing the id of
+   * the currently expanded node collapses it; passing another id moves the
+   * expansion there.
+   */
+  toggleExpandedFlowNode: (nodeId: string) => void;
+
+  /**
+   * Collapse any expanded flow-visualizer node (pass null) or expand a
+   * specific one.
+   */
+  setExpandedFlowNode: (nodeId: string | null) => void;
+
+  /**
    * Toggle editor visibility
    */
   toggleEditor: () => void;
-
-  /**
-   * Show the editor
-   */
-  showEditorPanel: () => void;
 
   /**
    * Toggle sidebar visibility
@@ -228,9 +242,22 @@ export const useUIStore = create<UIStore>((set) => ({
   targetInsertLine: null,
   isConsolidatedPanelOpen: true,
   consolidatedPanelTab: 'pearl',
+  expandedFlowNodeId: null,
 
   // Actions
-  selectFlow: (flowId) => set({ selectedFlowId: flowId, showEditor: false }),
+  selectFlow: (flowId) =>
+    set({
+      selectedFlowId: flowId,
+      showEditor: false,
+      expandedFlowNodeId: null,
+    }),
+
+  toggleExpandedFlowNode: (nodeId) =>
+    set((state) => ({
+      expandedFlowNodeId: state.expandedFlowNodeId === nodeId ? null : nodeId,
+    })),
+
+  setExpandedFlowNode: (nodeId) => set({ expandedFlowNodeId: nodeId }),
 
   // If sidebar is open AND trying to open editor, close sidebar
   toggleEditor: () =>
@@ -239,15 +266,6 @@ export const useUIStore = create<UIStore>((set) => ({
         return { showEditor: !state.showEditor, isSidebarOpen: false };
       }
       return { showEditor: !state.showEditor };
-    }),
-
-  // Show editor panel and close sidebar if it's open
-  showEditorPanel: () =>
-    set((state) => {
-      if (state.isSidebarOpen) {
-        return { isSidebarOpen: false, consolidatedPanelTab: 'code' };
-      }
-      return { consolidatedPanelTab: 'code' };
     }),
 
   toggleSidebar: () =>

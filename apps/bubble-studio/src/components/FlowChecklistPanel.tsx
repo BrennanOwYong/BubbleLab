@@ -3,21 +3,19 @@
  * Code tab used to occupy. Four sections only (B3): when it runs, what you
  * need to provide, what it does, and what happens on failure. Items derive
  * from the flow's parsed `workflow` step graph (falling back to the approved
- * plan in the saved conversation), the inputSchema, and the trigger config;
- * the raw code stays reachable through the "View code" link.
+ * plan in the saved conversation), the inputSchema, and the trigger config.
+ * Raw code is never displayed in the flow editor.
  */
 import { useMemo } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
   Clock,
-  Code,
   FileInput,
   ListChecks,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useBubbleFlow } from '../hooks/useBubbleFlow';
-import { useUIStore } from '../stores/uiStore';
 import {
   deriveChecklistSections,
   deriveFlowSummary,
@@ -79,9 +77,6 @@ function ChecklistSection({
 
 export function FlowChecklistPanel({ flowId }: { flowId: number | null }) {
   const { data: currentFlow } = useBubbleFlow(flowId);
-  const setConsolidatedPanelTab = useUIStore(
-    (state) => state.setConsolidatedPanelTab
-  );
 
   const messages = useMemo(
     () => parseConversationMessages(currentFlow?.metadata),
@@ -114,17 +109,6 @@ export function FlowChecklistPanel({ flowId }: { flowId: number | null }) {
     sections.requiredInputs.length > 0 ||
     sections.trigger.length > 0;
 
-  const viewCodeButton = (
-    <button
-      type="button"
-      onClick={() => setConsolidatedPanelTab('code')}
-      className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300 transition-colors"
-    >
-      <Code className="w-3.5 h-3.5" />
-      View code
-    </button>
-  );
-
   if (!flowId || !currentFlow || !hasContent) {
     return (
       <div className="h-full flex flex-col bg-[#1a1a1a]">
@@ -141,9 +125,6 @@ export function FlowChecklistPanel({ flowId }: { flowId: number | null }) {
                 The checklist appears once the flow has been generated
               </p>
             )}
-            {flowId && (
-              <div className="mt-3 flex justify-center">{viewCodeButton}</div>
-            )}
           </div>
         </div>
       </div>
@@ -152,7 +133,7 @@ export function FlowChecklistPanel({ flowId }: { flowId: number | null }) {
 
   return (
     <div className="h-full flex flex-col bg-[#1a1a1a]">
-      <div className="px-4 py-3 border-b border-[#30363d] flex-shrink-0 flex items-start justify-between gap-3">
+      <div className="px-4 py-3 border-b border-[#30363d] flex-shrink-0">
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-gray-100">
             What this flow does
@@ -163,7 +144,6 @@ export function FlowChecklistPanel({ flowId }: { flowId: number | null }) {
             </p>
           )}
         </div>
-        <div className="flex-shrink-0 pt-0.5">{viewCodeButton}</div>
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-5">

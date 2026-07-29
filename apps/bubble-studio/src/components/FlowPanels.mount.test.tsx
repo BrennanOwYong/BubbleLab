@@ -154,8 +154,8 @@ describe('FlowChecklistPanel', () => {
 
     expect(text).toContain('What this flow does');
     // Step lines derived from the parsed workflow's descriptions,
-    // plain-language ('Queries' -> 'Looks up')
-    expect(text).toContain('Looks up your Notion deals database');
+    // plain-language ('Queries' -> 'Searches')
+    expect(text).toContain('Searches your Notion deals database');
     expect(text).toContain(
       'classify whether a deal looks stalled and propose actionable next steps'
     );
@@ -166,8 +166,9 @@ describe('FlowChecklistPanel', () => {
     // B3 sections: outcomes and error responses render; no technical tokens
     expect(text).toContain('If something goes wrong');
     expect(text).not.toMatch(/ISO-8601|JSON\b|\b2D array\b/);
-    // Raw code demoted to a link, still reachable
-    expect(text).toContain('View code');
+    // Raw code is not reachable from the checklist (no code display anywhere
+    // in the flow editor)
+    expect(text).not.toContain('View code');
   });
 
   it('shows the empty state for a flow with no steps and no plan', async () => {

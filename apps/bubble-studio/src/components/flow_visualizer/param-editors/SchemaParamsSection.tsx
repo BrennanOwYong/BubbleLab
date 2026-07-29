@@ -24,8 +24,6 @@ export interface SchemaParamsSectionProps {
     newValue: unknown,
     paramType?: BubbleParameterType
   ) => void;
-  /** Optional callback to view code for a param */
-  onParamEditInCode?: (paramName: string) => void;
   /** Param names to exclude from display (e.g., model params shown separately) */
   excludedParamNames?: string[];
 }
@@ -42,7 +40,6 @@ export interface SchemaParamsSectionProps {
 export function SchemaParamsSection({
   bubble,
   updateBubbleParam,
-  onParamEditInCode,
   excludedParamNames = [],
 }: SchemaParamsSectionProps) {
   // Load schema for this bubble
@@ -115,7 +112,6 @@ export function SchemaParamsSection({
           runtimeParams={displayParams}
           variableId={bubble.variableId}
           onValueChange={handleValueChange}
-          onParamEditInCode={onParamEditInCode}
         />
 
         {/* Sensitive env params warning */}
@@ -136,7 +132,6 @@ export function SchemaParamsSection({
             param={param}
             variableId={bubble.variableId}
             onValueChange={handleValueChange}
-            onParamEditInCode={onParamEditInCode}
           />
         ))}
 
@@ -167,7 +162,6 @@ export function SchemaParamsSection({
           variableId={bubble.variableId}
           bubbleName={bubble.bubbleName}
           updateBubbleParam={updateBubbleParam}
-          onParamEditInCode={onParamEditInCode}
         />
       ))}
 

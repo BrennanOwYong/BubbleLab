@@ -244,7 +244,7 @@ function ServiceTriggerNode({ data }: ServiceTriggerNodeProps) {
 
   return (
     <div
-      className={`bg-neutral-800/90 rounded-lg border overflow-hidden transition-all duration-300 w-[400px] ${
+      className={`bg-neutral-800/90 rounded-[28px] border overflow-hidden transition-all duration-300 w-[400px] ${
         isExecuting
           ? `${BUBBLE_COLORS.SERVICE_TRIGGER.border} shadow-lg shadow-rose-500/30 ${isHighlighted ? BUBBLE_COLORS.SELECTED.background : ''}`
           : !isActive
