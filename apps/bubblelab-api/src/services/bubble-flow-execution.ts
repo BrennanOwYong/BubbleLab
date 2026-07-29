@@ -9,7 +9,6 @@ import {
   cleanUpObjectForDisplayAndStorage,
   type StreamingLogEvent,
   type StreamCallback,
-  CredentialType,
 } from '@bubblelab/shared-schemas';
 import type { ExecutionResult } from '@bubblelab/shared-schemas';
 
@@ -17,13 +16,7 @@ import { eq, and, sql } from 'drizzle-orm';
 import type { BubbleTriggerEventRegistry } from '@bubblelab/bubble-core';
 import { AppType } from '../config/clerk-apps.js';
 import { getPricingTable } from '../config/pricing.js';
-import {
-  shouldEvaluateExecution,
-  storeEvaluation,
-} from './evaluation-trigger.js';
 import { autoBindMissingCredentials } from './credential-auto-bind.js';
-import { runRice, getRiceModelUsed } from './ai/rice.js';
-import { env } from '../config/env.js';
 
 export interface ExecutionPayload {
   type: keyof BubbleTriggerEventRegistry;
@@ -83,7 +76,6 @@ export async function executeBubbleFlowViaWebhook(
 /**
  * Executes a BubbleFlow and handles the database operations.
  * Supports both streaming and non-streaming execution.
- * Optionally runs Rice evaluation after execution if evalPerformance is enabled.
  */
 export async function executeBubbleFlowWithTracking(
   bubbleFlowId: number,
@@ -196,17 +188,6 @@ export async function executeBubbleFlowWithTracking(
       })
       .where(eq(bubbleFlowExecutions.id, execResult[0].id));
 
-    // Run Rice evaluation if enabled and conditions are met
-    if (originalCallback && options.evalPerformance) {
-      await runEvaluationIfNeeded(
-        execResult[0].id,
-        bubbleFlowId,
-        flow.originalCode!,
-        collectedEvents,
-        originalCallback
-      );
-    }
-
     return {
       executionId: execResult[0].id,
       success: result.success,
@@ -235,82 +216,5 @@ export async function executeBubbleFlowWithTracking(
       success: false,
       error: errorMessage,
     };
-  }
-}
-
-/**
- * Run Rice evaluation if conditions are met
- */
-async function runEvaluationIfNeeded(
-  executionId: number,
-  bubbleFlowId: number,
-  workflowCode: string,
-  executionLogs: StreamingLogEvent[],
-  streamCallback: StreamCallback
-): Promise<void> {
-  try {
-    // Check if we should evaluate
-    const evalTrigger = await shouldEvaluateExecution(bubbleFlowId, true);
-
-    if (!evalTrigger.shouldEvaluate) {
-      return;
-    }
-
-    // Stream start_evaluating event
-    await streamCallback({
-      type: 'start_evaluating',
-      timestamp: new Date().toISOString(),
-      message: 'Evaluating workflow execution quality...',
-    });
-
-    // Build Rice request
-    const riceRequest = {
-      executionLogs,
-      workflowCode,
-      executionId,
-      bubbleFlowId,
-    };
-
-    // Run Rice evaluation
-    const riceResult = await runRice(riceRequest, {
-      [CredentialType.GOOGLE_GEMINI_CRED]: env.GOOGLE_API_KEY || '',
-      [CredentialType.OPENROUTER_CRED]: env.OPENROUTER_API_KEY || '',
-    });
-
-    if (riceResult.success && riceResult.evaluation) {
-      // Store evaluation result (execution logs are stored in the execution record)
-      await storeEvaluation(
-        executionId,
-        bubbleFlowId,
-        riceResult.evaluation,
-        getRiceModelUsed(riceRequest)
-      );
-
-      // Stream end_evaluating event with result
-      await streamCallback({
-        type: 'end_evaluating',
-        timestamp: new Date().toISOString(),
-        message: riceResult.evaluation.working
-          ? 'Workflow evaluation passed'
-          : 'Workflow evaluation found issues',
-        evaluationResult: riceResult.evaluation,
-      });
-    } else {
-      // Evaluation failed - stream error but don't fail the execution
-      console.error('[Evaluation] Rice evaluation failed:', riceResult.error);
-      await streamCallback({
-        type: 'end_evaluating',
-        timestamp: new Date().toISOString(),
-        message: `Evaluation failed: ${riceResult.error}`,
-      });
-    }
-  } catch (error) {
-    // Non-blocking: log error but don't fail the execution
-    console.error('[Evaluation] Error during evaluation:', error);
-    await streamCallback({
-      type: 'end_evaluating',
-      timestamp: new Date().toISOString(),
-      message: `Evaluation error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-    });
   }
 }

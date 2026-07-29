@@ -39,7 +39,6 @@ export interface ExecutionOptions {
 export interface StreamingExecutionOptions extends ExecutionOptions {
   streamCallback?: StreamCallback;
   useWebhookLogger?: boolean;
-  evalPerformance?: boolean; // Enable Rice evaluation after execution
 }
 
 async function runBubbleFlowCommon(
