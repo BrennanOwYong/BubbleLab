@@ -12,7 +12,7 @@ import type { McpSdkServerConfigWithInstance } from '@anthropic-ai/claude-agent-
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { GluuClient } from './gluu-client.ts';
-import { provisionSpreadsheet } from './provision.ts';
+import { provisionSpreadsheet, seedRows } from './provision.ts';
 import { buildThreads, db } from './db.ts';
 import { config } from './config.ts';
 
@@ -236,6 +236,36 @@ export function createBuilderServer(
         async ({ title, tabs }) => {
           try {
             return textResult(await provisionSpreadsheet(client, title, tabs));
+          } catch (error) {
+            return errorResult(error);
+          }
+        }
+      ),
+
+      tool(
+        'seed_rows',
+        'SETUP-PHASE tool: write reference/default rows (headers, naming standards, lookup tables) into a tab of an already-provisioned spreadsheet, over the same Google Sheets bubble path flows use. Idempotent: it CLEARS the tab first, then writes the rows at A1, so re-running never duplicates. Build-time only — never seed reference data inside flow handle() code, and never hand the user paste-ready rows instead.',
+        {
+          spreadsheetId: z
+            .string()
+            .min(1)
+            .describe('Spreadsheet id returned by provision_spreadsheet'),
+          tabName: z
+            .string()
+            .min(1)
+            .describe('The tab (sheet) name to seed, e.g. "Standards"'),
+          rows: z
+            .array(z.array(z.string()))
+            .min(1)
+            .describe(
+              'Rows to write, as an array of string arrays; row 0 is normally the header row'
+            ),
+        },
+        async ({ spreadsheetId, tabName, rows }) => {
+          try {
+            return textResult(
+              await seedRows(client, spreadsheetId, tabName, rows)
+            );
           } catch (error) {
             return errorResult(error);
           }

@@ -43,6 +43,8 @@ The setup phase is tool orchestration YOU run at build time; it is never part of
 
 Baseline: the user already connected the credential a setup action needs. If present, provision and store the resulting IDs in default_inputs as flow state.
 
+Reference/default data (naming standards, lookup tables, header rows the flow reads or conforms to) is also setup state: seed it into the provisioned sheet with seed_rows DURING the setup phase. Never hand the user paste-ready rows to add themselves, and never write seeding/creation logic inside the flow's handle().
+
 When a required credential is MISSING, you must NOT proceed silently and must NOT fabricate an ID:
 1. Detect the gap — a setup action needs a credential type the user has not connected (a provisioning tool error naming a missing credential is the signal).
 2. Call report_missing_credential with the exact credential type and the ordered deferred setup script (the setup actions to run once the credential exists) so nothing is lost. When nothing is deferrable (e.g. a plain API key with no provisioning step), pass an EMPTY script — never invent a noop action.

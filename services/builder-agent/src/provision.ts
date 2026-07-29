@@ -96,6 +96,128 @@ const provisionOutputSchema = z.object({
   error: z.string(),
 });
 
+/**
+ * Minimal BubbleFlow that seeds reference rows into one tab of an existing
+ * spreadsheet: clear_values on the whole tab, then write_values at
+ * `${tabName}!A1`. Clear-then-write is the idempotency mechanism — re-running
+ * the seed never duplicates rows. Operations and result fields follow
+ * packages/bubble-core/.../google-sheets/google-sheets.schema.ts.
+ */
+export function buildSeedRowsFlowCode(
+  spreadsheetId: string,
+  tabName: string,
+  rows: string[][]
+): string {
+  return `import type { BubbleTriggerEventRegistry } from '@bubblelab/bubble-core';
+import { BubbleFlow, GoogleSheetsBubble } from '@bubblelab/bubble-core';
+
+export interface Output {
+  success: boolean;
+  clearedRange: string;
+  updatedRange: string;
+  updatedRows: number;
+  error: string;
+}
+
+export class SeedRowsFlow extends BubbleFlow<'webhook/http'> {
+  constructor() {
+    super('seed-rows-flow', 'Seeds reference rows into a spreadsheet tab');
+  }
+
+  private async seed(): Promise<Output> {
+    const cleared = await new GoogleSheetsBubble({
+      operation: 'clear_values',
+      spreadsheet_id: ${JSON.stringify(spreadsheetId)},
+      range: ${JSON.stringify(tabName)},
+    }).action();
+    if (cleared.success !== true) {
+      return {
+        success: false,
+        clearedRange: '',
+        updatedRange: '',
+        updatedRows: 0,
+        error: 'clear_values failed: ' + (cleared.error ?? 'unknown'),
+      };
+    }
+    const written = await new GoogleSheetsBubble({
+      operation: 'write_values',
+      spreadsheet_id: ${JSON.stringify(spreadsheetId)},
+      range: ${JSON.stringify(`${tabName}!A1`)},
+      values: ${JSON.stringify(rows)},
+    }).action();
+    return {
+      success: written.success === true,
+      clearedRange: cleared.data?.cleared_range ?? '',
+      updatedRange: written.data?.updated_range ?? '',
+      updatedRows: written.data?.updated_rows ?? 0,
+      error: written.error ?? '',
+    };
+  }
+
+  async handle(
+    payload: BubbleTriggerEventRegistry['webhook/http']
+  ): Promise<Output> {
+    return this.seed();
+  }
+}
+`;
+}
+
+const seedRowsOutputSchema = z.object({
+  success: z.boolean(),
+  clearedRange: z.string(),
+  updatedRange: z.string(),
+  updatedRows: z.number(),
+  error: z.string(),
+});
+
+export interface SeededRows {
+  spreadsheetId: string;
+  tabName: string;
+  rowCount: number;
+  clearedRange: string;
+  updatedRange: string;
+  credentialId: number;
+  credentialType: string;
+}
+
+export async function seedRows(
+  client: GluuClient,
+  spreadsheetId: string,
+  tabName: string,
+  rows: string[][]
+): Promise<SeededRows> {
+  const credentials = await client.listCredentials();
+  const credential = pickSheetsCredential(credentials);
+  if (!credential) {
+    throw new Error(
+      'No connected credential covers Google Sheets (need GOOGLE_SHEETS_CRED or a Google OAuth credential granting the spreadsheets scope). Connect one in the Gluu studio first.'
+    );
+  }
+  const flowCode = buildSeedRowsFlowCode(spreadsheetId, tabName, rows);
+  const execution = await client.runContextFlow(flowCode, {
+    GOOGLE_SHEETS_CRED: credential.id,
+  });
+  if (!execution.success) {
+    throw new Error(
+      `Row-seeding flow failed: ${execution.error ?? 'unknown error'}`
+    );
+  }
+  const output = seedRowsOutputSchema.parse(execution.result);
+  if (!output.success) {
+    throw new Error(`seed_rows did not complete: ${output.error || 'unknown'}`);
+  }
+  return {
+    spreadsheetId,
+    tabName,
+    rowCount: rows.length,
+    clearedRange: output.clearedRange,
+    updatedRange: output.updatedRange,
+    credentialId: credential.id,
+    credentialType: credential.credentialType,
+  };
+}
+
 export interface ProvisionedSpreadsheet {
   spreadsheetId: string;
   spreadsheetUrl: string;
