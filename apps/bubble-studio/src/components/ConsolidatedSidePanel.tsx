@@ -1,6 +1,5 @@
 import {
   Activity,
-  ArrowLeft,
   Clock,
   KeyRound,
   ListChecks,
@@ -16,7 +15,6 @@ import { MonacoEditor } from './MonacoEditor';
 import LiveOutput from './execution_logs/LiveOutput';
 import { ExecutionHistory } from './execution_logs/ExecutionHistory';
 import { useExecutionStore } from '../stores/executionStore';
-import { useEditor } from '../hooks/useEditor';
 import { useUIStore } from '../stores/uiStore';
 import { useBubbleFlow } from '../hooks/useBubbleFlow';
 import { useExecutionHistory } from '../hooks/useExecutionHistory';
@@ -62,7 +60,6 @@ export function ConsolidatedSidePanel() {
     }),
     shallow
   );
-  const { editor } = useEditor();
   const { total: executionTotal } = useExecutionHistory(flowId, { limit: 10 });
 
   const tabs = [
@@ -74,7 +71,7 @@ export function ConsolidatedSidePanel() {
     },
     {
       // Replaces the raw Code tab: plain-language checklist of what the
-      // flow does. Code stays reachable via the checklist's "View code".
+      // flow does. Raw code is not displayed anywhere in the flow editor.
       id: 'checklist' as const,
       label: 'Checklist',
       icon: ListChecks,
@@ -113,11 +110,7 @@ export function ConsolidatedSidePanel() {
       <div className="flex overflow-x-auto border-b border-[#30363d] bg-[#0f1115]">
         {tabs.map((tab) => {
           const Icon = tab.icon;
-          // The code view is a sub-view of the checklist tab, so keep the
-          // Checklist tab highlighted while the raw code is showing.
-          const isActive =
-            activeTab === tab.id ||
-            (tab.id === 'checklist' && activeTab === 'code');
+          const isActive = activeTab === tab.id;
 
           return (
             <button
@@ -180,27 +173,12 @@ export function ConsolidatedSidePanel() {
           </div>
         )}
 
-        {/* Code Editor (demoted) - Always mounted for useEditor to work.
-            Reached from the checklist's "View code" link, not a tab. */}
-        <div
-          className={`absolute inset-0 ${activeTab === 'code' ? 'flex flex-col' : 'hidden'}`}
-        >
-          <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#30363d] bg-[#0f1115] flex-shrink-0">
-            <button
-              type="button"
-              onClick={() => setConsolidatedPanelTab('checklist')}
-              className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-200 transition-colors"
-            >
-              <ArrowLeft className="w-3 h-3" />
-              Back to checklist
-            </button>
-            <span className="text-[10px] text-gray-500">
-              {editor.getCode().split('\n').length} lines
-            </span>
-          </div>
-          <div className="flex-1 min-h-0">
-            <MonacoEditor />
-          </div>
+        {/* Monaco stays mounted but permanently hidden: useEditor reads and
+            writes flow code through the live editor instance (param editing,
+            validation, cron updates), so the instance must exist even though
+            raw code is never displayed in the flow editor. */}
+        <div className="hidden" aria-hidden="true">
+          <MonacoEditor />
         </div>
 
         {/* Live Output Tab - Only render when active */}

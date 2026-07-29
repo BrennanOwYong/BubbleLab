@@ -12,13 +12,12 @@ export type SidePanelMode = 'closed' | 'bubbleList' | 'milktea' | 'pearl';
 
 /**
  * Tabs in the consolidated side panel. 'checklist' is the primary view of
- * what the flow does; 'code' stays a valid tab id (reached via the
- * checklist's "View code" link and showEditorPanel) but has no tab button.
+ * what the flow does; raw code has no tab and is never displayed in the
+ * flow editor.
  */
 export type ConsolidatedPanelTab =
   | 'pearl'
   | 'checklist'
-  | 'code'
   | 'conversation'
   | 'output'
   | 'history'
@@ -129,11 +128,6 @@ interface UIStore {
    * Toggle editor visibility
    */
   toggleEditor: () => void;
-
-  /**
-   * Show the editor
-   */
-  showEditorPanel: () => void;
 
   /**
    * Toggle sidebar visibility
@@ -272,15 +266,6 @@ export const useUIStore = create<UIStore>((set) => ({
         return { showEditor: !state.showEditor, isSidebarOpen: false };
       }
       return { showEditor: !state.showEditor };
-    }),
-
-  // Show editor panel and close sidebar if it's open
-  showEditorPanel: () =>
-    set((state) => {
-      if (state.isSidebarOpen) {
-        return { isSidebarOpen: false, consolidatedPanelTab: 'code' };
-      }
-      return { consolidatedPanelTab: 'code' };
     }),
 
   toggleSidebar: () =>

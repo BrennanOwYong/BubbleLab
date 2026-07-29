@@ -35,6 +35,7 @@ import type {
   BubbleTriggerEventRegistry,
 } from '@bubblelab/shared-schemas';
 import { extractStepGraph, type StepData } from '@/utils/workflowToSteps';
+import { humanizeConditionLabel } from '@/utils/flowChecklist';
 import { useExecutionStore, getExecutionStore } from '@/stores/executionStore';
 import { useBubbleFlow } from '@/hooks/useBubbleFlow';
 import { useUIStore } from '@/stores/uiStore';
@@ -75,9 +76,6 @@ const sanitizeIdSegment = (value: string) =>
   value.replace(/[^a-zA-Z0-9_-]/g, '') || 'segment';
 
 // Executing bubble viewport preferences - now using FLOW_LAYOUT constants
-
-// Edge label visibility
-const SHOW_EDGE_LABELS = false; // Set to true to show conditional edge labels
 
 function generateDependencyNodeId(
   dependencyNode: DependencyGraphNode,
@@ -1989,13 +1987,28 @@ function FlowVisualizerInner({
         strokeWidth = 4; // Thicker for better visibility
         strokeDasharray = undefined; // Solid line - no dashes
         strokeOpacity = 1; // Fully opaque
+      } else if (isConditional) {
+        // Conditional branches stand apart from the sequential spine: amber,
+        // slightly stronger, still dashed
+        edgeColor = '#d97706'; // amber-600 (Gluu secondary accent)
+        strokeWidth = 1.5;
+        strokeDasharray = '8,4';
+        strokeOpacity = 0.75;
       } else {
-        // Non-highlighted edges: dashed, thin, subtle gray - fade into background
-        edgeColor = '#6b7280'; // gray-500 (lighter than before)
-        strokeWidth = isConditional ? 1.5 : 1.5; // Thinner
-        strokeDasharray = '8,4'; // Dashed - more subtle
-        strokeOpacity = 0.4; // Semi-transparent to fade into background
+        // Non-highlighted sequential edges: dashed, thin, subtle gray
+        edgeColor = '#6b7280'; // gray-500
+        strokeWidth = 1.5;
+        strokeDasharray = '8,4';
+        strokeOpacity = 0.4;
       }
+
+      // Conditional branches carry the WHY as a plain-language label
+      // ("if from math department", "otherwise"); sequential edges stay bare
+      const edgeLabel = stepEdge.label
+        ? humanizeConditionLabel(stepEdge.label)
+        : isConditional
+          ? 'condition'
+          : undefined;
 
       const edge: Edge = {
         id: edgeId,
@@ -2007,24 +2020,22 @@ function FlowVisualizerInner({
         type: 'simplebezier',
         animated: true,
         zIndex: isHighlighted ? 10 : 0, // Highlighted edges render on top
-        label: SHOW_EDGE_LABELS ? stepEdge.label : undefined,
-        labelStyle: SHOW_EDGE_LABELS
+        label: edgeLabel,
+        labelStyle: edgeLabel
           ? {
-              fill: edgeColor,
+              fill: isHighlighted ? '#22c55e' : '#fbbf24', // amber-400 for legibility on dark
               fontWeight: 600,
               fontSize: 12,
             }
           : undefined,
-        labelBgStyle: SHOW_EDGE_LABELS
+        labelBgStyle: edgeLabel
           ? {
               fill: '#1e1e1e',
               fillOpacity: 0.9,
             }
           : undefined,
-        labelBgPadding: SHOW_EDGE_LABELS
-          ? ([8, 4] as [number, number])
-          : undefined,
-        labelBgBorderRadius: SHOW_EDGE_LABELS ? 4 : undefined,
+        labelBgPadding: edgeLabel ? ([8, 4] as [number, number]) : undefined,
+        labelBgBorderRadius: edgeLabel ? 4 : undefined,
         style: {
           stroke: edgeColor,
           strokeWidth,

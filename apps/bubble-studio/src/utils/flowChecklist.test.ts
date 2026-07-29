@@ -9,6 +9,7 @@ import {
   deriveChecklistItems,
   deriveFlowSummary,
   findPlanMessage,
+  humanizeConditionLabel,
   humanizeFunctionName,
   humanizeToolName,
   parseConversationMessages,
@@ -99,7 +100,7 @@ describe('humanizers', () => {
 
   it('turns function names into everyday phrases', () => {
     expect(humanizeFunctionName('queryRecentDeals')).toBe(
-      'Look up recent deals'
+      'Looks up recent deals'
     );
     expect(humanizeFunctionName('buildTelegramDigestMessages')).toBe(
       'Creates telegram digest messages'
@@ -137,5 +138,45 @@ describe('toPlainLanguage', () => {
     expect(toPlainLanguage('Calls sendReminderEmail for each row.')).toBe(
       'Calls send reminder email for each row.'
     );
+  });
+
+  it('keeps noun uses of "query" grammatical and parse modes factual', () => {
+    expect(
+      toPlainLanguage('Builds a Gmail search query that targets unread mail.')
+    ).toBe('Builds a Gmail search that targets unread mail.');
+    expect(toPlainLanguage('Sends the digest using HTML parse mode.')).toBe(
+      'Sends the digest using formatted text.'
+    );
+  });
+
+  it('drops bracketed asides and duplicated words from identifier spacing', () => {
+    expect(
+      toPlainLanguage('Computes the [since, until] window for recent deals.')
+    ).toBe('Computes the window for recent deals.');
+    expect(toPlainLanguage('Deals edited since sinceIso are kept.')).toBe(
+      'Deals edited since iso are kept.'
+    );
+  });
+});
+
+describe('humanizeConditionLabel', () => {
+  it('turns branch labels into plain phrases', () => {
+    expect(humanizeConditionLabel('else')).toBe('otherwise');
+    expect(humanizeConditionLabel('if aiResult.isMatch === true')).toBe(
+      'if match'
+    );
+    expect(humanizeConditionLabel('if deals.length > 0')).toBe(
+      'if deals count more than 0'
+    );
+    expect(humanizeConditionLabel('else if retryCount >= maxRetries')).toBe(
+      'or if retry count at least max retries'
+    );
+    expect(humanizeConditionLabel('if !existing')).toBe('if not existing');
+  });
+
+  it('truncates very long conditions', () => {
+    const long = `if ${'x'.repeat(80)}`;
+    expect(humanizeConditionLabel(long).length).toBeLessThanOrEqual(50);
+    expect(humanizeConditionLabel(long)).toContain('…');
   });
 });

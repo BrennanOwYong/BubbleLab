@@ -1,8 +1,8 @@
 # RESULT — FlowVisualizer reskin (static LR flowchart, expandable plate nodes)
 
-- **Status**: complete
+- **Status**: complete (reskin + three follow-up additions)
 - **Branch**: `feature/flowvisualizer-reskin` (pushed to origin)
-- **Commit**: `644c799` — "studio: reskin flow editor into static LR flowchart of expandable name-plate nodes"
+- **Commits**: `644c799` (reskin), plus the follow-up commit for additions 6–8 below (kill code view / checklist fix / descriptive edges)
 - **Scope**: `apps/bubble-studio` only; no backend changes.
 
 ## Files changed
@@ -49,6 +49,35 @@ The layout mechanism found: **no dagre/elk** — two hand-rolled paths in `FlowV
 
 Removed: the overlay's View Code/Focus Code button (gone with the overlay), BubbleNode's header code icon + its click-through to `showEditorPanel`, TransformationNode's View Code button, and every per-param "View Code" link in the param editors (`onParamEditInCode` stripped end-to-end; the FlowVisualizer callbacks that fed it are deleted). The canvas-level `onNodeClick` Pearl-context/highlight behavior is untouched, and the code tab elsewhere in the studio is untouched.
 
+### 6. Code view killed everywhere (addition)
+
+- `ConsolidatedSidePanel.tsx`: the `activeTab === 'code'` sub-view (Monaco under the Checklist tab, with "Back to checklist" header) is removed. **Monaco stays mounted but permanently hidden** (`<div className="hidden" aria-hidden>`): `useEditor` reads/writes flow code through the live editor instance (`getEditorCode()`/`setEditorCode()` in `hooks/useEditor.ts` use `editorStore.editorInstance`), so param editing, validation, and cron updates need the instance to exist even though nothing can display it. The checklist-tab highlight special-case for `'code'` and the line-count `useEditor` usage are gone.
+- `stores/uiStore.ts`: `'code'` removed from `ConsolidatedPanelTab`; `showEditorPanel` (the only writer of `consolidatedPanelTab: 'code'`) removed — its former callers were the node/param code affordances already deleted in requirement 5, so nothing referenced it.
+- `FlowChecklistPanel.tsx`: "View code" link removed from both the header and the empty state; the panel no longer touches `uiStore`.
+- Net: no button, no tab, no sub-view — no way to display raw code in the flow editor. Verified by grep: zero remaining `setConsolidatedPanelTab('code')` / `consolidatedPanelTab: 'code'` / `showEditorPanel` references.
+
+### 7. Checklist data fixed (addition)
+
+Compared `deriveChecklistSections` output against live flows `GET /bubble-flow/9` (Gmail overseas-opportunity alert) and `/12` (Notion pipeline digest) from the API at :3001. The step list itself matched the flows' real steps 1:1 (the derivation reuses `extractStepGraph`, same as the canvas); the wrong data was in the plain-language rewriter (`utils/flowChecklist.ts` `PLAIN_REPLACEMENTS`/`toPlainLanguage`), which mangled real step descriptions into false or broken lines:
+
+- **"Sends the digest message to Telegram using read mode"** — factually wrong. "HTML parse mode" was shredded by the `HTML ` strip + `parse`→`read` rules. Fix: compound rules `HTML parse mode`→`formatted text` and `parse mode`→`formatting` ordered before the generic rules. Now reads "using formatted text".
+- **"Builds a Gmail search look up that targets…"** — broken grammar. `query`→`look up` replaced noun uses. Fix: `search query`→`search` compound first, then `query`→`search` / `queries`→`searches` (noun-safe); `VERB_MAP` gains `query: 'looks up'` so function-name-derived lines stay third-person ("Looks up recent deals").
+- **"Computes the [since, until] window…"** — bracketed code aside leaked through. Fix: strip square-bracketed asides.
+- **"deals edited since since iso"** — camelCase spacing of `sinceIso` duplicated "since". Fix: collapse immediate word repeats after identifier spacing. (Residue "since iso" remains — the identifier itself carries no plain-language meaning to recover.)
+
+Also documented (not a bug fixed): flow 9's "What you need to provide" is empty because its inputSchema marks nothing `required` (all fields carry defaults, including a placeholder `telegramChatId` default) — the checklist is faithful to the schema. Regression coverage: 4 new unit tests in `flowChecklist.test.ts`; two existing assertions updated to the new wording (`'Look up recent deals'`→`'Looks up recent deals'`, mount test `'Looks up your Notion deals database'`→`'Searches…'`, and the mount test now asserts "View code" is absent).
+
+### 8. Descriptive edges incl. conditional (addition)
+
+What the data exposes: `extractStepGraph` (utils/workflowToSteps.ts) already emits per-edge `edgeType: 'sequential' | 'conditional'` and a `label` built from the workflow's control-flow nodes — `"if <raw JS condition>"`, `"else if <condition>"`, `"else"` (the backend's parsed workflow carries the raw condition text on `if` nodes). FlowVisualizer previously threw this away behind a hardcoded `SHOW_EDGE_LABELS = false`.
+
+Implemented in FlowVisualizer + `humanizeConditionLabel` (exported from flowChecklist.ts, unit-tested):
+
+- Sequential spine edges stay unlabeled, subtle gray dashes — left→right flow needs no caption.
+- Conditional branch edges are **amber** (distinct from the gray spine and the green executed path) and **always labeled** with a plain-language condition: raw JS is rewritten (`X === true`→`X`, `X === false`→`not X`, `!== null`→`exists`, `>=`→`at least`, `&&`→`and`, `.length`→`count`, object paths collapsed to the last segment, camelCase/snake_case spaced, 46-char truncation), so `else`→"otherwise", `if aiResult.isMatch === true`→"if match", `else if retryCount >= maxRetries`→"or if retry count at least max retries". A conditional edge with no label (shouldn't occur) falls back to "condition".
+- Execution highlighting is preserved: an executed conditional edge turns solid green with a green label, so the taken branch is visible during runs.
+- Limitation noted: the two probed live flows are fully sequential (their if/else lives inside step bodies, which the step graph models as within-step logic, not step-level branches), so conditional labels appear only on flows whose branching happens between steps — that is exactly what the step graph encodes; nothing further is exposed by the current data.
+
 ## Dependent files mapped (before refactor)
 
 - `BubbleDetailsOverlay` — imported only by `nodes/BubbleNode.tsx` → orphaned → deleted.
@@ -61,8 +90,10 @@ Removed: the overlay's View Code/Focus Code button (gone with the overlay), Bubb
 
 ## Verification
 
-- **tsc**: `pnpm --filter bubble-studio exec tsc --noEmit` → clean (0 errors).
-- **build**: `pnpm --filter bubble-studio run build` → `✓ built in 1m 4s` (pre-existing chunk-size warning only).
+- **tsc**: `pnpm --filter bubble-studio exec tsc --noEmit` → clean (0 errors) after the reskin AND after additions 6–8.
+- **build**: `pnpm --filter bubble-studio run build` → ✓ (pre-existing chunk-size warning only) after both rounds.
+- **tests (after additions)**: 13 files, **203 tests, all passed** — 199 original + 4 new (`toPlainLanguage` noun/parse-mode/bracket/duplicate fixes, `humanizeConditionLabel`). Updated assertions: `flowChecklist.test.ts` `'Look up recent deals'`→`'Looks up recent deals'`; `FlowPanels.mount.test.tsx` `'Looks up your Notion deals database'`→`'Searches…'` and `'View code'` now asserted ABSENT (was asserted present).
+- **live-data check**: checklist derivation re-run against `GET /bubble-flow/9` and `/12` from the live API — every outcome line now factually matches the flow's real steps (probe output in section 7).
 - **tests**: `pnpm --filter bubble-studio test` → **13 files, 199 tests, all passed**. No test asserted the old popup or draggable behavior, so none needed updating (the suite excludes `*.integration.test.*`; `flowvisualizer.integration.test.ts` tests `extractStepGraph` against a live API and is untouched by this UI change).
 - **Described behavior** (from the implemented code paths): nodes ignore drag (canvas + per-node flags off) while pan/zoom and the zoom controls work; steps march left→right with branch steps fanned vertically off the spine and conditional edges entering on the left edge; clicking a plate grows it 420px downward revealing the model/params/credentials form, sibling plates and the surrounding container/columns shift to make room, clicking again or elsewhere collapses it; no code button or per-param View Code link exists anywhere in the node/param UI.
 
