@@ -1,0 +1,27 @@
+{
+  "name": "builder-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Node sidecar hosting the embedded flow-builder agent (Claude Agent SDK) for BubbleLab. Runs on Node (not Bun); talks to the Bun API over HTTP and to Postgres for session persistence.",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.220",
+    "@hono/node-server": "^1.14.0",
+    "drizzle-orm": "^0.44.3",
+    "hono": "^4.9.8",
+    "pg": "^8.16.3",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.11.10",
+    "typescript": "^5.7.0"
+  }
+}
