@@ -29,6 +29,8 @@ export const {
   derivedCredentials,
   userServiceUsage,
   waitlistedUsers,
+  buildThreads,
+  sessionEntries,
   bubbleFlowsRelations,
   webhooksRelations,
   bubbleFlowExecutionsRelations,

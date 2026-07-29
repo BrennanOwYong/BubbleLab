@@ -6,10 +6,12 @@ import {
   boolean,
   timestamp,
   unique,
+  uniqueIndex,
   jsonb,
+  bigserial,
   doublePrecision,
 } from 'drizzle-orm/pg-core';
-import { relations } from 'drizzle-orm';
+import { relations, isNotNull } from 'drizzle-orm';
 import type { CredentialMetadata } from '@bubblelab/shared-schemas';
 
 export const users = pgTable('users', {
@@ -292,3 +294,46 @@ export const bubbleFlowEvaluationsRelations = relations(
 );
 
 // No relations needed for userCredentials as it's a standalone table
+
+// Phase-4 builder-agent harness: one build thread per flow. Holds the Claude
+// Agent SDK session id driving the flow's build conversation, its status
+// (building / ready / error / blocked_on_credential), and — when a required
+// credential is missing — the deferred setup script persisted by the
+// credential-gap rule. Written by services/builder-agent (which re-declares
+// this shape; keep the two in sync) and read by the API's build proxy.
+export const buildThreads = pgTable('build_threads', {
+  flowId: integer('flow_id').primaryKey(),
+  sessionId: text('session_id'),
+  agentKind: text('agent_kind').notNull().default('flow'),
+  status: text('status').notNull().default('idle'),
+  deferredSetup: jsonb('deferred_setup'),
+  createdAt: timestamp('created_at', { mode: 'date' })
+    .notNull()
+    .$defaultFn(() => new Date()),
+  updatedAt: timestamp('updated_at', { mode: 'date' })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+// Verbatim Claude Agent SDK transcript entries (SessionStore adapter target;
+// one row per JSONL line). Entries carrying a uuid are deduped by the partial
+// unique index, matching the SDK contract that uuid is an idempotency key.
+export const sessionEntries = pgTable(
+  'session_entries',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    projectKey: text('project_key').notNull(),
+    sessionId: text('session_id').notNull(),
+    subpath: text('subpath').notNull().default(''),
+    entryUuid: text('entry_uuid'),
+    entry: jsonb('entry').notNull(),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => [
+    uniqueIndex('session_entries_uuid_unique')
+      .on(table.projectKey, table.sessionId, table.subpath, table.entryUuid)
+      .where(isNotNull(table.entryUuid)),
+  ]
+);

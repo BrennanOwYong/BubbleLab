@@ -1,5 +1,12 @@
-import { sqliteTable, text, int, unique, real } from 'drizzle-orm/sqlite-core';
-import { relations } from 'drizzle-orm';
+import {
+  sqliteTable,
+  text,
+  int,
+  unique,
+  uniqueIndex,
+  real,
+} from 'drizzle-orm/sqlite-core';
+import { relations, isNotNull } from 'drizzle-orm';
 import type { CredentialMetadata } from '@bubblelab/shared-schemas';
 
 export const users = sqliteTable('users', {
@@ -290,3 +297,40 @@ export const bubbleFlowEvaluationsRelations = relations(
 );
 
 // No relations needed for userCredentials as it's a standalone table
+
+// Phase-4 builder-agent harness (SQLite mirror of schema-postgres.ts; the
+// live deployment runs Postgres — this exists so the unified schema.ts
+// compiles for both dialects).
+export const buildThreads = sqliteTable('build_threads', {
+  flowId: int('flow_id').primaryKey(),
+  sessionId: text('session_id'),
+  agentKind: text('agent_kind').notNull().default('flow'),
+  status: text('status').notNull().default('idle'),
+  deferredSetup: text('deferred_setup', { mode: 'json' }),
+  createdAt: int('created_at', { mode: 'timestamp' })
+    .notNull()
+    .$defaultFn(() => new Date()),
+  updatedAt: int('updated_at', { mode: 'timestamp' })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+export const sessionEntries = sqliteTable(
+  'session_entries',
+  {
+    id: int('id').primaryKey({ autoIncrement: true }),
+    projectKey: text('project_key').notNull(),
+    sessionId: text('session_id').notNull(),
+    subpath: text('subpath').notNull().default(''),
+    entryUuid: text('entry_uuid'),
+    entry: text('entry', { mode: 'json' }).notNull(),
+    createdAt: int('created_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => [
+    uniqueIndex('session_entries_uuid_unique')
+      .on(table.projectKey, table.sessionId, table.subpath, table.entryUuid)
+      .where(isNotNull(table.entryUuid)),
+  ]
+);
