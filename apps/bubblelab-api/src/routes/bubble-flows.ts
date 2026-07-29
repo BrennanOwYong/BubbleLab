@@ -1316,6 +1316,7 @@ app.openapi(validateBubbleFlowCodeRoute, async (c) => {
             workflow: result.workflow,
             error: scopeAudit.errors.join('; '),
             errors: scopeAudit.errors,
+            lintErrors: result.lintErrors,
             scopeAudit,
             metadata: {
               validatedAt: new Date().toISOString(),
@@ -1440,6 +1441,7 @@ app.openapi(validateBubbleFlowCodeRoute, async (c) => {
           workflow: result.workflow,
           error: '',
           errors: [],
+          lintErrors: result.lintErrors,
           scopeAudit,
           requiredCredentials: extractRequiredCredentials(
             finalBubbleParametersForResponse
@@ -1470,6 +1472,7 @@ app.openapi(validateBubbleFlowCodeRoute, async (c) => {
           workflow: result.workflow,
           error: result.errors?.join('; ') || 'Validation failed',
           errors: [result.errors?.join('; ') || 'Validation failed'],
+          lintErrors: result.lintErrors,
           metadata: {
             validatedAt: new Date().toISOString(),
             codeLength: code?.length || 0,

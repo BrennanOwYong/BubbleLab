@@ -368,6 +368,10 @@ export const validateBubbleFlowCodeResponseSchema = z.object({
   errors: z.array(z.string()).optional().openapi({
     description: 'List of validation errors if any',
   }),
+  lintErrors: z.array(z.string()).optional().openapi({
+    description:
+      'Lint-rule violations (surfaced separately from syntax/type errors so callers can self-correct even when valid is true)',
+  }),
   bubbleCount: z.number().optional().openapi({
     description: 'Number of bubbles found in the code',
   }),
