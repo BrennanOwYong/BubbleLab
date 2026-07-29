@@ -17,7 +17,6 @@ import {
   bubbleFlowExecutionDetailSchema,
   successMessageResponseSchema,
   validateBubbleFlowCodeSchema,
-  generateBubbleFlowCodeSchema,
   validateBubbleFlowCodeResponseSchema,
 } from './index.js';
 
@@ -846,76 +845,9 @@ export const validateBubbleFlowCodeRoute = createRoute({
     'Validates TypeScript BubbleFlow code for syntax, type errors, and bubble structure',
 });
 
-// Schema for phase query parameter in generate endpoint
-export const generateBubbleFlowPhaseSchema = z.object({
-  phase: z.enum(['planning', 'building']).default('building').openapi({
-    description:
-      'Generation phase: "planning" runs Coffee agent for clarification and plan generation, "building" runs Boba for code generation',
-    example: 'building',
-  }),
-});
-
-export const generateBubbleFlowCodeRoute = createRoute({
-  method: 'post',
-  path: '/generate',
-  request: {
-    query: generateBubbleFlowPhaseSchema,
-    body: {
-      content: {
-        'application/json': {
-          schema: generateBubbleFlowCodeSchema,
-        },
-      },
-    },
-  },
-
-  responses: {
-    200: {
-      content: {
-        'text/event-stream': {
-          schema: z.string().describe('Server-Sent Events stream'),
-        },
-      },
-      description: 'Real-time streaming of BubbleFlow code generation process',
-      headers: z.object({
-        'Content-Type': z.literal('text/event-stream'),
-        'Cache-Control': z.literal('no-cache'),
-        Connection: z.literal('keep-alive'),
-      }),
-    },
-    403: {
-      content: {
-        'application/json': {
-          schema: errorResponseSchema,
-        },
-      },
-      description: 'Code generation is disabled in production',
-    },
-    400: {
-      content: {
-        'application/json': {
-          schema: errorResponseSchema,
-        },
-      },
-      description: 'Invalid request body',
-    },
-    500: {
-      content: {
-        'application/json': {
-          schema: errorResponseSchema,
-        },
-      },
-      description: 'Internal server error during generation',
-    },
-  },
-  tags: ['BubbleFlow'],
-  summary: 'Generate BubbleFlow Code with Streaming',
-  description:
-    'Generates TypeScript BubbleFlow code from natural language prompts using AI with real-time streaming of tokens, tool calls, and progress',
-});
-
 // POST /bubble-flow/generate/run-context-flow - Execute a context-gathering flow
-// This is used by the Coffee agent to gather external context before planning
+// Used by external agents to gather context (e.g., database schema, file
+// listings) before authoring a flow.
 export const runContextFlowSchema = z.object({
   flowCode: z.string().min(1).openapi({
     description: 'The validated BubbleFlow TypeScript code to execute',
@@ -980,5 +912,5 @@ export const runContextFlowRoute = createRoute({
   tags: ['BubbleFlow'],
   summary: 'Execute Context-Gathering Flow',
   description:
-    'Executes a validated BubbleFlow to gather external context (e.g., database schema, file listings) for the Coffee planning agent',
+    'Executes a validated BubbleFlow to gather external context (e.g., database schema, file listings) for an external authoring agent',
 });

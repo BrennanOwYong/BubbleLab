@@ -1,98 +1,7 @@
-import { ParsedBubbleWithInfoSchema } from './bubble-definition-schema';
 import { z } from '@hono/zod-openapi';
 import { BubbleParameterType } from './bubble-definition-schema';
 import { CredentialType } from './types';
-import { ServiceUsageSchema } from './bubbleflow-execution-schema';
-import { ConversationEntrySchema } from './coffee';
 
-// BubbleFlow generation schemas
-export const generateBubbleFlowCodeSchema = z.object({
-  prompt: z.string().min(1).openapi({
-    description: 'Natural language description of the desired BubbleFlow',
-    example:
-      'Create a flow that queries my database and sends results to Slack',
-  }),
-  flowId: z.number().optional().openapi({
-    description:
-      'Optional flow ID to update with generated code (for async generation)',
-    example: 123,
-  }),
-  // Conversation history: Coffee chat messages plus programmatic
-  // workflow-done messages appended by earlier successful builds (the union
-  // keeps threads containing done messages round-trippable).
-  messages: z.array(ConversationEntrySchema).optional().openapi({
-    description:
-      'Full conversation history including clarification Q&A, context results, plan approvals, and programmatic workflow-done messages',
-  }),
-  // Plan context (passed to Boba for enriched code generation)
-  planContext: z.string().optional().openapi({
-    description:
-      'Plan context from Coffee agent (passed to Boba for enriched generation)',
-    example: 'Plan: 1. Fetch data from API 2. Process with AI 3. Send to Slack',
-  }),
-});
-
-export const generateBubbleFlowCodeResponseSchema = z.object({
-  generatedCode: z.string().openapi({
-    description: 'The generated BubbleFlow TypeScript code',
-  }),
-  isValid: z.boolean().openapi({
-    description: 'Whether the generated code is valid',
-  }),
-  success: z.boolean(),
-  error: z.string(),
-  bubbleParameters: z.record(z.string(), ParsedBubbleWithInfoSchema).openapi({
-    description: 'Parsed bubble parameters from the generated code',
-  }),
-  requiredCredentials: z.record(z.string(), z.array(z.string())).openapi({
-    description: 'Required credentials for the bubbles in the generated code',
-  }),
-});
-
-/**
- * Schema for the result of BubbleFlow generation
- * Used by the BubbleFlowGeneratorWorkflow
- */
-export const GenerationResultSchema = z.object({
-  generatedCode: z
-    .string()
-    .describe('The generated BubbleFlow TypeScript code'),
-  isValid: z.boolean().describe('Whether the generated code is valid'),
-  success: z.boolean(),
-  error: z.string(),
-  flowId: z.number().optional().openapi({
-    description: 'ID of the generated BubbleFlow',
-    example: 123,
-  }),
-  toolCalls: z
-    .array(z.unknown())
-    .describe('The tool calls made by the AI agent'),
-  summary: z
-    .string()
-    .default('')
-    .describe('High-level instructions for using the validated flow'),
-  inputsSchema: z
-    .string()
-    .default('')
-    .describe('JSON Schema (string) representing the inputs of the flow'),
-  serviceUsage: z.array(ServiceUsageSchema).optional().openapi({
-    description:
-      'Service usage statistics for the generation (array of services used)',
-  }),
-  bubbleCount: z.number().optional().openapi({
-    description: 'Number of bubbles used in the generated flow',
-  }),
-  codeLength: z.number().optional().openapi({
-    description: 'Length of the generated code in characters',
-  }),
-  bubbleParameters: z
-    .record(z.union([z.string(), z.number()]), ParsedBubbleWithInfoSchema)
-    .optional()
-    .openapi({
-      description:
-        'Parsed bubble parameters with descriptions from AI generation',
-    }),
-});
 // POST /bubbleflow-template/data-analyst - Generate template from description
 export const generateBubbleFlowTemplateSchema = z
   .object({
@@ -334,9 +243,6 @@ export const bubbleFlowTemplateResponseSchema = z
       }),
   })
   .openapi('BubbleFlowTemplateResponse');
-export type GenerateBubbleFlowCodeResponse = z.infer<
-  typeof generateBubbleFlowCodeResponseSchema
->;
 export type GenerateBubbleFlowTemplateRequest = z.infer<
   typeof generateBubbleFlowTemplateSchema
 >;
@@ -346,4 +252,3 @@ export type GenerateDocumentGenerationTemplateRequest = z.infer<
 export type BubbleFlowTemplateResponse = z.infer<
   typeof bubbleFlowTemplateResponseSchema
 >;
-export type GenerationResult = z.infer<typeof GenerationResultSchema>;

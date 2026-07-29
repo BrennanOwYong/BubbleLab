@@ -2,13 +2,6 @@
  * Shared types for streaming log events between backend and frontend
  */
 
-import type {
-  CoffeeClarificationEvent,
-  CoffeeContextEvent,
-  CoffeePlanEvent,
-  CoffeeRequestExternalContextEvent,
-} from './coffee.js';
-
 export interface StreamingLogEvent {
   type:
     | 'log_line'
@@ -146,27 +139,6 @@ export type StreamingEvent =
   | {
       type: 'complete';
       data: { result: unknown; totalDuration: number };
-    }
-  // Coffee Agent Events (Planning Phase)
-  | {
-      type: 'coffee_clarification';
-      data: CoffeeClarificationEvent;
-    }
-  | {
-      type: 'coffee_context_gathering';
-      data: CoffeeContextEvent;
-    }
-  | {
-      type: 'coffee_request_context';
-      data: CoffeeRequestExternalContextEvent;
-    }
-  | {
-      type: 'coffee_plan';
-      data: CoffeePlanEvent;
-    }
-  | {
-      type: 'coffee_complete';
-      data: { success: boolean; message?: string };
     };
 
 export type StreamCallback = (event: StreamingLogEvent) => void | Promise<void>;

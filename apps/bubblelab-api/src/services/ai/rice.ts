@@ -7,7 +7,7 @@
  *
  * Output: { working: boolean, issue?: string, rating: 1-10 }
  *
- * Uses AIAgentBubble for consistency with other agents (Pearl, MilkTea, Coffee).
+ * Uses AIAgentBubble for consistency with other agents (Pearl, MilkTea).
  */
 
 import {
