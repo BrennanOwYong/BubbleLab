@@ -1,7 +1,6 @@
-import { memo, useState, useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import { Handle, Position } from '@xyflow/react';
 import { Code } from 'lucide-react';
-import { useUIStore } from '@/stores/uiStore';
 import { useExecutionStore } from '@/stores/executionStore';
 import { BUBBLE_COLORS } from '@/components/flow_visualizer/BubbleColors';
 import BubbleExecutionBadge from '@/components/flow_visualizer/BubbleExecutionBadge';
@@ -25,7 +24,6 @@ export interface TransformationNodeData {
     left?: boolean;
     right?: boolean;
   };
-  onTransformationClick?: () => void;
 }
 
 interface TransformationNodeProps {
@@ -38,13 +36,9 @@ function TransformationNode({ data }: TransformationNodeProps) {
     transformationId,
     transformationInfo,
     usedHandles = {},
-    onTransformationClick,
   } = data;
   const { functionName, description, location, variableId } =
     transformationInfo;
-
-  const { showEditor } = useUIStore();
-  const [showCodeTooltip, setShowCodeTooltip] = useState(false);
 
   // Get execution state from execution store
   const highlightedBubble = useExecutionStore(
@@ -89,14 +83,9 @@ function TransformationNode({ data }: TransformationNodeProps) {
     return completedBubbles[String(variableId)];
   }, [completedBubbles, variableId]);
 
-  const handleViewCode = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    onTransformationClick?.();
-  };
-
   return (
     <div
-      className={`relative rounded-lg border bg-neutral-800/90 transition-all duration-300 shadow-xl ${
+      className={`relative rounded-[28px] border bg-neutral-800/90 transition-all duration-300 shadow-xl ${
         isExecuting
           ? BUBBLE_COLORS.RUNNING.border
           : hasError
@@ -169,7 +158,6 @@ function TransformationNode({ data }: TransformationNodeProps) {
               )}
             </div>
           </div>
-          {/* View Code Button */}
           <div className="flex items-center gap-2">
             {/* Execution Badge */}
             <BubbleExecutionBadge
@@ -178,24 +166,6 @@ function TransformationNode({ data }: TransformationNodeProps) {
               isExecuting={isExecuting}
               executionStats={executionStats}
             />
-            {/* View Code Button */}
-            <div className="relative">
-              <button
-                type="button"
-                title="View Code"
-                onClick={handleViewCode}
-                onMouseEnter={() => setShowCodeTooltip(true)}
-                onMouseLeave={() => setShowCodeTooltip(false)}
-                className="inline-flex items-center justify-center p-1.5 rounded text-neutral-300 hover:bg-neutral-700 hover:text-neutral-100 transition-colors"
-              >
-                <Code className="w-3.5 h-3.5" />
-              </button>
-              {showCodeTooltip && (
-                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 px-2 py-1 text-xs font-medium text-white bg-neutral-900 rounded shadow-lg whitespace-nowrap border border-neutral-700 z-50">
-                  {showEditor ? 'Hide Code' : 'View Code'}
-                </div>
-              )}
-            </div>
           </div>
         </div>
         {description && (

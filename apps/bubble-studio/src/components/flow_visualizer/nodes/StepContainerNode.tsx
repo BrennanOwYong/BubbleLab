@@ -9,7 +9,9 @@ import {
   calculateCustomToolListHeight,
 } from '@/components/flow_visualizer/stepContainerUtils';
 import { useExecutionStore } from '@/stores/executionStore';
+import { useUIStore } from '@/stores/uiStore';
 import { BUBBLE_COLORS } from '@/components/flow_visualizer/BubbleColors';
+import { FLOW_LAYOUT } from '@/components/flow_visualizer/flowLayoutConstants';
 import { findLogoForBubble } from '@/lib/integrations';
 
 /** One inner bubble call of a custom-tool step, listed statically. */
@@ -73,22 +75,32 @@ function StepContainerNode({ data }: StepContainerNodeProps) {
     return bubbleIds.some((bubbleId) => runningBubbles.has(String(bubbleId)));
   }, [bubbleIds, runningBubbles]);
 
+  // Grow when a contained plate has its inline parameter form expanded, so
+  // the container matches the reflowed plate positions (see FlowVisualizer)
+  const expandedFlowNodeId = useUIStore((s) => s.expandedFlowNodeId);
+  const expandedExtra =
+    !isCustomTool && bubbleIds.some((id) => String(id) === expandedFlowNodeId)
+      ? FLOW_LAYOUT.EXPANDED.PANEL_HEIGHT
+      : 0;
+
   // Calculate dynamic header height based on content
   const baseHeaderHeight = calculateHeaderHeight(functionName, description);
   // Scale header height for custom tools
   const headerHeight = isCustomTool
     ? Math.round(baseHeaderHeight * CUSTOM_TOOL_LAYOUT.SCALE)
     : baseHeaderHeight;
-  const calculatedHeight = isCustomTool
-    ? calculateCustomToolListHeight(toolCalls.length, baseHeaderHeight)
-    : calculateStepContainerHeight(bubbleIds.length, baseHeaderHeight);
+  const calculatedHeight =
+    (isCustomTool
+      ? calculateCustomToolListHeight(toolCalls.length, baseHeaderHeight)
+      : calculateStepContainerHeight(bubbleIds.length, baseHeaderHeight)) +
+    expandedExtra;
 
   return (
     <div
       // No backdrop-filter here: inside React Flow's transformed viewport,
       // Chromium samples stale GPU surface memory for the backdrop and renders
       // other windows / the tab strip into the card. Opaque fill instead.
-      className={`relative rounded-lg border shadow-xl cursor-pointer ${
+      className={`relative rounded-[28px] border shadow-xl cursor-pointer ${
         isExecuting
           ? 'bg-neutral-800'
           : isHighlighted
@@ -144,7 +156,7 @@ function StepContainerNode({ data }: StepContainerNodeProps) {
 
       {/* Header Section */}
       <div
-        className={`bg-neutral-900/80 border-b border-neutral-600/60 rounded-t-lg flex-shrink-0 pointer-events-none ${
+        className={`bg-neutral-900/80 border-b border-neutral-600/60 rounded-t-[28px] flex-shrink-0 pointer-events-none ${
           isCustomTool ? 'px-3 py-2' : 'px-5 py-4'
         }`}
         style={{

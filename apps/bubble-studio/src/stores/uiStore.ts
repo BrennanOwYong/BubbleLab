@@ -96,6 +96,13 @@ interface UIStore {
    */
   showPrompt: boolean;
 
+  /**
+   * React Flow node id of the flow-visualizer node whose inline parameter
+   * form is expanded. One node at a time: expanding a node collapses the
+   * previously expanded one.
+   */
+  expandedFlowNodeId: string | null;
+
   // ============= Visual Indicators =============
 
   // ============= Actions =============
@@ -104,6 +111,19 @@ interface UIStore {
    * Select a flow (changes what's shown in the IDE)
    */
   selectFlow: (flowId: number | null) => void;
+
+  /**
+   * Toggle a flow-visualizer node's inline parameter form. Passing the id of
+   * the currently expanded node collapses it; passing another id moves the
+   * expansion there.
+   */
+  toggleExpandedFlowNode: (nodeId: string) => void;
+
+  /**
+   * Collapse any expanded flow-visualizer node (pass null) or expand a
+   * specific one.
+   */
+  setExpandedFlowNode: (nodeId: string | null) => void;
 
   /**
    * Toggle editor visibility
@@ -228,9 +248,22 @@ export const useUIStore = create<UIStore>((set) => ({
   targetInsertLine: null,
   isConsolidatedPanelOpen: true,
   consolidatedPanelTab: 'pearl',
+  expandedFlowNodeId: null,
 
   // Actions
-  selectFlow: (flowId) => set({ selectedFlowId: flowId, showEditor: false }),
+  selectFlow: (flowId) =>
+    set({
+      selectedFlowId: flowId,
+      showEditor: false,
+      expandedFlowNodeId: null,
+    }),
+
+  toggleExpandedFlowNode: (nodeId) =>
+    set((state) => ({
+      expandedFlowNodeId: state.expandedFlowNodeId === nodeId ? null : nodeId,
+    })),
+
+  setExpandedFlowNode: (nodeId) => set({ expandedFlowNodeId: nodeId }),
 
   // If sidebar is open AND trying to open editor, close sidebar
   toggleEditor: () =>

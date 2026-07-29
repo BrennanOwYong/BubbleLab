@@ -17,15 +17,20 @@ export const FLOW_LAYOUT = {
     ENTRY_NODE_OFFSET: 520, // Offset for entry node (input-schema-node, cron-schedule-node)
   },
 
-  // Hierarchical layout (step-based flow)
+  // Hierarchical layout (step-based flow, left-to-right)
   HIERARCHICAL: {
     START_X: 50, // Start after entry node
     START_Y: 200,
-    MIN_VERTICAL_SPACING: 80, // Minimum spacing between steps vertically
-    HORIZONTAL_SPACING: 500, // Horizontal space between branches
+    COLUMN_SPACING: 160, // Horizontal gap between a step and its children (x advances per step)
+    BRANCH_VERTICAL_GAP: 80, // Vertical gap between sibling branches fanning off the spine
     DEFAULT_POSITION: { x: 500, y: 200 }, // Default position for steps
     DEFAULT_HEIGHT: 200, // Default step height fallback
-    MERGE_VERTICAL_OFFSET: 40, // Distance between merge junction and target step
+  },
+
+  // Click-to-expand inline parameter form
+  EXPANDED: {
+    PANEL_HEIGHT: 420, // Fixed vertical space reserved below a plate for the scrollable param form
+    PLATE_HEIGHT: 64, // Collapsed name-plate height (h-16); left/right handles sit at PLATE_HEIGHT / 2
   },
 
   // Subbubble positioning

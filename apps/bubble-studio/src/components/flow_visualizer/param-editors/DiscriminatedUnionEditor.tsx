@@ -25,8 +25,6 @@ export interface DiscriminatedUnionEditorProps {
     newValue: unknown,
     paramType?: BubbleParameterType
   ) => void;
-  /** Optional callback to view code for a param */
-  onParamEditInCode?: (paramName: string) => void;
 }
 
 /**
@@ -38,7 +36,6 @@ export function DiscriminatedUnionEditor({
   runtimeParams,
   variableId,
   onValueChange,
-  onParamEditInCode,
 }: DiscriminatedUnionEditorProps) {
   // Get all available operations from schema
   const operationOptions = useMemo(() => getOperationOptions(schema), [schema]);
@@ -106,7 +103,6 @@ export function DiscriminatedUnionEditor({
               param={param}
               variableId={variableId}
               onValueChange={onValueChange}
-              onParamEditInCode={onParamEditInCode}
             />
           ))}
         </div>

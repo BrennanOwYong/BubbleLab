@@ -25,7 +25,6 @@ export interface ParamEditorProps {
     paramName: string,
     newValue: unknown
   ) => void;
-  onParamEditInCode?: (paramName: string) => void;
 }
 
 export function ParamEditor({
@@ -33,7 +32,6 @@ export function ParamEditor({
   variableId,
   bubbleName,
   updateBubbleParam,
-  onParamEditInCode,
 }: ParamEditorProps) {
   const extracted = extractParamValue(param, param.name, bubbleName);
   const isEditable = extracted?.shouldBeEditable ?? false;
@@ -136,15 +134,6 @@ export function ParamEditor({
             </span>
           )}
         </div>
-        {onParamEditInCode && (
-          <button
-            type="button"
-            onClick={() => onParamEditInCode(param.name)}
-            className="text-sm font-medium text-purple-300 transition hover:text-purple-200"
-          >
-            View Code
-          </button>
-        )}
       </div>
       {isEditable ? (
         isBoolean ? (

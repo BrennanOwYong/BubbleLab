@@ -1,18 +1,15 @@
 import type { BubbleName } from '@bubblelab/shared-schemas';
 
 /**
- * Configuration for inline parameters displayed on BubbleNode cards
- * and special handling in BubbleDetailsOverlay.
+ * Configuration for special parameter handling in the BubbleNode inline
+ * parameter form (the section a node expands to reveal).
  *
  * Each entry maps a bubble name to an array of parameter configs:
  * - paramName: The parameter name as defined in the bubble schema
  * - paramPath: The path to extract the value (for nested params like model.model)
- * - isModel: If true, displays as a model dropdown in the overlay's Model section
+ * - isModel: If true, displays as a model dropdown in the form's Model section
  *            and editability is determined by whether value is a valid model
- * - inlineDisplay: How to display inline on the BubbleNode card
- *   - 'dropdown': Show as a dropdown selector (for model params)
- *   - 'preview': Show as truncated text preview (for prompts)
- *   - 'none': Don't show inline, only in overlay
+ * - inlineDisplay: Legacy display hint retained on the config entries
  */
 export interface InlineParamConfig {
   paramName: string;
@@ -124,29 +121,6 @@ export function getInlineParamConfig(
   return WILDCARD_INLINE_PARAMS.find(
     (c) => c.paramName.toLowerCase() === paramName.toLowerCase()
   );
-}
-
-/**
- * Get all inline param configs for a bubble, including wildcards
- * that match the bubble's parameters.
- */
-export function getAllInlineParamConfigs(
-  bubbleName: string | undefined,
-  paramNames: string[]
-): InlineParamConfig[] {
-  const bubbleConfigs = getInlineParamConfigs(bubbleName);
-  const bubbleParamNames = new Set(
-    bubbleConfigs.map((c) => c.paramName.toLowerCase())
-  );
-
-  // Add wildcard configs for params not already configured
-  const wildcardConfigs = WILDCARD_INLINE_PARAMS.filter(
-    (wc) =>
-      !bubbleParamNames.has(wc.paramName.toLowerCase()) &&
-      paramNames.some((p) => p.toLowerCase() === wc.paramName.toLowerCase())
-  );
-
-  return [...bubbleConfigs, ...wildcardConfigs];
 }
 
 /**

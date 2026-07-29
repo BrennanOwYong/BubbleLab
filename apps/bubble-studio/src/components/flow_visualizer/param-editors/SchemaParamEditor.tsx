@@ -15,8 +15,6 @@ export interface SchemaParamEditorProps {
     newValue: unknown,
     paramType?: BubbleParameterType
   ) => void;
-  /** Optional callback to view code for this param */
-  onParamEditInCode?: (paramName: string) => void;
   /** Whether to allow adding new params that don't exist in code (default: true) */
   allowAddNew?: boolean;
 }
@@ -76,7 +74,6 @@ export function SchemaParamEditor({
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   variableId,
   onValueChange,
-  onParamEditInCode,
 }: SchemaParamEditorProps) {
   const formattedValue = formatDisplayValue(param.value);
   const [editValue, setEditValue] = useState(formattedValue);
@@ -313,15 +310,6 @@ export function SchemaParamEditor({
             </span>
           )}
         </div>
-        {onParamEditInCode && (
-          <button
-            type="button"
-            onClick={() => onParamEditInCode(param.name)}
-            className="text-sm font-medium text-purple-300 transition hover:text-purple-200"
-          >
-            View Code
-          </button>
-        )}
       </div>
 
       {/* Description */}

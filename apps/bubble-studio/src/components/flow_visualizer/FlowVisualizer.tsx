@@ -145,6 +145,9 @@ function FlowVisualizerInner({
   );
   // Subscribe to expandedRootIds so nodes/edges sync when toggled
   const expandedRootIds = useExecutionStore(flowId, (s) => s.expandedRootIds);
+  // Inline-expanded node (click-to-expand parameter form): layout reserves
+  // vertical space below the expanded plate so surrounding nodes reflow
+  const expandedFlowNodeId = useUIStore((s) => s.expandedFlowNodeId);
   // Derive all state from global stores
   const bubbleParameters = currentFlow?.bubbleParameters || {};
   const requiredCredentials = currentFlow?.requiredCredentials || {};
@@ -499,16 +502,12 @@ function FlowVisualizerInner({
         id: nodeId,
         type: 'bubbleNode',
         position,
-        draggable: true,
+        draggable: false,
         zIndex: FLOW_LAYOUT.Z_INDEX.SUBBUBBLE_BASE + level, // Sub-bubbles appear above other nodes, deeper levels on top
         data: {
           flowId: currentFlow?.id || flowId,
           bubble: subBubble,
           bubbleKey: nodeId,
-          onHighlightChange: () => {
-            // BubbleNode will handle store updates
-          },
-          onBubbleClick: () => {},
           usedHandles: usedHandlesMap?.get(nodeId),
         },
       };
@@ -1014,7 +1013,7 @@ function FlowVisualizerInner({
             y: baseY,
           },
           origin: [0, 0.5] as [number, number],
-          draggable: true,
+          draggable: false,
           data: {
             flowId: currentFlow?.id || flowId,
             flowName: flowName,
@@ -1041,7 +1040,7 @@ function FlowVisualizerInner({
             y: baseY,
           },
           origin: [0, 0.5] as [number, number],
-          draggable: true,
+          draggable: false,
           data: {
             flowId: currentFlow?.id || flowId,
             flowName: flowName,
@@ -1064,7 +1063,7 @@ function FlowVisualizerInner({
             y: baseY,
           },
           origin: [0, 0.5] as [number, number],
-          draggable: true,
+          draggable: false,
           data: {
             flowId: currentFlow?.id || flowId,
             flowName: flowName,
@@ -1166,11 +1165,18 @@ function FlowVisualizerInner({
           ? String(bubble.variableId)
           : String(key);
 
-        // Use persisted position if available, otherwise use initial position
+        // Use persisted position if available, otherwise use initial position.
+        // Nodes anchor at their vertical center (origin [0, 0.5]); shifting an
+        // inline-expanded node down by half the reserved panel height keeps
+        // its top edge on the spine, so the form reads as growing downward.
         const persistedPosition = persistedPositions.current.get(nodeId);
         const initialPosition = {
           x: startX + index * horizontalSpacing,
-          y: baseY,
+          y:
+            baseY +
+            (expandedFlowNodeId === nodeId
+              ? FLOW_LAYOUT.EXPANDED.PANEL_HEIGHT / 2
+              : 0),
         };
 
         const node: Node = {
@@ -1178,7 +1184,7 @@ function FlowVisualizerInner({
           type: 'bubbleNode',
           position: persistedPosition || initialPosition,
           origin: [0, 0.5] as [number, number],
-          draggable: true,
+          draggable: false,
           data: {
             flowId: currentFlow?.id || flowId,
             bubble,
@@ -1209,32 +1215,6 @@ function FlowVisualizerInner({
                 ] || []
               );
             })(),
-            onHighlightChange: () => {
-              // BubbleNode will handle store updates
-            },
-            onBubbleClick: () => {
-              useUIStore.getState().showEditorPanel();
-              setExecutionHighlight({
-                startLine: bubble.location.startLine,
-                endLine: bubble.location.endLine,
-              });
-            },
-            onParamEditInCode: (paramName: string) => {
-              // Find the parameter in the bubble's parameters
-              const param = bubble.parameters.find((p) => p.name === paramName);
-              if (param && param.location) {
-                // Open editor if not visible
-                if (!useUIStore.getState().showEditor) {
-                  useUIStore.getState().showEditorPanel();
-                }
-
-                // Highlight the parameter's location in the editor
-                setExecutionHighlight({
-                  startLine: param.location.startLine,
-                  endLine: param.location.endLine,
-                });
-              }
-            },
             hasSubBubbles: !!bubble.dependencyGraph?.dependencies?.length,
             usedHandles: usedHandlesMap.get(nodeId),
           },
@@ -1333,7 +1313,8 @@ function FlowVisualizerInner({
     }
 
     /**
-     * Calculate the height of a step based on its type and content
+     * Calculate the height of a step based on its type and content, including
+     * the reserved space for an inline-expanded parameter form
      */
     function calculateStepHeight(step: StepData): number {
       if (step.isTransformation && step.transformationData) {
@@ -1345,15 +1326,24 @@ function FlowVisualizerInner({
           step.functionName,
           step.description
         );
-        return calculateStepContainerHeight(
-          step.bubbleIds.length,
-          stepHeaderHeight
+        const expandedExtra = step.bubbleIds.some(
+          (id) => String(id) === expandedFlowNodeId
+        )
+          ? FLOW_LAYOUT.EXPANDED.PANEL_HEIGHT
+          : 0;
+        return (
+          calculateStepContainerHeight(
+            step.bubbleIds.length,
+            stepHeaderHeight
+          ) + expandedExtra
         );
       }
     }
 
     /**
-     * Calculate hierarchical layout positions for steps based on branch structure
+     * Calculate left-to-right layout positions for steps: x advances one
+     * column per step depth, sibling branches fan out vertically around the
+     * parent's vertical center.
      */
     function calculateHierarchicalLayout(
       steps: StepData[]
@@ -1369,12 +1359,12 @@ function FlowVisualizerInner({
       // Layout parameters
       const startX = FLOW_LAYOUT.HIERARCHICAL.START_X;
       const startY = FLOW_LAYOUT.HIERARCHICAL.START_Y;
-      const minVerticalSpacing = FLOW_LAYOUT.HIERARCHICAL.MIN_VERTICAL_SPACING;
-      const horizontalSpacing = FLOW_LAYOUT.HIERARCHICAL.HORIZONTAL_SPACING;
+      const columnSpacing = FLOW_LAYOUT.HIERARCHICAL.COLUMN_SPACING;
+      const branchGap = FLOW_LAYOUT.HIERARCHICAL.BRANCH_VERTICAL_GAP;
+      const stepWidth = STEP_CONTAINER_LAYOUT.WIDTH;
 
       // Build adjacency map: parent -> children (using step.parentStepId)
       const childrenMap = new Map<string, StepData[]>();
-      const parentMap = new Map<string, string>();
 
       // Build map of all parents for each step from edges (for convergence detection)
       const allParentsMap = new Map<string, string[]>();
@@ -1391,7 +1381,6 @@ function FlowVisualizerInner({
             childrenMap.set(step.parentStepId, []);
           }
           childrenMap.get(step.parentStepId)!.push(step);
-          parentMap.set(step.id, step.parentStepId);
         }
       }
 
@@ -1402,32 +1391,30 @@ function FlowVisualizerInner({
       const visited = new Set<string>();
 
       /**
-       * Recursively layout steps in tree structure
+       * Recursively layout steps left-to-right. Returns the bottom-most y
+       * extent of the laid-out subtree so siblings and roots stack without
+       * overlapping.
        */
-      function layoutSubtree(
-        stepId: string,
-        x: number,
-        y: number,
-        depth: number
-      ): number {
+      function layoutSubtree(stepId: string, x: number, y: number): number {
         if (visited.has(stepId)) {
-          return x;
+          const pos = positionMap.get(stepId);
+          const height =
+            heightMap.get(stepId) || FLOW_LAYOUT.HIERARCHICAL.DEFAULT_HEIGHT;
+          return pos ? pos.y + height : y;
         }
         visited.add(stepId);
 
         // Position current step (will be adjusted later if it's a convergence point)
         positionMap.set(stepId, { x, y });
 
-        // Get children
-        const children = childrenMap.get(stepId) || [];
-
-        if (children.length === 0) {
-          return x;
-        }
-
-        // Get the height of the current step
         const currentStepHeight =
           heightMap.get(stepId) || FLOW_LAYOUT.HIERARCHICAL.DEFAULT_HEIGHT;
+        let maxBottom = y + currentStepHeight;
+
+        const children = childrenMap.get(stepId) || [];
+        if (children.length === 0) {
+          return maxBottom;
+        }
 
         // Sort children by branch type (then before else) for consistent layout
         const sortedChildren = [...children].sort((a, b) => {
@@ -1437,48 +1424,44 @@ function FlowVisualizerInner({
           return aOrder - bOrder;
         });
 
-        let currentX = x;
+        // Children sit one column to the right; siblings (branches) stack
+        // vertically, centered on the parent's vertical center
+        const childX = x + stepWidth + columnSpacing;
+        const childHeights = sortedChildren.map(
+          (child) =>
+            heightMap.get(child.id) || FLOW_LAYOUT.HIERARCHICAL.DEFAULT_HEIGHT
+        );
+        const totalChildrenHeight =
+          childHeights.reduce((sum, h) => sum + h, 0) +
+          (sortedChildren.length - 1) * branchGap;
+        let childY = y + currentStepHeight / 2 - totalChildrenHeight / 2;
 
-        // Layout children horizontally – all children (sequential and branches) are spread
-        // around the parent X to avoid overlapping at the same level.
         for (let i = 0; i < sortedChildren.length; i++) {
-          const child = sortedChildren[i];
-
-          // Offset all children horizontally based on index
-          const branchOffset =
-            (i - (sortedChildren.length - 1) / 2) * horizontalSpacing;
-          const childX = x + branchOffset;
-
-          // Calculate child Y position based on parent's bottom + minimum spacing
-          const childY = y + currentStepHeight + minVerticalSpacing;
-
-          // Recursively layout child's subtree
-          const subtreeEndX = layoutSubtree(
-            child.id,
+          const subtreeBottom = layoutSubtree(
+            sortedChildren[i].id,
             childX,
-            childY,
-            depth + 1
+            childY
           );
-
-          // Update currentX for next sibling
-          if (i < sortedChildren.length - 1) {
-            currentX = subtreeEndX + horizontalSpacing;
-          }
+          maxBottom = Math.max(maxBottom, subtreeBottom);
+          // Next sibling starts below this sibling's whole subtree
+          childY =
+            Math.max(childY + childHeights[i], subtreeBottom) + branchGap;
         }
 
-        return currentX;
+        return maxBottom;
       }
 
-      // Layout from each root
-      let currentRootX = startX;
+      // Layout from each root, stacking roots vertically
+      let currentRootY = startY;
       for (const rootStep of rootSteps) {
-        const endX = layoutSubtree(rootStep.id, currentRootX, startY, 0);
-        currentRootX = endX + horizontalSpacing;
+        const bottom = layoutSubtree(rootStep.id, startX, currentRootY);
+        currentRootY = bottom + branchGap;
       }
 
-      // Post-process: Re-position convergence points after all parents are positioned
-      // This ensures convergence points are properly centered even if parents were laid out in different subtrees
-      // We need to iterate multiple times until positions stabilize (in case convergence points depend on other convergence points)
+      // Post-process: Re-position convergence points (steps with multiple
+      // parents) into the column right of their right-most parent, centered
+      // vertically between the parents. Iterate until positions stabilize
+      // (convergence points can depend on other convergence points).
       let changed = true;
       let iterations = 0;
       const maxIterations = 10; // Safety limit (not a layout constant, but a convergence limit)
@@ -1504,23 +1487,30 @@ function FlowVisualizerInner({
               );
 
             if (parentPositions.length > 0) {
-              const minX = Math.min(...parentPositions.map((p) => p.x));
-              const maxX = Math.max(...parentPositions.map((p) => p.x));
-              const centerX = (minX + maxX) / 2;
-
-              // Calculate Y position based on the bottom of the lowest parent
-              const maxBottomY = Math.max(
-                ...parentPositions.map((p) => p.y + p.height)
+              // Center vertically between the parents' vertical centers
+              const parentCenters = parentPositions.map(
+                (p) => p.y + p.height / 2
               );
-              const stepY = maxBottomY + minVerticalSpacing;
+              const centerY =
+                (Math.min(...parentCenters) + Math.max(...parentCenters)) / 2;
+              const stepHeight =
+                heightMap.get(step.id) ||
+                FLOW_LAYOUT.HIERARCHICAL.DEFAULT_HEIGHT;
+              const stepY = centerY - stepHeight / 2;
+
+              // Place in the column right of the right-most parent
+              const maxRightX = Math.max(
+                ...parentPositions.map((p) => p.x + stepWidth)
+              );
+              const stepX = maxRightX + columnSpacing;
 
               const currentPos = positionMap.get(step.id);
               if (
                 !currentPos ||
-                Math.abs(currentPos.x - centerX) > 1 ||
+                Math.abs(currentPos.x - stepX) > 1 ||
                 Math.abs(currentPos.y - stepY) > 1
               ) {
-                positionMap.set(step.id, { x: centerX, y: stepY });
+                positionMap.set(step.id, { x: stepX, y: stepY });
                 changed = true;
               }
             }
@@ -1544,10 +1534,10 @@ function FlowVisualizerInner({
       }
     }
 
-    // Step-to-step connections
+    // Step-to-step connections (left-to-right flow)
     for (const stepEdge of stepEdges) {
-      markHandleUsed(stepEdge.sourceStepId, 'bottom'); // source
-      markHandleUsed(stepEdge.targetStepId, 'top'); // target
+      markHandleUsed(stepEdge.sourceStepId, 'right'); // source
+      markHandleUsed(stepEdge.targetStepId, 'left'); // target
     }
 
     // Within-step bubble connections (vertical flow inside step containers)
@@ -1643,18 +1633,10 @@ function FlowVisualizerInner({
           id: stepNodeId,
           type: 'transformationNode',
           position: stepPosition,
-          draggable: true,
+          draggable: false,
           data: {
             flowId: currentFlow?.id || flowId,
             transformationId: stepNodeId,
-            onTransformationClick: () => {
-              console.log('onTransformationClick', step.transformationData);
-              useUIStore.getState().showEditorPanel();
-              setExecutionHighlight({
-                startLine: step.location.startLine,
-                endLine: step.location.endLine,
-              });
-            },
             transformationInfo: {
               functionName: step.functionName,
               description: step.description,
@@ -1677,7 +1659,7 @@ function FlowVisualizerInner({
           id: stepNodeId,
           type: 'stepContainerNode',
           position: stepPosition,
-          draggable: true,
+          draggable: false,
           data: {
             flowId: currentFlow?.id || flowId,
             stepId: stepNodeId,
@@ -1734,33 +1716,33 @@ function FlowVisualizerInner({
           ? String(bubble.variableId)
           : String(key);
 
-        // Position inside step container (relative to step)
-        // Uses layout constants from StepContainerNode for consistency
-        const initialPosition = calculateBubblePosition(
+        // Position inside step container (relative to step). Plates after an
+        // inline-expanded one shift down by the reserved panel height so the
+        // expanded form doesn't overlap them (container grows to match in
+        // StepContainerNode).
+        const expandedIndexInStep = step.bubbleIds.findIndex(
+          (id) => String(id) === expandedFlowNodeId
+        );
+        const basePosition = calculateBubblePosition(
           bubbleIndexInStep,
           stepHeaderHeight
         );
+        const initialPosition = {
+          x: basePosition.x,
+          y:
+            basePosition.y +
+            (expandedIndexInStep >= 0 && bubbleIndexInStep > expandedIndexInStep
+              ? FLOW_LAYOUT.EXPANDED.PANEL_HEIGHT
+              : 0),
+        };
 
         const node: Node = {
           id: nodeId,
           type: 'bubbleNode',
           position: initialPosition,
           origin: [0, 0] as [number, number], // Position by top-left for consistent spacing
-          draggable: true,
+          draggable: false,
           parentId: step.id, // Set parent relationship to the step
-          extent: [
-            [
-              STEP_CONTAINER_LAYOUT.PADDING,
-              stepHeaderHeight + STEP_CONTAINER_LAYOUT.PADDING, // Start of content area including padding
-            ],
-            [
-              STEP_CONTAINER_LAYOUT.WIDTH - STEP_CONTAINER_LAYOUT.PADDING,
-              calculateStepContainerHeight(
-                step.bubbleIds.length,
-                stepHeaderHeight
-              ) - STEP_CONTAINER_LAYOUT.PADDING,
-            ],
-          ] as [[number, number], [number, number]], // Constrain to content area below header
           data: {
             flowId: currentFlow?.id || flowId,
             bubble,
@@ -1791,32 +1773,6 @@ function FlowVisualizerInner({
                 ] || []
               );
             })(),
-            onHighlightChange: () => {
-              // BubbleNode will handle store updates
-            },
-            onBubbleClick: () => {
-              useUIStore.getState().showEditorPanel();
-              setExecutionHighlight({
-                startLine: bubble.location.startLine,
-                endLine: bubble.location.endLine,
-              });
-            },
-            onParamEditInCode: (paramName: string) => {
-              // Find the parameter in the bubble's parameters
-              const param = bubble.parameters.find((p) => p.name === paramName);
-              if (param && param.location) {
-                // Open editor if not visible
-                if (!useUIStore.getState().showEditor) {
-                  useUIStore.getState().showEditorPanel();
-                }
-
-                // Highlight the parameter's location in the editor
-                setExecutionHighlight({
-                  startLine: param.location.startLine,
-                  endLine: param.location.endLine,
-                });
-              }
-            },
             hasSubBubbles: !!bubble.dependencyGraph?.dependencies?.length,
             usedHandles: usedHandlesMap.get(nodeId),
           },
@@ -2045,8 +2001,8 @@ function FlowVisualizerInner({
         id: edgeId,
         source: stepEdge.sourceStepId,
         target: stepEdge.targetStepId,
-        sourceHandle: 'bottom',
-        targetHandle: 'top',
+        sourceHandle: 'right',
+        targetHandle: 'left',
         // Slightly curved, more organic than straight/step lines
         type: 'simplebezier',
         animated: true,
@@ -2091,9 +2047,10 @@ function FlowVisualizerInner({
     return { initialNodes: nodes, initialEdges: edges };
   };
 
-  // Track previous expandedRootIds and currentFlow to detect changes
+  // Track previous expandedRootIds, expanded node and currentFlow to detect changes
   const prevExpandedRootIdsRef = useRef<number[]>([]);
   const prevFlowRef = useRef<typeof currentFlow>(undefined);
+  const prevExpandedFlowNodeIdRef = useRef<string | null>(null);
 
   // Sync nodes and edges state with computed values, preserving positions
   useEffect(() => {
@@ -2101,6 +2058,12 @@ function FlowVisualizerInner({
 
     // Check if flow ID changed
     const flowIdChanged = prevFlowRef.current?.id !== currentFlow?.id;
+
+    // Check if the inline-expanded node changed - positions must rebuild so
+    // surrounding nodes reflow around the expanded parameter form
+    const expandedNodeChanged =
+      prevExpandedFlowNodeIdRef.current !== expandedFlowNodeId;
+    prevExpandedFlowNodeIdRef.current = expandedFlowNodeId;
 
     // Check if bubbleParameters changed (compare by serializing keys and variableIds)
     const prevBubbleParams = prevFlowRef.current?.bubbleParameters || {};
@@ -2136,9 +2099,13 @@ function FlowVisualizerInner({
     const eventTypeChanged =
       prevFlowRef.current?.eventType !== currentFlow?.eventType;
 
-    // Structure changed if flow ID changed OR bubbleParameters changed OR eventType changed
+    // Structure changed if flow ID changed OR bubbleParameters changed OR
+    // eventType changed OR the inline-expanded node changed (reflow)
     const structureChanged =
-      flowIdChanged || bubbleParametersChanged || eventTypeChanged;
+      flowIdChanged ||
+      bubbleParametersChanged ||
+      eventTypeChanged ||
+      expandedNodeChanged;
 
     const expandedChanged =
       prevExpandedRootIdsRef.current.length !== expandedRootIds.length ||
@@ -2275,6 +2242,7 @@ function FlowVisualizerInner({
   }, [
     currentFlow,
     expandedRootIds,
+    expandedFlowNodeId,
     completedBubbles,
     runningBubbles,
     isExecuting,
@@ -2686,6 +2654,8 @@ function FlowVisualizerInner({
             }
           }}
           onPaneClick={() => {
+            // Collapse any inline-expanded node
+            useUIStore.getState().setExpandedFlowNode(null);
             // Dismiss the highlighted bubble
             getExecutionStore(currentFlow?.id || flowId).highlightBubble(null);
             useEditorStore.getState().clearExecutionHighlight();
@@ -2707,8 +2677,8 @@ function FlowVisualizerInner({
             y: 0,
             zoom: FLOW_LAYOUT.VIEWPORT.INITIAL_ZOOM,
           }}
-          nodesDraggable={true}
-          nodesConnectable={true}
+          nodesDraggable={false}
+          nodesConnectable={false}
           elementsSelectable={true}
           panOnDrag={true}
           zoomOnScroll={true}
