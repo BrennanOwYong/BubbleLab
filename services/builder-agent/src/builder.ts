@@ -16,6 +16,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { eq } from 'drizzle-orm';
 import { systemPromptFor, type AgentKind } from './prompts.ts';
+import { tryResolveDeferredSetup } from './deferred.ts';
 import { createBuilderServer, getBuildThread } from './tools.ts';
 import { createPostgresSessionStore } from './session-store.ts';
 import { buildThreads, db } from './db.ts';
@@ -126,7 +127,20 @@ export async function runBuildTurn(opts: {
   const existing = await getBuildThread(flowId);
   const resume = existing?.sessionId ?? undefined;
 
-  await upsertThread(flowId, { status: 'building', agentKind });
+  // Blocked-state invariant: blocked_on_credential is sticky. A turn may
+  // only transition OUT of blocked when the deferred setup resolves (missing
+  // credential now connected + deferred script completed); every other turn
+  // leaves the status and deferred_setup untouched.
+  let blockedNow = existing?.status === 'blocked_on_credential';
+  if (blockedNow && existing) {
+    const resolution = await tryResolveDeferredSetup(existing);
+    await emit('deferred_setup', resolution);
+    blockedNow = !resolution.resolved;
+  }
+  await upsertThread(flowId, {
+    agentKind,
+    ...(blockedNow ? {} : { status: 'building' }),
+  });
 
   const q = query({
     prompt: message,
@@ -162,8 +176,10 @@ export async function runBuildTurn(opts: {
     }
   }
 
-  // report_missing_credential marks the thread blocked mid-run; that status
-  // outlives the turn's own success so the gap stays visible.
+  // Sticky-blocked: the row is blocked here either because
+  // report_missing_credential fired mid-run or because the thread entered the
+  // turn blocked and the deferred setup did not resolve (turn start never
+  // clears it). Either way the marker outlives the turn's own success.
   const after = await getBuildThread(flowId);
   const status =
     after?.status === 'blocked_on_credential'
