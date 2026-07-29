@@ -589,6 +589,38 @@ app.openapi(executeBubbleFlowStreamRoute, async (c) => {
   }
 });
 
+// GET /bubble-flow/bubble-details/:bubbleName — authoritative bubble reference
+// for the external builder agent (Phase 4). Wraps bubble-core's
+// GetBubbleDetailsTool (the same tool Pearl called in-process) so the Node
+// sidecar can fetch exact params/result shapes over HTTP before authoring.
+app.get('/bubble-details/:bubbleName', async (c) => {
+  const bubbleName = c.req.param('bubbleName');
+  try {
+    const { GetBubbleDetailsTool } = await import('@bubblelab/bubble-core');
+    const result = await new GetBubbleDetailsTool({
+      bubbleName,
+      config: { includeLongDescription: true, includeInputSchema: true },
+    }).action();
+    if (!result.success || !result.data) {
+      return c.json(
+        { error: result.error || `Bubble '${bubbleName}' not found` },
+        404
+      );
+    }
+    return c.json(result.data);
+  } catch (error) {
+    return c.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : 'Failed to load bubble details',
+      },
+      500
+    );
+  }
+});
+
 app.openapi(getBubbleFlowRoute, async (c) => {
   const userId = getUserId(c);
   const id = parseInt(c.req.param('id'));
