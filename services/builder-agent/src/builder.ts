@@ -132,10 +132,19 @@ export async function runBuildTurn(opts: {
   // credential now connected + deferred script completed); every other turn
   // leaves the status and deferred_setup untouched.
   let blockedNow = existing?.status === 'blocked_on_credential';
+  let prompt = message;
   if (blockedNow && existing) {
     const resolution = await tryResolveDeferredSetup(existing);
     await emit('deferred_setup', resolution);
     blockedNow = !resolution.resolved;
+    if (resolution.resolved) {
+      // Without this note the resumed session re-runs the setup it remembers
+      // as pending, provisioning duplicate resources (observed live: a second
+      // Standup Log sheet). Tell the agent the deferred work already ran.
+      prompt =
+        `[Automatic setup notice — not from the user] The previously deferred setup for ${resolution.credentialType ?? 'the missing credential'} has ALREADY been executed automatically before this turn. Results: ${JSON.stringify(resolution.results)}. Produced resource ids are already stored in the flow's default_inputs. Do NOT provision or seed again; reuse these ids.\n\n` +
+        message;
+    }
   }
   await upsertThread(flowId, {
     agentKind,
@@ -143,7 +152,7 @@ export async function runBuildTurn(opts: {
   });
 
   const q = query({
-    prompt: message,
+    prompt,
     options: {
       env: { ...process.env, CLAUDE_CONFIG_DIR: config.claudeConfigDir },
       cwd: serviceRoot,
