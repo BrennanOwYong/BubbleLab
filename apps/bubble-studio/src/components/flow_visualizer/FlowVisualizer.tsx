@@ -25,7 +25,6 @@ import {
 import { calculateSubbubblePositionWithContext } from './nodePositioning';
 import { FLOW_LAYOUT } from './flowLayoutConstants';
 import TransformationNode from './nodes/TransformationNode';
-import type { TransformationNodeData } from './nodes/TransformationNode';
 import type { BubbleNodeData } from './nodes/BubbleNode';
 import type {
   DependencyGraphNode,
@@ -43,7 +42,6 @@ import { useEditor } from '@/hooks/useEditor';
 import CronScheduleNode from './nodes/CronScheduleNode';
 import ServiceTriggerNode from './nodes/ServiceTriggerNode';
 import { useEditorStore } from '@/stores/editorStore';
-import { getPearlChatStore } from '@/stores/pearlChatStore';
 import { GeneratingOverlay } from './GeneratingOverlay';
 import {
   applyProfileDefaults,
@@ -2509,16 +2507,6 @@ function FlowVisualizerInner({
           <p className="text-gray-400 text-sm mb-4">
             {currentFlow.generationError}
           </p>
-          <button
-            type="button"
-            onClick={() => {
-              // TODO: Implement retry generation
-              console.log('Retry generation for flow', flowId);
-            }}
-            className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-          >
-            Retry Generation
-          </button>
         </div>
       </div>
     );
@@ -2557,7 +2545,7 @@ function FlowVisualizerInner({
         </div>
       )}
 
-      {/* Show blank state when code is empty (generating in Pearl) */}
+      {/* Show blank state when code is empty (flow still being built externally) */}
       {isGenerating ? (
         <GeneratingOverlay />
       ) : (
@@ -2569,54 +2557,15 @@ function FlowVisualizerInner({
           nodeTypes={nodeTypes}
           onNodeClick={(_event, node) => {
             const executionStore = getExecutionStore(currentFlow?.id || flowId);
-            const pearlChatStore = getPearlChatStore(currentFlow?.id || flowId);
-            const isDesktopView =
-              window.matchMedia('(min-width: 768px)').matches;
 
-            if (node.type === 'stepContainerNode') {
-              const stepData = node.data as unknown as {
-                stepId: string;
-                stepInfo: {
-                  functionName: string;
-                  description?: string;
-                  location: { startLine: number; endLine: number };
-                  isAsync: boolean;
-                };
-              };
-              const functionName = stepData.stepInfo.functionName;
-
-              // Highlight the step container
+            if (
+              node.type === 'stepContainerNode' ||
+              node.type === 'transformationNode' ||
+              node.type === 'inputSchemaNode' ||
+              node.type === 'cronScheduleNode'
+            ) {
+              // Highlight the clicked node
               executionStore.highlightBubble(node.id);
-
-              console.log('addStepToContext', functionName);
-
-              // Add step to context (automatically clears bubble and transformation context)
-              pearlChatStore.getState().addStepToContext(functionName);
-
-              // Open Pearl panel (only on desktop - on mobile, user can use the Flow/Panel toggle)
-              if (isDesktopView) {
-                useUIStore.getState().openConsolidatedPanelWith('pearl');
-              }
-            } else if (node.type === 'transformationNode') {
-              const transformationInfo = (
-                node.data as unknown as TransformationNodeData
-              ).transformationInfo;
-              const functionName = transformationInfo.functionName;
-
-              // Highlight the transformation node
-              executionStore.highlightBubble(node.id);
-
-              console.log('addTransformationToContext', functionName);
-
-              // Add transformation to context (automatically clears bubble context)
-              pearlChatStore
-                .getState()
-                .addTransformationToContext(functionName);
-
-              // Open Pearl panel (only on desktop)
-              if (isDesktopView) {
-                useUIStore.getState().openConsolidatedPanelWith('pearl');
-              }
             } else if (node.type === 'bubbleNode') {
               // For bubble nodes, use variableId
               const bubbleData = (node.data as unknown as BubbleNodeData)
@@ -2638,30 +2587,6 @@ function FlowVisualizerInner({
                   endLine: bubbleData.location.endLine,
                 });
               }
-
-              // Clear and set context
-              pearlChatStore.getState().clearBubbleContext();
-              const contextKey = bubbleData.variableId
-                ? bubbleData.variableId
-                : Number(node.id);
-
-              pearlChatStore.getState().addBubbleToContext(contextKey);
-              // Open Pearl panel (only on desktop)
-              if (isDesktopView) {
-                useUIStore.getState().openConsolidatedPanelWith('pearl');
-              }
-            } else if (
-              node.type === 'inputSchemaNode' ||
-              node.type === 'cronScheduleNode'
-            ) {
-              // Highlight the entry node
-              executionStore.highlightBubble(node.id);
-              // Clear the bubble context (entry nodes don't have bubble context)
-              pearlChatStore.getState().clearBubbleContext();
-              // Open Pearl panel (only on desktop)
-              if (isDesktopView) {
-                useUIStore.getState().openConsolidatedPanelWith('pearl');
-              }
             }
           }}
           onPaneClick={() => {
@@ -2670,15 +2595,6 @@ function FlowVisualizerInner({
             // Dismiss the highlighted bubble
             getExecutionStore(currentFlow?.id || flowId).highlightBubble(null);
             useEditorStore.getState().clearExecutionHighlight();
-
-            // Clear the bubble context
-            // Only open panel on desktop - on mobile, user can use the Flow/Panel toggle
-            if (window.matchMedia('(min-width: 768px)').matches) {
-              useUIStore.getState().openConsolidatedPanelWith('pearl');
-            }
-            getPearlChatStore(currentFlow?.id || flowId)
-              .getState()
-              .clearBubbleContext();
           }}
           proOptions={proOptions}
           minZoom={FLOW_LAYOUT.VIEWPORT.MIN_ZOOM}

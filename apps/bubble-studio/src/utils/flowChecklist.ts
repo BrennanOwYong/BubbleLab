@@ -6,12 +6,12 @@
  * generation time). Fallback source: the approved plan inside the flow's
  * saved conversation thread (metadata.conversationMessages).
  */
+import { type ParsedWorkflow } from '@bubblelab/shared-schemas';
 import {
-  CoffeeMessageSchema,
-  type CoffeeMessage,
-  type ParsedWorkflow,
+  ConversationMessageSchema,
+  type ConversationMessage,
   type PlanMessage,
-} from '@bubblelab/shared-schemas';
+} from '../types/conversation';
 import { extractStepGraph } from './workflowToSteps';
 import {
   humanizeFieldName,
@@ -30,7 +30,7 @@ export interface ChecklistItem {
 /**
  * Programmatic status message the generate route appends to
  * metadata.conversationMessages when a build finishes. Distinct from the
- * CoffeeMessage union (role/kind/timestampMs instead of type/id/timestamp).
+ * ConversationMessage union (role/kind/timestampMs instead of type/id/timestamp).
  */
 export interface WorkflowStatusMessage {
   role: 'system';
@@ -44,7 +44,7 @@ export interface WorkflowStatusMessage {
 
 /** One entry of the full conversation thread, in persisted order */
 export type ConversationEntry =
-  | { kind: 'coffee'; message: CoffeeMessage }
+  | { kind: 'coffee'; message: ConversationMessage }
   | { kind: 'status'; message: WorkflowStatusMessage };
 
 function isWorkflowStatusMessage(
@@ -88,7 +88,7 @@ export function parseConversationThread(
       });
       continue;
     }
-    const parsed = CoffeeMessageSchema.safeParse(entry);
+    const parsed = ConversationMessageSchema.safeParse(entry);
     if (parsed.success) {
       entries.push({ kind: 'coffee', message: parsed.data });
     }
@@ -98,18 +98,18 @@ export function parseConversationThread(
 
 /**
  * Parse the conversation thread persisted on a flow's metadata.
- * Validates each entry against CoffeeMessageSchema individually so one
+ * Validates each entry against ConversationMessageSchema individually so one
  * unknown message shape does not drop the whole thread.
  */
 export function parseConversationMessages(
   metadata: Record<string, unknown> | undefined
-): CoffeeMessage[] {
+): ConversationMessage[] {
   const raw = metadata?.conversationMessages;
   if (!Array.isArray(raw)) return [];
 
-  const messages: CoffeeMessage[] = [];
+  const messages: ConversationMessage[] = [];
   for (const entry of raw) {
-    const parsed = CoffeeMessageSchema.safeParse(entry);
+    const parsed = ConversationMessageSchema.safeParse(entry);
     if (parsed.success) {
       messages.push(parsed.data);
     }
@@ -119,7 +119,7 @@ export function parseConversationMessages(
 
 /** Latest plan message in the thread (the plan the user approved), if any */
 export function findPlanMessage(
-  messages: CoffeeMessage[]
+  messages: ConversationMessage[]
 ): PlanMessage | undefined {
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
@@ -392,7 +392,7 @@ function deriveFromPlan(plan: PlanMessage): ChecklistItem[] {
  */
 export function deriveChecklistItems(
   workflow: ParsedWorkflow | undefined,
-  conversationMessages: CoffeeMessage[]
+  conversationMessages: ConversationMessage[]
 ): ChecklistItem[] {
   if (workflow && workflow.root && workflow.root.length > 0) {
     const items = deriveFromWorkflow(workflow);
@@ -410,7 +410,7 @@ export function deriveChecklistItems(
  * present, else the flow's stored description.
  */
 export function deriveFlowSummary(
-  conversationMessages: CoffeeMessage[],
+  conversationMessages: ConversationMessage[],
   flowDescription: string | undefined
 ): string | undefined {
   const plan = findPlanMessage(conversationMessages);
@@ -596,7 +596,7 @@ function deriveErrorItems(eventType: string | undefined): ChecklistItem[] {
  */
 export function deriveChecklistSections(options: {
   workflow: ParsedWorkflow | undefined;
-  conversationMessages: CoffeeMessage[];
+  conversationMessages: ConversationMessage[];
   inputSchema?: unknown;
   eventType?: string;
   cron?: string | null;

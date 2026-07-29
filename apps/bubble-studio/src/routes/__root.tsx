@@ -1,7 +1,6 @@
 import { createRootRoute, Outlet } from '@tanstack/react-router';
 import { TanStackRouterDevtools } from '@tanstack/router-devtools';
 import { Sidebar } from '@/components/Sidebar';
-import { BubbleSidePanel } from '@/components/BubbleSidePanel';
 import { ToastContainer } from 'react-toastify';
 import { useUIStore } from '@/stores/uiStore';
 import { useEffect, useRef } from 'react';
@@ -50,7 +49,6 @@ function RootLayout() {
       </div>
 
       {/* Global overlays */}
-      <BubbleSidePanel />
       <ToastContainer
         position="top-right"
         autoClose={5000}

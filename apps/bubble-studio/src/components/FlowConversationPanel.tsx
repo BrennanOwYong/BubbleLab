@@ -1,17 +1,19 @@
 /**
  * Read-only view of the conversation that built this flow.
  *
- * Renders the CoffeeMessage thread persisted on the flow's
+ * Renders the message thread persisted on the flow's
  * metadata.conversationMessages (user prompts, clarification Q&A, the
  * approved plan) in chat style. Data arrives via useBubbleFlow -> GET
- * /bubble-flow/:id -> metadata, parsed by parseConversationMessages.
+ * /bubble-flow/:id -> metadata, parsed by parseConversationThread. The
+ * thread is written by the external agent that builds flows; the studio
+ * only displays it.
  */
 import { useMemo } from 'react';
 import { CheckCircle2, MessageSquare, XCircle } from 'lucide-react';
 import type {
   ClarificationQuestion,
-  CoffeeMessage,
-} from '@bubblelab/shared-schemas';
+  ConversationMessage as ThreadMessage,
+} from '../types/conversation';
 import { useBubbleFlow } from '../hooks/useBubbleFlow';
 import {
   parseConversationThread,
@@ -142,7 +144,7 @@ function ConversationMessage({
   message,
   questionsById,
 }: {
-  message: CoffeeMessage;
+  message: ThreadMessage;
   questionsById: Map<string, ClarificationQuestion>;
 }) {
   switch (message.type) {

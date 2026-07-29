@@ -4,11 +4,9 @@ import { create } from 'zustand';
  * UI Store - Global panel visibility and UI state
  *
  * Philosophy: Manages all UI chrome - panels, modals, indicators
- * Does NOT manage domain-specific state (execution, generation, editor)
+ * Does NOT manage domain-specific state (execution, editor)
  * Navigation is now handled by TanStack Router
  */
-
-export type SidePanelMode = 'closed' | 'bubbleList' | 'milktea' | 'pearl';
 
 /**
  * Tabs in the consolidated side panel. 'checklist' is the primary view of
@@ -16,7 +14,6 @@ export type SidePanelMode = 'closed' | 'bubbleList' | 'milktea' | 'pearl';
  * flow editor.
  */
 export type ConsolidatedPanelTab =
-  | 'pearl'
   | 'checklist'
   | 'conversation'
   | 'output'
@@ -54,23 +51,6 @@ interface UIStore {
    */
   isOutputCollapsed: boolean;
 
-  // ============= Side Panel State =============
-
-  /**
-   * Current side panel mode
-   */
-  sidePanelMode: SidePanelMode;
-
-  /**
-   * Currently selected bubble name (for milktea panel)
-   */
-  selectedBubbleName: string | null;
-
-  /**
-   * Target line for code insertion
-   */
-  targetInsertLine: number | null;
-
   // ============= Consolidated Side Panel State =============
 
   /**
@@ -91,7 +71,7 @@ interface UIStore {
   showExportModal: boolean;
 
   /**
-   * Whether to show the generation prompt info
+   * Whether to show the flow's stored prompt info
    */
   showPrompt: boolean;
 
@@ -101,8 +81,6 @@ interface UIStore {
    * previously expanded one.
    */
   expandedFlowNodeId: string | null;
-
-  // ============= Visual Indicators =============
 
   // ============= Actions =============
 
@@ -174,28 +152,6 @@ interface UIStore {
    */
   togglePrompt: () => void;
 
-  // ============= Side Panel Actions =============
-
-  /**
-   * Open side panel for bubble list
-   */
-  openBubbleListPanel: (line: number) => void;
-
-  /**
-   * Close side panel
-   */
-  closeSidePanel: () => void;
-
-  /**
-   * Select a bubble (opens milktea panel)
-   */
-  selectBubble: (bubbleName: string | null) => void;
-
-  /**
-   * Open Pearl chat panel
-   */
-  openPearlChat: () => void;
-
   // ============= Consolidated Panel Actions =============
 
   /**
@@ -221,12 +177,6 @@ interface UIStore {
 
 /**
  * Zustand store for UI state
- *
- * Usage example:
- * ```typescript
- * const { currentPage, navigateToPage } = useUIStore();
- * navigateToPage('ide');
- * ```
  */
 export const useUIStore = create<UIStore>((set) => ({
   // Initial state
@@ -237,11 +187,8 @@ export const useUIStore = create<UIStore>((set) => ({
   isOutputCollapsed: true,
   showExportModal: false,
   showPrompt: false,
-  sidePanelMode: 'closed',
-  selectedBubbleName: null,
-  targetInsertLine: null,
   isConsolidatedPanelOpen: true,
-  consolidatedPanelTab: 'pearl',
+  consolidatedPanelTab: 'checklist',
   expandedFlowNodeId: null,
 
   // Actions
@@ -288,35 +235,6 @@ export const useUIStore = create<UIStore>((set) => ({
 
   togglePrompt: () => set((state) => ({ showPrompt: !state.showPrompt })),
 
-  // Side panel actions
-  openBubbleListPanel: (line) =>
-    set({
-      sidePanelMode: 'bubbleList',
-      targetInsertLine: line,
-      selectedBubbleName: null,
-    }),
-
-  closeSidePanel: () =>
-    set({
-      sidePanelMode: 'closed',
-      selectedBubbleName: null,
-      targetInsertLine: null,
-    }),
-
-  selectBubble: (bubbleName) =>
-    set({
-      sidePanelMode: bubbleName === null ? 'bubbleList' : 'milktea',
-      selectedBubbleName: bubbleName,
-      // Keep targetInsertLine from when panel was opened
-    }),
-
-  openPearlChat: () =>
-    set({
-      sidePanelMode: 'pearl',
-      selectedBubbleName: null,
-      targetInsertLine: null,
-    }),
-
   // Consolidated panel actions
   setConsolidatedPanelTab: (tab) => set({ consolidatedPanelTab: tab }),
 
@@ -341,27 +259,3 @@ export const useUIStore = create<UIStore>((set) => ({
  */
 export const selectHasSelectedFlow = (state: UIStore): boolean =>
   state.selectedFlowId !== null;
-
-/**
- * Check if side panel is open
- */
-export const selectIsSidePanelOpen = (state: UIStore): boolean =>
-  state.sidePanelMode !== 'closed';
-
-/**
- * Check if bubble list panel is open
- */
-export const selectIsBubbleListOpen = (state: UIStore): boolean =>
-  state.sidePanelMode === 'bubbleList' && state.selectedBubbleName === null;
-
-/**
- * Check if milktea panel is open
- */
-export const selectIsMilkteaPanelOpen = (state: UIStore): boolean =>
-  state.sidePanelMode === 'milktea' && state.selectedBubbleName !== null;
-
-/**
- * Check if Pearl chat panel is open
- */
-export const selectIsPearlChatOpen = (state: UIStore): boolean =>
-  state.sidePanelMode === 'pearl';

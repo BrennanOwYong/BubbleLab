@@ -1,5 +1,5 @@
 /**
- * Overlay shown when Gluu is generating workflow code
+ * Overlay shown when a flow has no code yet (still being built externally)
  */
 
 export function GeneratingOverlay() {
@@ -56,7 +56,7 @@ export function GeneratingOverlay() {
           </div>
 
           <p className="text-gray-300 text-base font-medium">
-            Please be patient, Gluu is generating your workflow...
+            This flow is still being built. Check back soon.
           </p>
         </div>
       </div>

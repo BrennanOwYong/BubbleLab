@@ -2,8 +2,6 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { HomePage } from '@/pages/HomePage';
 import { useAuth } from '@/hooks/useAuth';
 import { useDeleteBubbleFlow } from '@/hooks/useDeleteBubbleFlow';
-import { useGenerationStore } from '@/stores/generationStore';
-import { useOutputStore } from '@/stores/outputStore';
 import { useBubbleFlowList } from '@/hooks/useBubbleFlowList';
 import { toast } from 'react-toastify';
 
@@ -15,8 +13,6 @@ function HomeRoute() {
   const navigate = useNavigate();
   const { isSignedIn } = useAuth();
   const deleteBubbleFlowMutation = useDeleteBubbleFlow();
-  const { isStreaming } = useGenerationStore();
-  const { setOutput } = useOutputStore();
   const { data: bubbleFlowList } = useBubbleFlowList();
 
   // Redirect to /home if not signed in
@@ -26,37 +22,8 @@ function HomeRoute() {
     return null;
   }
 
-  const navigationLockToastId = 'sidebar-navigation-lock';
-
-  const notifyNavigationLocked = () => {
-    if (!toast.isActive(navigationLockToastId)) {
-      toast.info(
-        'Flow generation in progress. Please wait until it completes before navigating.',
-        {
-          toastId: navigationLockToastId,
-          autoClose: 3000,
-        }
-      );
-    }
-  };
-
-  // Click guard for the flow-card <Link>: navigation itself is handled by the
-  // anchor (real href, so middle/ctrl-click open a new tab); this only blocks
-  // in-tab navigation while a generation is streaming.
-  const handleFlowSelect = (_flowId: number, event: React.MouseEvent) => {
-    if (isStreaming) {
-      event.preventDefault();
-      notifyNavigationLocked();
-    }
-  };
-
   const handleFlowDelete = async (flowId: number, event: React.MouseEvent) => {
     event.stopPropagation();
-
-    if (isStreaming) {
-      notifyNavigationLocked();
-      return;
-    }
 
     // Show confirmation dialog
     const flowName = bubbleFlowList?.bubbleFlows.find(
@@ -78,31 +45,15 @@ function HomeRoute() {
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error';
         console.error('[deleteFlow] Error deleting flow:', error);
-
-        setOutput(
-          (prev) =>
-            prev + `\n❌ Failed to delete flow "${flowName}": ${errorMessage}`
-        );
+        toast.error(`Failed to delete flow "${flowName}": ${errorMessage}`);
       }
-    }
-  };
-
-  // Click guard for the New Flow <Link to="/home">.
-  const handleNavigateToDashboard = (event: React.MouseEvent) => {
-    if (isStreaming) {
-      event.preventDefault();
-      notifyNavigationLocked();
     }
   };
 
   return (
     <div className="h-screen flex flex-col bg-[#1a1a1a] text-gray-100">
       <div className="flex-1 min-h-0">
-        <HomePage
-          onFlowSelect={handleFlowSelect}
-          onFlowDelete={handleFlowDelete}
-          onNavigateToDashboard={handleNavigateToDashboard}
-        />
+        <HomePage onFlowDelete={handleFlowDelete} />
       </div>
     </div>
   );
