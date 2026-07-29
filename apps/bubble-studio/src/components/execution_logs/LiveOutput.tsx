@@ -9,8 +9,6 @@ import {
 } from '../../utils/executionLogsFormatUtils';
 import { useLiveOutput } from '../../hooks/useLiveOutput';
 import { useExecutionStore } from '../../stores/executionStore';
-import { usePearlChatStore } from '../../hooks/usePearlChatStore';
-import { useUIStore } from '../../stores/uiStore';
 import AllEventsView from './AllEventsView';
 import { EvaluationIssuePopup } from './EvaluationIssuePopup';
 import { EvaluationLoadingPopup } from './EvaluationLoadingPopup';
@@ -51,18 +49,6 @@ export default function LiveOutput({
     dismissEvaluationPopup,
     isEvaluating,
   } = executionState;
-
-  // Pearl chat for fixing issues
-  const pearl = usePearlChatStore(flowId);
-  const { openConsolidatedPanelWith } = useUIStore();
-
-  // Handle fix with Pearl from popup
-  const handleFixWithPearl = (issueDescription: string) => {
-    if (!flowId) return;
-    pearl.startGeneration(issueDescription);
-    openConsolidatedPanelWith('pearl');
-    dismissEvaluationPopup();
-  };
 
   // Get computed values using non-reactive getters (no re-renders)
   const orderedItems = getOrderedItems();
@@ -110,8 +96,6 @@ export default function LiveOutput({
           isOpen={showEvaluationPopup}
           onClose={dismissEvaluationPopup}
           evaluationResult={evaluationResult}
-          onFixWithPearl={handleFixWithPearl}
-          isFixingWithPearl={pearl.isPending}
         />
       )}
     </div>

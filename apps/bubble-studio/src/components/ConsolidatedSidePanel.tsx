@@ -4,10 +4,8 @@ import {
   KeyRound,
   ListChecks,
   MessageSquare,
-  Sparkles,
 } from 'lucide-react';
 import { useMemo } from 'react';
-import { PearlChat } from './ai/PearlChat';
 import { FlowSetupPanel } from './FlowSetupPanel';
 import { FlowChecklistPanel } from './FlowChecklistPanel';
 import { FlowConversationPanel } from './FlowConversationPanel';
@@ -63,12 +61,6 @@ export function ConsolidatedSidePanel() {
   const { total: executionTotal } = useExecutionHistory(flowId, { limit: 10 });
 
   const tabs = [
-    {
-      id: 'pearl' as const,
-      label: 'Gluu',
-      icon: Sparkles,
-      badge: null,
-    },
     {
       // Replaces the raw Code tab: plain-language checklist of what the
       // flow does. Raw code is not displayed anywhere in the flow editor.
@@ -154,11 +146,6 @@ export function ConsolidatedSidePanel() {
 
       {/* Tab Content - Monaco is always mounted for useEditor to work */}
       <div className="flex-1 min-h-0 overflow-hidden relative">
-        {/* Pearl Chat Tab - Only render when active */}
-        <div className="absolute inset-0">
-          <PearlChat />
-        </div>
-
         {/* Checklist Tab - plain-language view of what the flow does */}
         {activeTab === 'checklist' && (
           <div className="absolute inset-0">

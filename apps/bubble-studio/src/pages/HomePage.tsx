@@ -7,7 +7,6 @@ import {
   Check,
   X,
   Search,
-  Plus,
   Copy,
 } from 'lucide-react';
 import { useBubbleFlowList } from '../hooks/useBubbleFlowList';
@@ -22,18 +21,10 @@ import { useSubscription } from '../hooks/useSubscription';
 import type { OptimisticBubbleFlowListItem } from '../hooks/useCreateBubbleFlow';
 
 export interface HomePageProps {
-  /** Click guard for the flow-card link; call event.preventDefault() to block navigation. */
-  onFlowSelect: (flowId: number, event: React.MouseEvent) => void;
   onFlowDelete: (flowId: number, event: React.MouseEvent) => void;
-  /** Click guard for the New Flow link; call event.preventDefault() to block navigation. */
-  onNavigateToDashboard: (event: React.MouseEvent) => void;
 }
 
-export const HomePage: React.FC<HomePageProps> = ({
-  onFlowSelect,
-  onFlowDelete,
-  onNavigateToDashboard,
-}) => {
+export const HomePage: React.FC<HomePageProps> = ({ onFlowDelete }) => {
   const { data: bubbleFlowListResponse, loading } = useBubbleFlowList();
   const { data: subscription } = useSubscription();
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
@@ -178,14 +169,6 @@ export const HomePage: React.FC<HomePageProps> = ({
                 Manage and monitor your workflows
               </p>
             </div>
-            <Link
-              to="/home"
-              onClick={onNavigateToDashboard}
-              className="px-5 py-2.5 bg-white text-black hover:bg-gray-200 text-sm font-medium rounded-full transition-all duration-200 flex items-center gap-2 shadow-lg hover:scale-105"
-            >
-              <Plus className="h-5 w-5" />
-              <span className="font-bold font-sans">New Flow</span>
-            </Link>
           </div>
 
           {/* Search Bar */}
@@ -233,7 +216,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                   No flows yet
                 </h2>
                 <p className="text-gray-500 text-sm">
-                  Create your first flow to get started
+                  Flows built for you will appear here
                 </p>
               </>
             )}
@@ -259,7 +242,6 @@ export const HomePage: React.FC<HomePageProps> = ({
                     <Link
                       to="/flow/$flowId"
                       params={{ flowId: String(flow.id) }}
-                      onClick={(e) => onFlowSelect(flow.id, e)}
                       className="absolute inset-0 z-[1] rounded-lg"
                       aria-label={`Open flow ${flow.name || 'Untitled Flow'}`}
                     />

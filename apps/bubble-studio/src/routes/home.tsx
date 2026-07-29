@@ -1,64 +1,61 @@
-import { createFileRoute } from '@tanstack/react-router';
-import { DashboardPage } from '@/pages/DashboardPage';
-import { useGenerationStore } from '@/stores/generationStore';
-import { useFlowGeneration } from '@/hooks/useFlowGeneration';
-import { useUIStore } from '@/stores/uiStore';
-import { usePromptFromURL } from '@/hooks/usePromptFromURL';
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { useEffect } from 'react';
+import { useAuth } from '@/hooks/useAuth';
+import { SignInModal } from '@/components/SignInModal';
 import { useAffiliateTracking } from '@/hooks/useAffiliateTracking';
 
 interface HomeRouteSearch {
   showSignIn?: boolean;
-  prompt?: string;
   ref?: string;
 }
 
 export const Route = createFileRoute('/home')({
-  component: NewFlowPage,
+  component: LandingPage,
   validateSearch: (search: Record<string, unknown>): HomeRouteSearch => {
     return {
       showSignIn: search.showSignIn === true || search.showSignIn === 'true',
-      prompt: typeof search.prompt === 'string' ? search.prompt : undefined,
       ref: typeof search.ref === 'string' ? search.ref : undefined,
     };
   },
 });
 
-function NewFlowPage() {
-  const { showSignIn, prompt, ref } = Route.useSearch();
-  const {
-    generationPrompt,
-    selectedPreset,
-    setGenerationPrompt,
-    isStreaming,
-    setSelectedPreset,
-  } = useGenerationStore();
-
-  const { closeSidebar } = useUIStore();
-  const { generateCode: generateCodeFromHook } = useFlowGeneration();
-
-  // Handle prompt from URL with authentication check
-  const { showSignInModal } = usePromptFromURL({ prompt });
+/**
+ * Auth landing page. Flows are created by an external agent, so the studio
+ * has no in-app flow creation: signed-in users go straight to their flow
+ * list; signed-out users get the sign-in modal.
+ */
+function LandingPage() {
+  const { ref } = Route.useSearch();
+  const { isSignedIn } = useAuth();
+  const navigate = useNavigate();
 
   // Handle affiliate referral tracking
   useAffiliateTracking({ ref });
 
-  // Wrapper function that calls the hook's generateCode with proper parameters
-  const generateCode = async () => {
-    // Hide the sidebar so the IDE has maximum space during a new generation
-    closeSidebar();
+  useEffect(() => {
+    if (isSignedIn) {
+      navigate({ to: '/flows', replace: true });
+    }
+  }, [isSignedIn, navigate]);
 
-    await generateCodeFromHook(generationPrompt, selectedPreset);
-  };
+  if (isSignedIn) {
+    return null;
+  }
 
   return (
-    <DashboardPage
-      isStreaming={isStreaming}
-      generationPrompt={generationPrompt}
-      setGenerationPrompt={setGenerationPrompt}
-      selectedPreset={selectedPreset}
-      setSelectedPreset={setSelectedPreset}
-      onGenerateCode={generateCode}
-      autoShowSignIn={showSignIn || showSignInModal}
-    />
+    <div className="h-screen flex flex-col bg-[#0a0a0a] text-gray-100 font-sans relative overflow-hidden">
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[500px] bg-purple-900/10 rounded-[100%] blur-[100px] pointer-events-none" />
+      <div className="flex-1 flex items-center justify-center relative z-10">
+        <div className="text-center px-4">
+          <h1 className="text-4xl md:text-5xl font-bold text-white tracking-tight pb-2">
+            Your automations, ready to run
+          </h1>
+          <p className="text-gray-400 mt-2 text-sm">
+            Sign in to view and run your flows
+          </p>
+        </div>
+      </div>
+      <SignInModal isVisible={true} onClose={() => {}} />
+    </div>
   );
 }
