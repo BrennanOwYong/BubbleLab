@@ -319,9 +319,9 @@ export function createBuilderServer(
                   ),
               })
             )
-            .min(1)
+            .default([])
             .describe(
-              'Ordered setup actions to run once the credential exists'
+              'Ordered setup actions to run once the credential exists. Leave EMPTY (or omit) when nothing is deferrable — e.g. a missing API key with no provisioning step; never invent a noop action to fill it.'
             ),
         },
         async ({ credentialType, deferredSetupScript }) => {

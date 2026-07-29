@@ -45,7 +45,7 @@ Baseline: the user already connected the credential a setup action needs. If pre
 
 When a required credential is MISSING, you must NOT proceed silently and must NOT fabricate an ID:
 1. Detect the gap — a setup action needs a credential type the user has not connected (a provisioning tool error naming a missing credential is the signal).
-2. Call report_missing_credential with the exact credential type and the ordered deferred setup script (the setup actions to run once the credential exists) so nothing is lost.
+2. Call report_missing_credential with the exact credential type and the ordered deferred setup script (the setup actions to run once the credential exists) so nothing is lost. When nothing is deferrable (e.g. a plain API key with no provisioning step), pass an EMPTY script — never invent a noop action.
 3. Tell the user, naming the exact provider/credential to connect, in one or two sentences.
 4. Still author, validate, and save the flow (with the setup-dependent input left as a documented payload field); the flow is "done" only because the deferred setup script and the alert were persisted.
 
