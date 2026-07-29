@@ -16,7 +16,9 @@ import { Route as FlowsRouteImport } from './routes/flows'
 import { Route as CredentialsRouteImport } from './routes/credentials'
 import { Route as AddToolRouteImport } from './routes/add-tool'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as BuildIndexRouteImport } from './routes/build.index'
 import { Route as FlowFlowIdRouteImport } from './routes/flow.$flowId'
+import { Route as BuildFlowIdRouteImport } from './routes/build.$flowId'
 
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
@@ -53,9 +55,19 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BuildIndexRoute = BuildIndexRouteImport.update({
+  id: '/build/',
+  path: '/build/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const FlowFlowIdRoute = FlowFlowIdRouteImport.update({
   id: '/flow/$flowId',
   path: '/flow/$flowId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BuildFlowIdRoute = BuildFlowIdRouteImport.update({
+  id: '/build/$flowId',
+  path: '/build/$flowId',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -67,7 +79,9 @@ export interface FileRoutesByFullPath {
   '/home': typeof HomeRoute
   '/pricing': typeof PricingRoute
   '/settings': typeof SettingsRoute
+  '/build/$flowId': typeof BuildFlowIdRoute
   '/flow/$flowId': typeof FlowFlowIdRoute
+  '/build': typeof BuildIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -77,7 +91,9 @@ export interface FileRoutesByTo {
   '/home': typeof HomeRoute
   '/pricing': typeof PricingRoute
   '/settings': typeof SettingsRoute
+  '/build/$flowId': typeof BuildFlowIdRoute
   '/flow/$flowId': typeof FlowFlowIdRoute
+  '/build': typeof BuildIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -88,7 +104,9 @@ export interface FileRoutesById {
   '/home': typeof HomeRoute
   '/pricing': typeof PricingRoute
   '/settings': typeof SettingsRoute
+  '/build/$flowId': typeof BuildFlowIdRoute
   '/flow/$flowId': typeof FlowFlowIdRoute
+  '/build/': typeof BuildIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -100,7 +118,9 @@ export interface FileRouteTypes {
     | '/home'
     | '/pricing'
     | '/settings'
+    | '/build/$flowId'
     | '/flow/$flowId'
+    | '/build'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -110,7 +130,9 @@ export interface FileRouteTypes {
     | '/home'
     | '/pricing'
     | '/settings'
+    | '/build/$flowId'
     | '/flow/$flowId'
+    | '/build'
   id:
     | '__root__'
     | '/'
@@ -120,7 +142,9 @@ export interface FileRouteTypes {
     | '/home'
     | '/pricing'
     | '/settings'
+    | '/build/$flowId'
     | '/flow/$flowId'
+    | '/build/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -131,7 +155,9 @@ export interface RootRouteChildren {
   HomeRoute: typeof HomeRoute
   PricingRoute: typeof PricingRoute
   SettingsRoute: typeof SettingsRoute
+  BuildFlowIdRoute: typeof BuildFlowIdRoute
   FlowFlowIdRoute: typeof FlowFlowIdRoute
+  BuildIndexRoute: typeof BuildIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -185,11 +211,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/build/': {
+      id: '/build/'
+      path: '/build'
+      fullPath: '/build'
+      preLoaderRoute: typeof BuildIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/flow/$flowId': {
       id: '/flow/$flowId'
       path: '/flow/$flowId'
       fullPath: '/flow/$flowId'
       preLoaderRoute: typeof FlowFlowIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/build/$flowId': {
+      id: '/build/$flowId'
+      path: '/build/$flowId'
+      fullPath: '/build/$flowId'
+      preLoaderRoute: typeof BuildFlowIdRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -203,7 +243,9 @@ const rootRouteChildren: RootRouteChildren = {
   HomeRoute: HomeRoute,
   PricingRoute: PricingRoute,
   SettingsRoute: SettingsRoute,
+  BuildFlowIdRoute: BuildFlowIdRoute,
   FlowFlowIdRoute: FlowFlowIdRoute,
+  BuildIndexRoute: BuildIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
