@@ -16,6 +16,8 @@ import {
   streamBuildMessage,
 } from '../services/buildAgentApi';
 import { queryClient } from '../providers/query-client';
+import { api } from '../lib/api';
+import { setEditorCode } from './useEditor';
 import type { AssistantChatMessage, ChatMessage } from '../components/ai/type';
 
 /** Kept name from the Pearl era: the shape of the end-of-build callback. */
@@ -33,6 +35,23 @@ let harnessCallSeq = 0;
 function refreshFlowQueries(flowId: number): void {
   void queryClient.invalidateQueries({ queryKey: ['bubbleFlow', flowId] });
   void queryClient.invalidateQueries({ queryKey: ['bubbleFlowList'] });
+}
+
+/**
+ * After a harness turn that saved the flow, the open Monaco buffer still
+ * holds the pre-fix code; the next Run would validate that stale buffer with
+ * syncInputsWithFlow and silently overwrite the agent's fix (observed live on
+ * the flow-70 fixer test). Pull the server truth and reset the editor.
+ */
+async function syncEditorFromServer(flowId: number): Promise<void> {
+  try {
+    const flow = await api.get<{ code?: string }>(`/bubble-flow/${flowId}`);
+    if (typeof flow.code === 'string' && flow.code.trim() !== '') {
+      setEditorCode(flow.code);
+    }
+  } catch {
+    // Query invalidation already queued; the editor keeps its buffer.
+  }
 }
 
 /**
@@ -61,6 +80,7 @@ export async function sendBuildMessage(
   const runningCallIds: string[] = [];
   let finalStatus: string | null = null;
   let sawError = false;
+  let sawSaveFlow = false;
 
   s().addEvent({ type: 'llm_thinking' });
 
@@ -127,6 +147,9 @@ export async function sendBuildMessage(
             };
             for (const block of data.blocks ?? []) {
               if (block.type === 'tool_use' && typeof block.name === 'string') {
+                if (block.name === 'mcp__builder__save_flow') {
+                  sawSaveFlow = true;
+                }
                 // A tool call closes the current text segment.
                 flushAssistantText();
                 s().removeLastTimelineEventIf((e) => e.type === 'llm_thinking');
@@ -202,6 +225,11 @@ export async function sendBuildMessage(
     s().setGenerationCompleted(true);
     s().setIsCoffeeLoading(false);
     refreshFlowQueries(flowId);
+    if (sawSaveFlow) {
+      // The agent saved new code this turn; a stale Monaco buffer must not
+      // survive it (the next Run would write the old code back).
+      void syncEditorFromServer(flowId);
+    }
     if (options?.initialGeneration) {
       s().onGenerationComplete?.({ generatedCode: '', summary: '' });
     }

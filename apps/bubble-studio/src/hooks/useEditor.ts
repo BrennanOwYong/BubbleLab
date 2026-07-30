@@ -70,7 +70,7 @@ function getEditorCode(): string {
  * // Set generated code
  * setEditorCode(generatedResult.code);
  */
-function setEditorCode(code: string): void {
+export function setEditorCode(code: string): void {
   const { editorInstance, setPendingCode } = useEditorStore.getState();
 
   if (!editorInstance) {
