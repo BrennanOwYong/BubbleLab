@@ -1,9 +1,16 @@
 /**
- * Client for the /build API (Phase-4 builder agent). The API proxies these
- * routes to the builder-agent sidecar; the studio never talks to the sidecar
- * directly.
+ * Client for the /build and /build-page APIs (Phase-4 builder agents: one
+ * harness, two agent kinds). The API proxies these routes to the
+ * builder-agent sidecar; the studio never talks to the sidecar directly.
  */
 import { api } from '../lib/api';
+
+export type BuilderKind = 'flow' | 'page';
+
+const BASE_PATH: Record<BuilderKind, string> = {
+  flow: '/build',
+  page: '/build-page',
+};
 
 export interface BuildStreamFrame {
   event: string;
@@ -22,7 +29,7 @@ export interface BuildTranscriptItem {
 }
 
 export interface BuildThreadResponse {
-  flowId: number;
+  subjectId: number;
   sessionId: string | null;
   status: string;
   agentKind: string | null;
@@ -34,22 +41,26 @@ export interface BuildThreadResponse {
   transcript: BuildTranscriptItem[];
 }
 
-export function fetchBuildThread(flowId: number): Promise<BuildThreadResponse> {
-  return api.get<BuildThreadResponse>(`/build/${flowId}/thread`);
+export function fetchBuildThread(
+  kind: BuilderKind,
+  subjectId: number
+): Promise<BuildThreadResponse> {
+  return api.get<BuildThreadResponse>(`${BASE_PATH[kind]}/${subjectId}/thread`);
 }
 
 /**
- * POST /build/:flowId/message and invoke `onFrame` for every SSE frame.
+ * POST /build[-page]/:id/message and invoke `onFrame` for every SSE frame.
  * Resolves when the stream ends.
  */
 export async function streamBuildMessage(
-  flowId: number,
+  kind: BuilderKind,
+  subjectId: number,
   message: string,
   onFrame: (frame: BuildStreamFrame) => void,
   options?: { signal?: AbortSignal }
 ): Promise<void> {
   const response = await api.postStream(
-    `/build/${flowId}/message`,
+    `${BASE_PATH[kind]}/${subjectId}/message`,
     { message },
     options
   );

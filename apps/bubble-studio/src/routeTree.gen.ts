@@ -17,8 +17,11 @@ import { Route as CredentialsRouteImport } from './routes/credentials'
 import { Route as AddToolRouteImport } from './routes/add-tool'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as BuildIndexRouteImport } from './routes/build.index'
+import { Route as BuildPageIndexRouteImport } from './routes/build-page.index'
+import { Route as PagePageIdRouteImport } from './routes/page.$pageId'
 import { Route as FlowFlowIdRouteImport } from './routes/flow.$flowId'
 import { Route as BuildFlowIdRouteImport } from './routes/build.$flowId'
+import { Route as BuildPagePageIdRouteImport } from './routes/build-page.$pageId'
 
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
@@ -60,6 +63,16 @@ const BuildIndexRoute = BuildIndexRouteImport.update({
   path: '/build/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BuildPageIndexRoute = BuildPageIndexRouteImport.update({
+  id: '/build-page/',
+  path: '/build-page/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PagePageIdRoute = PagePageIdRouteImport.update({
+  id: '/page/$pageId',
+  path: '/page/$pageId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const FlowFlowIdRoute = FlowFlowIdRouteImport.update({
   id: '/flow/$flowId',
   path: '/flow/$flowId',
@@ -68,6 +81,11 @@ const FlowFlowIdRoute = FlowFlowIdRouteImport.update({
 const BuildFlowIdRoute = BuildFlowIdRouteImport.update({
   id: '/build/$flowId',
   path: '/build/$flowId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BuildPagePageIdRoute = BuildPagePageIdRouteImport.update({
+  id: '/build-page/$pageId',
+  path: '/build-page/$pageId',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -79,8 +97,11 @@ export interface FileRoutesByFullPath {
   '/home': typeof HomeRoute
   '/pricing': typeof PricingRoute
   '/settings': typeof SettingsRoute
+  '/build-page/$pageId': typeof BuildPagePageIdRoute
   '/build/$flowId': typeof BuildFlowIdRoute
   '/flow/$flowId': typeof FlowFlowIdRoute
+  '/page/$pageId': typeof PagePageIdRoute
+  '/build-page': typeof BuildPageIndexRoute
   '/build': typeof BuildIndexRoute
 }
 export interface FileRoutesByTo {
@@ -91,8 +112,11 @@ export interface FileRoutesByTo {
   '/home': typeof HomeRoute
   '/pricing': typeof PricingRoute
   '/settings': typeof SettingsRoute
+  '/build-page/$pageId': typeof BuildPagePageIdRoute
   '/build/$flowId': typeof BuildFlowIdRoute
   '/flow/$flowId': typeof FlowFlowIdRoute
+  '/page/$pageId': typeof PagePageIdRoute
+  '/build-page': typeof BuildPageIndexRoute
   '/build': typeof BuildIndexRoute
 }
 export interface FileRoutesById {
@@ -104,8 +128,11 @@ export interface FileRoutesById {
   '/home': typeof HomeRoute
   '/pricing': typeof PricingRoute
   '/settings': typeof SettingsRoute
+  '/build-page/$pageId': typeof BuildPagePageIdRoute
   '/build/$flowId': typeof BuildFlowIdRoute
   '/flow/$flowId': typeof FlowFlowIdRoute
+  '/page/$pageId': typeof PagePageIdRoute
+  '/build-page/': typeof BuildPageIndexRoute
   '/build/': typeof BuildIndexRoute
 }
 export interface FileRouteTypes {
@@ -118,8 +145,11 @@ export interface FileRouteTypes {
     | '/home'
     | '/pricing'
     | '/settings'
+    | '/build-page/$pageId'
     | '/build/$flowId'
     | '/flow/$flowId'
+    | '/page/$pageId'
+    | '/build-page'
     | '/build'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -130,8 +160,11 @@ export interface FileRouteTypes {
     | '/home'
     | '/pricing'
     | '/settings'
+    | '/build-page/$pageId'
     | '/build/$flowId'
     | '/flow/$flowId'
+    | '/page/$pageId'
+    | '/build-page'
     | '/build'
   id:
     | '__root__'
@@ -142,8 +175,11 @@ export interface FileRouteTypes {
     | '/home'
     | '/pricing'
     | '/settings'
+    | '/build-page/$pageId'
     | '/build/$flowId'
     | '/flow/$flowId'
+    | '/page/$pageId'
+    | '/build-page/'
     | '/build/'
   fileRoutesById: FileRoutesById
 }
@@ -155,8 +191,11 @@ export interface RootRouteChildren {
   HomeRoute: typeof HomeRoute
   PricingRoute: typeof PricingRoute
   SettingsRoute: typeof SettingsRoute
+  BuildPagePageIdRoute: typeof BuildPagePageIdRoute
   BuildFlowIdRoute: typeof BuildFlowIdRoute
   FlowFlowIdRoute: typeof FlowFlowIdRoute
+  PagePageIdRoute: typeof PagePageIdRoute
+  BuildPageIndexRoute: typeof BuildPageIndexRoute
   BuildIndexRoute: typeof BuildIndexRoute
 }
 
@@ -218,6 +257,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BuildIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/build-page/': {
+      id: '/build-page/'
+      path: '/build-page'
+      fullPath: '/build-page'
+      preLoaderRoute: typeof BuildPageIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/page/$pageId': {
+      id: '/page/$pageId'
+      path: '/page/$pageId'
+      fullPath: '/page/$pageId'
+      preLoaderRoute: typeof PagePageIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/flow/$flowId': {
       id: '/flow/$flowId'
       path: '/flow/$flowId'
@@ -232,6 +285,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BuildFlowIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/build-page/$pageId': {
+      id: '/build-page/$pageId'
+      path: '/build-page/$pageId'
+      fullPath: '/build-page/$pageId'
+      preLoaderRoute: typeof BuildPagePageIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -243,8 +303,11 @@ const rootRouteChildren: RootRouteChildren = {
   HomeRoute: HomeRoute,
   PricingRoute: PricingRoute,
   SettingsRoute: SettingsRoute,
+  BuildPagePageIdRoute: BuildPagePageIdRoute,
   BuildFlowIdRoute: BuildFlowIdRoute,
   FlowFlowIdRoute: FlowFlowIdRoute,
+  PagePageIdRoute: PagePageIdRoute,
+  BuildPageIndexRoute: BuildPageIndexRoute,
   BuildIndexRoute: BuildIndexRoute,
 }
 export const routeTree = rootRouteImport

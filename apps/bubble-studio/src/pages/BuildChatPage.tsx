@@ -1,15 +1,18 @@
 /**
- * Phase-4 flow-builder chat panel (rough vertical slice).
+ * Phase-4 builder chat panel (rough vertical slice), shared by both agent
+ * kinds: 'flow' (/build/:flowId) and 'page' (/build-page/:pageId).
  *
  * The user messages the embedded builder agent; the agent's streamed thread
- * renders live (text deltas + tool-call labels). Opening an in-progress flow
- * rehydrates the stored transcript from GET /build/:flowId/thread and further
- * messages continue the same session (the sidecar resumes it).
+ * renders live (text deltas + tool-call labels). Opening an in-progress build
+ * rehydrates the stored transcript from GET .../thread and further messages
+ * continue the same session (the sidecar resumes it).
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Link } from '@tanstack/react-router';
 import {
   fetchBuildThread,
   streamBuildMessage,
+  type BuilderKind,
   type BuildTranscriptItem,
 } from '../services/buildAgentApi';
 
@@ -39,7 +42,13 @@ function transcriptToChat(transcript: BuildTranscriptItem[]): ChatItem[] {
   return items;
 }
 
-export function BuildChatPage({ flowId }: { flowId: number }) {
+export function BuildChatPage({
+  subjectId,
+  kind = 'flow',
+}: {
+  subjectId: number;
+  kind?: BuilderKind;
+}) {
   const [items, setItems] = useState<ChatItem[]>([]);
   const [liveText, setLiveText] = useState('');
   const [liveTools, setLiveTools] = useState<string[]>([]);
@@ -50,7 +59,7 @@ export function BuildChatPage({ flowId }: { flowId: number }) {
 
   useEffect(() => {
     let cancelled = false;
-    fetchBuildThread(flowId)
+    fetchBuildThread(kind, subjectId)
       .then((thread) => {
         if (cancelled) return;
         setItems(transcriptToChat(thread.transcript));
@@ -60,7 +69,7 @@ export function BuildChatPage({ flowId }: { flowId: number }) {
     return () => {
       cancelled = true;
     };
-  }, [flowId]);
+  }, [kind, subjectId]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -93,7 +102,7 @@ export function BuildChatPage({ flowId }: { flowId: number }) {
     };
 
     try {
-      await streamBuildMessage(flowId, message, (frame) => {
+      await streamBuildMessage(kind, subjectId, message, (frame) => {
         if (frame.event === 'stream_event') {
           const ev = frame.data as {
             type?: string;
@@ -150,17 +159,28 @@ export function BuildChatPage({ flowId }: { flowId: number }) {
     } finally {
       setBusy(false);
     }
-  }, [busy, flowId, input]);
+  }, [busy, kind, subjectId, input]);
 
   return (
     <div className="h-full flex flex-col max-w-3xl mx-auto w-full">
       <div className="px-4 py-3 border-b border-gray-800 flex items-center justify-between">
         <h1 className="text-sm font-semibold text-gray-200">
-          Build flow #{flowId}
+          {kind === 'page' ? 'Build page' : 'Build flow'} #{subjectId}
         </h1>
-        <span className="text-xs text-gray-500">
-          {busy ? 'building…' : status}
-        </span>
+        <div className="flex items-center gap-3">
+          {kind === 'page' && (
+            <Link
+              to="/page/$pageId"
+              params={{ pageId: String(subjectId) }}
+              className="text-xs text-purple-400 hover:text-purple-300 underline"
+            >
+              View page
+            </Link>
+          )}
+          <span className="text-xs text-gray-500">
+            {busy ? 'building…' : status}
+          </span>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
@@ -220,7 +240,11 @@ export function BuildChatPage({ flowId }: { flowId: number }) {
         <textarea
           className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 resize-none focus:outline-none focus:border-purple-500"
           rows={2}
-          placeholder="Describe the flow you want built…"
+          placeholder={
+            kind === 'page'
+              ? 'Describe the page or dashboard you want built…'
+              : 'Describe the flow you want built…'
+          }
           value={input}
           disabled={busy}
           onChange={(e) => setInput(e.target.value)}

@@ -2,28 +2,28 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useAuth } from '@/hooks/useAuth';
 import { BuildChatPage } from '@/pages/BuildChatPage';
 
-export const Route = createFileRoute('/build/$flowId')({
-  component: BuildRoute,
+export const Route = createFileRoute('/build-page/$pageId')({
+  component: BuildPageRoute,
 });
 
-function BuildRoute() {
+function BuildPageRoute() {
   const navigate = useNavigate();
   const { isSignedIn } = useAuth();
-  const { flowId } = Route.useParams();
-  const parsedFlowId = parseInt(flowId, 10);
+  const { pageId } = Route.useParams();
+  const parsedPageId = parseInt(pageId, 10);
 
   if (!isSignedIn) {
     navigate({ to: '/home', replace: true });
     return null;
   }
-  if (isNaN(parsedFlowId)) {
-    navigate({ to: '/flows', replace: true });
+  if (isNaN(parsedPageId)) {
+    navigate({ to: '/build-page', replace: true });
     return null;
   }
 
   return (
     <div className="h-screen flex flex-col bg-[#1a1a1a] text-gray-100">
-      <BuildChatPage subjectId={parsedFlowId} kind="flow" />
+      <BuildChatPage subjectId={parsedPageId} kind="page" />
     </div>
   );
 }
