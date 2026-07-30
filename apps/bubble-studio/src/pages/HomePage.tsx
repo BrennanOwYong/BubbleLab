@@ -8,7 +8,6 @@ import {
   X,
   Search,
   Copy,
-  Plus,
 } from 'lucide-react';
 import { useBubbleFlowList } from '../hooks/useBubbleFlowList';
 import { MonthlyUsageBar } from '../components/MonthlyUsageBar';
@@ -182,13 +181,6 @@ export const HomePage: React.FC<HomePageProps> = ({ onFlowDelete }) => {
                 Manage and monitor your workflows
               </p>
             </div>
-            <Link
-              to="/build"
-              className="inline-flex items-center gap-1.5 px-4 py-2 bg-purple-700 hover:bg-purple-600 rounded-lg text-sm text-white transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              New flow
-            </Link>
           </div>
 
           {/* Search Bar */}

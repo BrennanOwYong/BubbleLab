@@ -35,9 +35,20 @@ import { FlowNotFoundView } from '@/components/FlowNotFoundView';
 
 export interface FlowIDEViewProps {
   flowId: number;
+  /**
+   * Prompt carried from the create-flow box: opens the conversation panel on
+   * the builder chat and auto-sends it as the first agent message.
+   */
+  initialBuildPrompt?: string;
+  /** Called when the initial prompt is consumed, so the caller can clear it. */
+  onInitialBuildPromptSent?: () => void;
 }
 
-export function FlowIDEView({ flowId }: FlowIDEViewProps) {
+export function FlowIDEView({
+  flowId,
+  initialBuildPrompt,
+  onInitialBuildPromptSent,
+}: FlowIDEViewProps) {
   // ============= Zustand Stores =============
   const {
     showLeftPanel,
@@ -215,6 +226,14 @@ export function FlowIDEView({ flowId }: FlowIDEViewProps) {
   // bindings survive reload and server-side (webhook/cron) execution without
   // requiring a Run first.
   usePersistCredentialBindings(flowId);
+
+  // Arriving from the create-flow box: surface the builder chat so the
+  // auto-sent prompt streams in view.
+  useEffect(() => {
+    if (initialBuildPrompt) {
+      useUIStore.getState().openConsolidatedPanelWith('build');
+    }
+  }, [initialBuildPrompt]);
 
   if (isFlowNotFound) {
     return <FlowNotFoundView flowId={flowId} onRetry={() => refetch()} />;
@@ -711,7 +730,12 @@ export function FlowIDEView({ flowId }: FlowIDEViewProps) {
                           {/* Desktop view - resizable panel */}
                           <PanelResizeHandle className="w-2 bg-[#30363d] hover:bg-white transition-colors" />
                           <Panel defaultSize={40} minSize={30} maxSize={50}>
-                            <ConsolidatedSidePanel />
+                            <ConsolidatedSidePanel
+                              initialBuildPrompt={initialBuildPrompt}
+                              onInitialBuildPromptSent={
+                                onInitialBuildPromptSent
+                              }
+                            />
                           </Panel>
                         </>
                       )}
@@ -724,7 +748,10 @@ export function FlowIDEView({ flowId }: FlowIDEViewProps) {
                           isConsolidatedPanelOpen ? 'block' : 'hidden'
                         }`}
                       >
-                        <ConsolidatedSidePanel />
+                        <ConsolidatedSidePanel
+                          initialBuildPrompt={initialBuildPrompt}
+                          onInitialBuildPromptSent={onInitialBuildPromptSent}
+                        />
                       </div>
                     )}
                   </div>

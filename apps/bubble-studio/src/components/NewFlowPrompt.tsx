@@ -1,8 +1,8 @@
 /**
  * Big create-a-flow prompt box. The user describes the automation they want;
- * submit creates an empty flow (POST /bubble-flow/empty) and opens its
- * builder chat at /build/$flowId with the prompt carried in the search
- * params, where BuildChatPage auto-sends it as the first agent message.
+ * submit creates an empty flow (POST /bubble-flow/empty) and opens the flow
+ * page at /flow/$flowId with the prompt carried in the search params, where
+ * the conversation panel auto-sends it as the first builder-agent message.
  */
 import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
@@ -16,7 +16,7 @@ function deriveFlowName(prompt: string): string {
   return prompt.length > 60 ? `${prompt.slice(0, 57)}…` : prompt;
 }
 
-export function NewFlowPrompt({ autoFocus = false }: { autoFocus?: boolean }) {
+export function NewFlowPrompt() {
   const navigate = useNavigate();
   const [prompt, setPrompt] = useState('');
   const [creating, setCreating] = useState(false);
@@ -34,7 +34,7 @@ export function NewFlowPrompt({ autoFocus = false }: { autoFocus?: boolean }) {
         prompt: trimmed,
       });
       navigate({
-        to: '/build/$flowId',
+        to: '/flow/$flowId',
         params: { flowId: String(created.id) },
         search: { prompt: trimmed },
       });
@@ -49,7 +49,6 @@ export function NewFlowPrompt({ autoFocus = false }: { autoFocus?: boolean }) {
       <textarea
         className="w-full bg-transparent text-sm text-gray-100 placeholder-gray-500 resize-none focus:outline-none"
         rows={4}
-        autoFocus={autoFocus}
         placeholder={PROMPT_PLACEHOLDER}
         value={prompt}
         disabled={creating}

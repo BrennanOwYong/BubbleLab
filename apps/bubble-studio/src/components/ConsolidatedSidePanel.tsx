@@ -4,8 +4,10 @@ import {
   KeyRound,
   ListChecks,
   MessageSquare,
+  Sparkles,
 } from 'lucide-react';
 import { useMemo } from 'react';
+import { BuilderChat } from './ai/BuilderChat';
 import { FlowSetupPanel } from './FlowSetupPanel';
 import { FlowChecklistPanel } from './FlowChecklistPanel';
 import { FlowConversationPanel } from './FlowConversationPanel';
@@ -23,7 +25,17 @@ import {
 } from '../utils/flowChecklist';
 import { shallow } from 'zustand/shallow';
 
-export function ConsolidatedSidePanel() {
+export interface ConsolidatedSidePanelProps {
+  /** Prompt from the create-flow box, auto-sent as the first agent message. */
+  initialBuildPrompt?: string;
+  /** Called when the initial prompt is consumed, so the caller can clear it. */
+  onInitialBuildPromptSent?: () => void;
+}
+
+export function ConsolidatedSidePanel({
+  initialBuildPrompt,
+  onInitialBuildPromptSent,
+}: ConsolidatedSidePanelProps) {
   const flowId = useUIStore((state) => state.selectedFlowId);
   const activeTab = useUIStore((state) => state.consolidatedPanelTab);
   const setConsolidatedPanelTab = useUIStore(
@@ -61,6 +73,13 @@ export function ConsolidatedSidePanel() {
   const { total: executionTotal } = useExecutionHistory(flowId, { limit: 10 });
 
   const tabs = [
+    {
+      // Live chat with the builder agent (the Claude harness sidecar).
+      id: 'build' as const,
+      label: 'Gluu',
+      icon: Sparkles,
+      badge: null,
+    },
     {
       // Replaces the raw Code tab: plain-language checklist of what the
       // flow does. Raw code is not displayed anywhere in the flow editor.
@@ -146,6 +165,19 @@ export function ConsolidatedSidePanel() {
 
       {/* Tab Content - Monaco is always mounted for useEditor to work */}
       <div className="flex-1 min-h-0 overflow-hidden relative">
+        {/* Builder Chat Tab - always mounted so a running build's stream
+            survives tab switches; other active tabs stack above it. */}
+        {flowId !== null && (
+          <div className="absolute inset-0">
+            <BuilderChat
+              key={flowId}
+              flowId={flowId}
+              initialPrompt={initialBuildPrompt}
+              onInitialPromptSent={onInitialBuildPromptSent}
+            />
+          </div>
+        )}
+
         {/* Checklist Tab - plain-language view of what the flow does */}
         {activeTab === 'checklist' && (
           <div className="absolute inset-0">

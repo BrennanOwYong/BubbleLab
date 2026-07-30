@@ -9,11 +9,13 @@ import { create } from 'zustand';
  */
 
 /**
- * Tabs in the consolidated side panel. 'checklist' is the primary view of
- * what the flow does; raw code has no tab and is never displayed in the
+ * Tabs in the consolidated side panel. 'build' is the live chat with the
+ * builder agent (the primary tab); 'checklist' is the plain-language view of
+ * what the flow does. Raw code has no tab and is never displayed in the
  * flow editor.
  */
 export type ConsolidatedPanelTab =
+  | 'build'
   | 'checklist'
   | 'conversation'
   | 'output'
@@ -188,7 +190,7 @@ export const useUIStore = create<UIStore>((set) => ({
   showExportModal: false,
   showPrompt: false,
   isConsolidatedPanelOpen: true,
-  consolidatedPanelTab: 'checklist',
+  consolidatedPanelTab: 'build',
   expandedFlowNodeId: null,
 
   // Actions
