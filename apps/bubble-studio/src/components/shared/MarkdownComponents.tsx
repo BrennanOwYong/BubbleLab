@@ -23,7 +23,9 @@ export const sharedMarkdownComponents: Components = {
   ),
   // Paragraphs
   p: ({ children }) => (
-    <p className="text-base text-gray-300 leading-relaxed mb-2">{children}</p>
+    <p className="text-base text-gray-300 leading-relaxed break-words mb-2">
+      {children}
+    </p>
   ),
   // Lists
   ul: ({ children }) => (

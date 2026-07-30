@@ -531,7 +531,7 @@ export function PearlChat() {
   return (
     <div className="h-full flex flex-col">
       {/* Scrollable content area for messages/results */}
-      <div className="flex-1 overflow-y-auto thin-scrollbar p-4 space-y-3 min-h-0">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden thin-scrollbar p-4 space-y-3 min-h-0">
         {pearl.timeline.length === 0 && !pearl.isPending && !isGenerating && (
           <div className="flex flex-col items-center px-4 py-8">
             {/* Header */}
@@ -884,7 +884,7 @@ export function PearlChat() {
                   {message.resultType === 'code' ? (
                     <>
                       {message.content && (
-                        <div className="prose prose-invert prose-sm max-w-none mb-3 [&_*]:text-[13px]">
+                        <div className="prose prose-invert prose-sm max-w-none mb-3 [&_*]:text-[13px] [&_*]:break-words">
                           <MarkdownWithBubbles content={message.content} />
                         </div>
                       )}
@@ -910,7 +910,7 @@ export function PearlChat() {
                       )}
                     </>
                   ) : (
-                    <div className="prose prose-invert prose-sm max-w-none [&_*]:text-[13px]">
+                    <div className="prose prose-invert prose-sm max-w-none [&_*]:text-[13px] [&_*]:break-words">
                       <MarkdownWithBubbles content={message.content} />
                     </div>
                   )}
@@ -1023,7 +1023,7 @@ function EventDisplay({
       return (
         <div className="text-sm text-gray-300 p-2 bg-gray-800/30 rounded border-l-2 border-gray-600">
           <div className="text-xs text-gray-400 mb-1">Thinking Process</div>
-          <div className="prose prose-invert prose-sm max-w-none [&_*]:text-[13px]">
+          <div className="prose prose-invert prose-sm max-w-none [&_*]:text-[13px] [&_*]:break-words">
             <MarkdownWithBubbles content={event.content} />
           </div>
         </div>
@@ -1036,7 +1036,7 @@ function EventDisplay({
       }
       return (
         <div className="text-sm text-gray-300 p-2 bg-gray-800/30 rounded border-l-2 border-gray-600">
-          <div className="prose prose-invert prose-sm max-w-none [&_*]:text-[13px]">
+          <div className="prose prose-invert prose-sm max-w-none [&_*]:text-[13px] [&_*]:break-words">
             <MarkdownWithBubbles content={event.content} />
           </div>
         </div>
