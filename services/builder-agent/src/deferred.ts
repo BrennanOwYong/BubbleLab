@@ -13,7 +13,7 @@
  * touched, and on success it is annotated with resolvedAt + results rather
  * than deleted, so the gap's history stays auditable.
  */
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { GluuClient } from './gluu-client.ts';
 import type { Credential } from './gluu-client.ts';
@@ -165,12 +165,14 @@ export async function tryResolveDeferredSetup(
 
   // Persist produced ids as flow default_inputs (the setup-state invariant);
   // skipped when the flow has no code yet or the script produced nothing.
-  if (Object.keys(produced).length > 0) {
-    const flow = await client.getFlow(thread.flowId);
+  // Page threads have no flow record — their produced ids reach the resumed
+  // agent through the automatic-setup notice, which updates the spec.
+  if (thread.agentKind === 'flow' && Object.keys(produced).length > 0) {
+    const flow = await client.getFlow(thread.subjectId);
     if (flow.code !== '') {
       const result = await client.validateFlow({
         code: flow.code,
-        flowId: thread.flowId,
+        flowId: thread.subjectId,
         options: {
           includeDetails: true,
           strictMode: true,
@@ -201,7 +203,12 @@ export async function tryResolveDeferredSetup(
       },
       updatedAt: new Date(),
     })
-    .where(eq(buildThreads.flowId, thread.flowId));
+    .where(
+      and(
+        eq(buildThreads.subjectId, thread.subjectId),
+        eq(buildThreads.agentKind, thread.agentKind)
+      )
+    );
 
   return {
     resolved: true,

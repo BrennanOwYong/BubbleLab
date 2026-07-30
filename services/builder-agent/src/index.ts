@@ -1,9 +1,16 @@
 /**
  * Builder-agent sidecar HTTP server (Node, not Bun).
  *
- *   POST /build/:flowId/message  {message, agentKind?} -> SSE build stream
- *   POST /build/:flowId/resume   {message?}            -> SSE, continues the stored session
+ * Flow builder (agentKind 'flow'):
+ *   POST /build/:flowId/message  {message} -> SSE build stream
+ *   POST /build/:flowId/resume   {message?} -> SSE, continues the stored session
  *   GET  /build/:flowId/thread   stored transcript + thread status for rehydration
+ *
+ * Page builder (agentKind 'page') — same harness, second personality:
+ *   POST /build-page/:pageId/message  |  /resume  |  GET /thread   (same shapes)
+ *   GET  /page/:pageId/render    stored spec with every read widget's live data resolved
+ *   POST /page/:pageId/submit    {widgetId, values} -> run a form widget's write action
+ *
  *   GET  /health
  *
  * Runs on BUILDER_PORT (default 3010) — never 3000/3001, which belong to the
@@ -16,6 +23,9 @@ import { streamSSE } from 'hono/streaming';
 import { z } from 'zod';
 import { runBuildTurn } from './builder.ts';
 import { getBuildThread } from './tools.ts';
+import { renderPage, submitPageForm } from './page-data.ts';
+import { GluuClient } from './gluu-client.ts';
+import type { AgentKind } from './prompts.ts';
 import { loadTranscript } from './session-store.ts';
 import { config } from './config.ts';
 
@@ -23,19 +33,23 @@ const app = new Hono();
 
 const messageBodySchema = z.object({
   message: z.string().min(1),
-  agentKind: z.literal('flow').default('flow'),
 });
 
 const resumeBodySchema = z.object({
   message: z.string().min(1).default('Continue where you left off.'),
 });
 
-/** One build per flow at a time. */
-const activeFlows = new Set<number>();
+const submitBodySchema = z.object({
+  widgetId: z.string().min(1),
+  values: z.record(z.string(), z.string()),
+});
 
-function parseFlowId(raw: string): number | null {
-  const flowId = Number(raw);
-  return Number.isInteger(flowId) && flowId > 0 ? flowId : null;
+/** One build per subject at a time, across both agent kinds. */
+const activeBuilds = new Set<string>();
+
+function parseId(raw: string): number | null {
+  const id = Number(raw);
+  return Number.isInteger(id) && id > 0 ? id : null;
 }
 
 type TranscriptItem = {
@@ -94,13 +108,15 @@ app.get('/health', (c) =>
   c.json({ ok: true, service: 'builder-agent', port: config.port })
 );
 
-app.get('/build/:flowId/thread', async (c) => {
-  const flowId = parseFlowId(c.req.param('flowId'));
-  if (flowId === null) return c.json({ error: 'Invalid flowId' }, 400);
-  const thread = await getBuildThread(flowId);
+async function threadResponse(c: Context, kind: AgentKind, idParam: string) {
+  const subjectId = parseId(c.req.param(idParam) ?? '');
+  if (subjectId === null) return c.json({ error: `Invalid ${idParam}` }, 400);
+  const thread = await getBuildThread(subjectId, kind);
   if (thread === null) {
     return c.json({
-      flowId,
+      subjectId,
+      // Legacy field name the studio's flow chat reads.
+      flowId: subjectId,
       sessionId: null,
       status: 'none',
       agentKind: null,
@@ -111,39 +127,48 @@ app.get('/build/:flowId/thread', async (c) => {
   const entries =
     thread.sessionId !== null ? await loadTranscript(thread.sessionId) : [];
   return c.json({
-    flowId,
+    subjectId,
+    flowId: subjectId,
     sessionId: thread.sessionId,
     status: thread.status,
     agentKind: thread.agentKind,
     deferredSetup: thread.deferredSetup ?? null,
     transcript: simplifyTranscript(entries),
   });
-});
+}
+
+app.get('/build/:flowId/thread', (c) => threadResponse(c, 'flow', 'flowId'));
+app.get('/build-page/:pageId/thread', (c) =>
+  threadResponse(c, 'page', 'pageId')
+);
 
 async function handleBuildRequest(
   c: Context,
+  kind: AgentKind,
+  idParam: string,
   message: string,
   requireExistingSession: boolean
 ) {
-  const flowId = parseFlowId(c.req.param('flowId') ?? '');
-  if (flowId === null) return c.json({ error: 'Invalid flowId' }, 400);
-  if (activeFlows.has(flowId)) {
+  const subjectId = parseId(c.req.param(idParam) ?? '');
+  if (subjectId === null) return c.json({ error: `Invalid ${idParam}` }, 400);
+  const buildKey = `${kind}:${subjectId}`;
+  if (activeBuilds.has(buildKey)) {
     return c.json(
-      { error: `A build for flow ${flowId} is already running` },
+      { error: `A build for ${kind} ${subjectId} is already running` },
       409
     );
   }
   if (requireExistingSession) {
-    const thread = await getBuildThread(flowId);
+    const thread = await getBuildThread(subjectId, kind);
     if (thread?.sessionId == null) {
       return c.json(
-        { error: `Flow ${flowId} has no build session to resume` },
+        { error: `${kind} ${subjectId} has no build session to resume` },
         404
       );
     }
   }
 
-  activeFlows.add(flowId);
+  activeBuilds.add(buildKey);
   return streamSSE(
     c,
     async (stream) => {
@@ -162,8 +187,8 @@ async function handleBuildRequest(
       }, 15000);
       try {
         const outcome = await runBuildTurn({
-          flowId,
-          agentKind: 'flow',
+          subjectId,
+          agentKind: kind,
           message,
           emit,
         });
@@ -174,34 +199,86 @@ async function handleBuildRequest(
         });
       } finally {
         clearInterval(heartbeat);
-        activeFlows.delete(flowId);
+        activeBuilds.delete(buildKey);
       }
     },
     async (error) => {
-      activeFlows.delete(flowId);
+      activeBuilds.delete(buildKey);
       console.error('[builder-agent] SSE stream error:', error);
     }
   );
 }
 
-app.post('/build/:flowId/message', async (c) => {
-  const parsed = messageBodySchema.safeParse(
+function registerBuildRoutes(prefix: string, kind: AgentKind, idParam: string) {
+  app.post(`${prefix}/:${idParam}/message`, async (c) => {
+    const parsed = messageBodySchema.safeParse(
+      await c.req.json().catch(() => null)
+    );
+    if (!parsed.success) {
+      return c.json({ error: 'Body must be {message: string}' }, 400);
+    }
+    return handleBuildRequest(c, kind, idParam, parsed.data.message, false);
+  });
+
+  app.post(`${prefix}/:${idParam}/resume`, async (c) => {
+    const parsed = resumeBodySchema.safeParse(
+      await c.req.json().catch(() => ({}))
+    );
+    if (!parsed.success) {
+      return c.json({ error: 'Body must be {message?: string}' }, 400);
+    }
+    return handleBuildRequest(c, kind, idParam, parsed.data.message, true);
+  });
+}
+
+registerBuildRoutes('/build', 'flow', 'flowId');
+registerBuildRoutes('/build-page', 'page', 'pageId');
+
+// --- Page data plane: render (reads resolved server-side) + form submit ----
+
+app.get('/page/:pageId/render', async (c) => {
+  const pageId = parseId(c.req.param('pageId'));
+  if (pageId === null) return c.json({ error: 'Invalid pageId' }, 400);
+  try {
+    const client = new GluuClient(config.gluuApiUrl);
+    return c.json(await renderPage(client, pageId));
+  } catch (error) {
+    return c.json(
+      { error: error instanceof Error ? error.message : String(error) },
+      400
+    );
+  }
+});
+
+app.post('/page/:pageId/submit', async (c) => {
+  const pageId = parseId(c.req.param('pageId'));
+  if (pageId === null) return c.json({ error: 'Invalid pageId' }, 400);
+  const parsed = submitBodySchema.safeParse(
     await c.req.json().catch(() => null)
   );
   if (!parsed.success) {
-    return c.json({ error: 'Body must be {message: string}' }, 400);
+    return c.json(
+      {
+        error: 'Body must be {widgetId: string, values: Record<string,string>}',
+      },
+      400
+    );
   }
-  return handleBuildRequest(c, parsed.data.message, false);
-});
-
-app.post('/build/:flowId/resume', async (c) => {
-  const parsed = resumeBodySchema.safeParse(
-    await c.req.json().catch(() => ({}))
-  );
-  if (!parsed.success) {
-    return c.json({ error: 'Body must be {message?: string}' }, 400);
+  try {
+    const client = new GluuClient(config.gluuApiUrl);
+    const result = await submitPageForm(
+      client,
+      pageId,
+      parsed.data.widgetId,
+      parsed.data.values
+    );
+    return c.json({ status: 'submitted', ...result });
+  } catch (error) {
+    return c.json(
+      { error: error instanceof Error ? error.message : String(error) },
+      400
+    );
   }
-  return handleBuildRequest(c, parsed.data.message, true);
 });
 
 serve({ fetch: app.fetch, port: config.port }, (info) => {

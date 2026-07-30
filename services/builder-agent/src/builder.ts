@@ -14,10 +14,14 @@ import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { systemPromptFor, type AgentKind } from './prompts.ts';
 import { tryResolveDeferredSetup } from './deferred.ts';
-import { createBuilderServer, getBuildThread } from './tools.ts';
+import {
+  createBuilderServer,
+  createPageServer,
+  getBuildThread,
+} from './tools.ts';
 import { createPostgresSessionStore } from './session-store.ts';
 import { buildThreads, db } from './db.ts';
 import { config } from './config.ts';
@@ -27,27 +31,25 @@ const serviceRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 export type EmitFn = (event: string, data: unknown) => Promise<void>;
 
 async function upsertThread(
-  flowId: number,
-  patch: { sessionId?: string; status?: string; agentKind?: AgentKind }
+  subjectId: number,
+  agentKind: AgentKind,
+  patch: { sessionId?: string; status?: string }
 ): Promise<void> {
   await db
     .insert(buildThreads)
     .values({
-      flowId,
+      subjectId,
+      agentKind,
       sessionId: patch.sessionId ?? null,
-      agentKind: patch.agentKind ?? 'flow',
       status: patch.status ?? 'building',
     })
     .onConflictDoUpdate({
-      target: buildThreads.flowId,
+      target: [buildThreads.subjectId, buildThreads.agentKind],
       set: {
         ...(patch.sessionId !== undefined
           ? { sessionId: patch.sessionId }
           : {}),
         ...(patch.status !== undefined ? { status: patch.status } : {}),
-        ...(patch.agentKind !== undefined
-          ? { agentKind: patch.agentKind }
-          : {}),
         updatedAt: new Date(),
       },
     });
@@ -117,14 +119,14 @@ function frameFor(msg: SDKMessage): { event: string; data: unknown } | null {
 }
 
 export async function runBuildTurn(opts: {
-  flowId: number;
+  subjectId: number;
   agentKind: AgentKind;
   message: string;
   emit: EmitFn;
 }): Promise<{ sessionId: string | null; status: string }> {
-  const { flowId, agentKind, message, emit } = opts;
+  const { subjectId, agentKind, message, emit } = opts;
 
-  const existing = await getBuildThread(flowId);
+  const existing = await getBuildThread(subjectId, agentKind);
   const resume = existing?.sessionId ?? undefined;
 
   // Blocked-state invariant: blocked_on_credential is sticky. A turn may
@@ -146,8 +148,7 @@ export async function runBuildTurn(opts: {
         message;
     }
   }
-  await upsertThread(flowId, {
-    agentKind,
+  await upsertThread(subjectId, agentKind, {
     ...(blockedNow ? {} : { status: 'building' }),
   });
 
@@ -160,7 +161,12 @@ export async function runBuildTurn(opts: {
       systemPrompt: systemPromptFor(agentKind),
       includePartialMessages: true,
       tools: [],
-      mcpServers: { builder: createBuilderServer(flowId) },
+      mcpServers: {
+        builder:
+          agentKind === 'flow'
+            ? createBuilderServer(subjectId)
+            : createPageServer(subjectId),
+      },
       allowedTools: ['mcp__builder__*'],
       maxTurns: 120,
       sessionStore: createPostgresSessionStore(),
@@ -174,7 +180,7 @@ export async function runBuildTurn(opts: {
   for await (const msg of q) {
     if (msg.type === 'system' && msg.subtype === 'init') {
       sessionId = msg.session_id;
-      await upsertThread(flowId, { sessionId: msg.session_id });
+      await upsertThread(subjectId, agentKind, { sessionId: msg.session_id });
     }
     if (msg.type === 'result') {
       finalStatus = msg.is_error ? 'error' : 'ready';
@@ -189,7 +195,7 @@ export async function runBuildTurn(opts: {
   // report_missing_credential fired mid-run or because the thread entered the
   // turn blocked and the deferred setup did not resolve (turn start never
   // clears it). Either way the marker outlives the turn's own success.
-  const after = await getBuildThread(flowId);
+  const after = await getBuildThread(subjectId, agentKind);
   const status =
     after?.status === 'blocked_on_credential'
       ? 'blocked_on_credential'
@@ -197,7 +203,12 @@ export async function runBuildTurn(opts: {
   await db
     .update(buildThreads)
     .set({ status, updatedAt: new Date() })
-    .where(eq(buildThreads.flowId, flowId));
+    .where(
+      and(
+        eq(buildThreads.subjectId, subjectId),
+        eq(buildThreads.agentKind, agentKind)
+      )
+    );
 
   return { sessionId, status };
 }

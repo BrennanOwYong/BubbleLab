@@ -1,7 +1,12 @@
 /**
- * In-process MCP `builder` server: the flow-builder agent's only tools.
+ * In-process MCP `builder` server: the builder agents' only tools.
  * Every tool is a thin typed wrapper over the Bun API at GLUU_API_URL
  * (adapted from gluu-mcp/src/index.ts); nothing re-implements server logic.
+ *
+ * Two servers share this module:
+ * - createBuilderServer(flowId)  — the flow-builder agent (agentKind 'flow')
+ * - createPageServer(pageId)     — the page-builder agent (agentKind 'page'),
+ *   whose write tools produce a page SPEC (page-spec.ts), never code.
  *
  * get_bubble_details relies on the Phase-4 endpoint
  * GET /bubble-flow/bubble-details/:bubbleName added to the Bun API (it wraps
@@ -9,11 +14,14 @@
  */
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import type { McpSdkServerConfigWithInstance } from '@anthropic-ai/claude-agent-sdk';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { GluuClient } from './gluu-client.ts';
 import { provisionSpreadsheet, seedRows } from './provision.ts';
-import { buildThreads, db } from './db.ts';
+import { readSheetRange, getPageRow, parseStoredSpec } from './page-data.ts';
+import { pageSpecSchema } from './page-spec.ts';
+import type { AgentKind } from './prompts.ts';
+import { buildThreads, db, pages } from './db.ts';
 import { config } from './config.ts';
 
 function textResult(payload: unknown) {
@@ -50,6 +58,149 @@ const bubbleDetailsResponseSchema = z
   })
   .passthrough();
 
+/** Shared across both agent kinds. */
+function makeGetBubbleDetailsTool() {
+  return tool(
+    'get_bubble_details',
+    'Get the authoritative parameter schema, result shape, credential requirements, and usage example for one bubble. Call this for EVERY bubble before authoring code that uses it.',
+    {
+      bubbleName: z
+        .string()
+        .min(1)
+        .describe(
+          "Registry bubble name, e.g. 'google-sheets', 'gmail', 'ai-agent', 'telegram', 'notion', 'google-drive', 'http', 'web-search-tool'"
+        ),
+    },
+    async ({ bubbleName }) => {
+      try {
+        const response = await fetch(
+          `${config.gluuApiUrl}/bubble-flow/bubble-details/${encodeURIComponent(bubbleName)}`
+        );
+        if (!response.ok) {
+          const text = await response.text().catch(() => '');
+          throw new Error(
+            `bubble-details ${bubbleName} -> HTTP ${response.status}: ${text.slice(0, 300)}`
+          );
+        }
+        return textResult(
+          bubbleDetailsResponseSchema.parse(await response.json())
+        );
+      } catch (error) {
+        return errorResult(error);
+      }
+    }
+  );
+}
+
+/** Shared across both agent kinds. */
+function makeListFlowsTool(client: GluuClient) {
+  return tool(
+    'list_flows',
+    'List every flow the user has, with id, name, trigger type, and activity counters.',
+    {},
+    async () => {
+      try {
+        const { bubbleFlows } = await client.listFlows();
+        return textResult(
+          bubbleFlows.map((flow) => ({
+            id: flow.id,
+            name: flow.name,
+            description: flow.description,
+            eventType: flow.eventType,
+            isActive: flow.isActive,
+            cronActive: flow.cronActive,
+            executionCount: flow.executionCount,
+          }))
+        );
+      } catch (error) {
+        return errorResult(error);
+      }
+    }
+  );
+}
+
+/**
+ * Shared credential-gap tool. Persists the gap on the (subjectId, agentKind)
+ * build thread; the sticky blocked_on_credential invariant and the deferred
+ * resolver (deferred.ts) key off the same composite.
+ */
+function makeReportMissingCredentialTool(subjectId: number, kind: AgentKind) {
+  return tool(
+    'report_missing_credential',
+    'CREDENTIAL-GAP tool: call when a setup action needs a credential type the user has not connected. Persists the deferred setup script on the build thread and marks the build blocked, so the setup runs once the credential exists. Then tell the user, naming the exact provider/credential to connect. Never fabricate resource ids instead.',
+    {
+      credentialType: z
+        .string()
+        .min(1)
+        .describe(
+          "The missing credential type, e.g. 'GOOGLE_SHEETS_CRED', 'TELEGRAM_BOT_TOKEN', 'NOTION_OAUTH_TOKEN'"
+        ),
+      deferredSetupScript: z
+        .array(
+          z.object({
+            action: z
+              .string()
+              .describe(
+                "Setup tool to run once unblocked, e.g. 'provision_spreadsheet'"
+              ),
+            args: z
+              .record(z.string(), z.unknown())
+              .describe('Arguments for that setup action'),
+            storeAs: z
+              .string()
+              .describe(
+                "The input key the resulting id must be stored under, e.g. 'spreadsheet_id'"
+              ),
+          })
+        )
+        .default([])
+        .describe(
+          'Ordered setup actions to run once the credential exists. Leave EMPTY (or omit) when nothing is deferrable — e.g. a missing API key with no provisioning step; never invent a noop action to fill it.'
+        ),
+    },
+    async ({ credentialType, deferredSetupScript }) => {
+      try {
+        const deferred = {
+          credentialType,
+          deferredSetupScript,
+          reportedAt: new Date().toISOString(),
+        };
+        await db
+          .insert(buildThreads)
+          .values({
+            subjectId,
+            agentKind: kind,
+            status: 'blocked_on_credential',
+            deferredSetup: deferred,
+          })
+          .onConflictDoUpdate({
+            target: [buildThreads.subjectId, buildThreads.agentKind],
+            set: {
+              status: 'blocked_on_credential',
+              deferredSetup: deferred,
+              updatedAt: new Date(),
+            },
+          });
+        // MVP alert: mark + log; the user-facing alert is the agent's own
+        // chat message naming the credential (no webhook yet).
+        console.error(
+          `[credential-gap] ${kind} ${subjectId} blocked on ${credentialType}; deferred setup script persisted`
+        );
+        return textResult({
+          status: 'persisted',
+          subjectId,
+          agentKind: kind,
+          credentialType,
+          deferredSetupScript,
+          userAction: `Connect ${credentialType} in Settings -> Credentials; the deferred setup will run once it exists.`,
+        });
+      } catch (error) {
+        return errorResult(error);
+      }
+    }
+  );
+}
+
 export function createBuilderServer(
   flowId: number
 ): McpSdkServerConfigWithInstance {
@@ -59,36 +210,7 @@ export function createBuilderServer(
     name: 'builder',
     version: '0.1.0',
     tools: [
-      tool(
-        'get_bubble_details',
-        'Get the authoritative parameter schema, result shape, credential requirements, and usage example for one bubble. Call this for EVERY bubble before authoring code that uses it.',
-        {
-          bubbleName: z
-            .string()
-            .min(1)
-            .describe(
-              "Registry bubble name, e.g. 'google-sheets', 'gmail', 'ai-agent', 'telegram', 'notion', 'google-drive', 'http', 'web-search-tool'"
-            ),
-        },
-        async ({ bubbleName }) => {
-          try {
-            const response = await fetch(
-              `${config.gluuApiUrl}/bubble-flow/bubble-details/${encodeURIComponent(bubbleName)}`
-            );
-            if (!response.ok) {
-              const text = await response.text().catch(() => '');
-              throw new Error(
-                `bubble-details ${bubbleName} -> HTTP ${response.status}: ${text.slice(0, 300)}`
-              );
-            }
-            return textResult(
-              bubbleDetailsResponseSchema.parse(await response.json())
-            );
-          } catch (error) {
-            return errorResult(error);
-          }
-        }
-      ),
+      makeGetBubbleDetailsTool(),
 
       tool(
         'validate_flow',
@@ -197,29 +319,7 @@ export function createBuilderServer(
         }
       ),
 
-      tool(
-        'list_flows',
-        'List every flow the user has, with id, name, trigger type, and activity counters.',
-        {},
-        async () => {
-          try {
-            const { bubbleFlows } = await client.listFlows();
-            return textResult(
-              bubbleFlows.map((flow) => ({
-                id: flow.id,
-                name: flow.name,
-                description: flow.description,
-                eventType: flow.eventType,
-                isActive: flow.isActive,
-                cronActive: flow.cronActive,
-                executionCount: flow.executionCount,
-              }))
-            );
-          } catch (error) {
-            return errorResult(error);
-          }
-        }
-      ),
+      makeListFlowsTool(client),
 
       tool(
         'provision_spreadsheet',
@@ -321,88 +421,186 @@ export function createBuilderServer(
         }
       ),
 
+      makeReportMissingCredentialTool(flowId, 'flow'),
+    ],
+  });
+}
+
+/**
+ * The page-builder agent's tool server (agentKind 'page'). The write tools
+ * (create_page / update_page) persist a validated page SPEC onto the pages
+ * row being built — the agent never produces or stores free-form code. Reads
+ * for binding discovery go through read_sheet_range, which rides the same
+ * bubble/flow rails the render endpoint uses.
+ */
+export function createPageServer(
+  pageId: number
+): McpSdkServerConfigWithInstance {
+  const client = new GluuClient(config.gluuApiUrl);
+
+  const pageSpecInput = {
+    spec: pageSpecSchema.describe(
+      'The full page spec: {version: 1, title, description?, widgets: [...]}. Widget kinds: table {id, type:"table", title, source:{kind:"google_sheet_range", spreadsheetId, range}, headerRow?, maxRows?}, metric {id, type:"metric", title, source, aggregate:"count_rows", excludeHeaderRow?}, form {id, type:"form", title, target:{kind:"google_sheet_append", spreadsheetId, range}, fields:[{name,label,placeholder?}], submitLabel?}.'
+    ),
+  };
+
+  return createSdkMcpServer({
+    name: 'builder',
+    version: '0.1.0',
+    tools: [
+      makeGetBubbleDetailsTool(),
+      makeListFlowsTool(client),
+
       tool(
-        'report_missing_credential',
-        'CREDENTIAL-GAP tool: call when a setup action needs a credential type the user has not connected. Persists the deferred setup script on the build thread and marks the flow blocked, so the setup runs once the credential exists. Then tell the user, naming the exact provider/credential to connect. Never fabricate resource ids instead.',
+        'list_integrations',
+        "List the user's connected integrations (credential type, OAuth provider, granted scopes). Use this FIRST to learn which data sources the page can bind to; if a needed integration is absent, call report_missing_credential.",
+        {},
+        async () => {
+          try {
+            const credentials = await client.listCredentials();
+            return textResult(
+              credentials.map((credential) => ({
+                id: credential.id,
+                credentialType: credential.credentialType,
+                name: credential.name ?? null,
+                oauthProvider: credential.oauthProvider ?? null,
+                oauthScopes: credential.oauthScopes ?? null,
+              }))
+            );
+          } catch (error) {
+            return errorResult(error);
+          }
+        }
+      ),
+
+      tool(
+        'read_sheet_range',
+        "Read real values from the user's spreadsheet over their connected Google credential — the same path page rendering uses. Call this BEFORE authoring a binding, to confirm the spreadsheet id, tab name, and actual column layout. Returns at most the first 20 rows plus the total row count.",
         {
-          credentialType: z
+          spreadsheetId: z.string().min(1).describe('Spreadsheet id'),
+          range: z
             .string()
             .min(1)
             .describe(
-              "The missing credential type, e.g. 'GOOGLE_SHEETS_CRED', 'TELEGRAM_BOT_TOKEN', 'NOTION_OAUTH_TOKEN'"
-            ),
-          deferredSetupScript: z
-            .array(
-              z.object({
-                action: z
-                  .string()
-                  .describe(
-                    "Setup tool to run once unblocked, e.g. 'provision_spreadsheet'"
-                  ),
-                args: z
-                  .record(z.string(), z.unknown())
-                  .describe('Arguments for that setup action'),
-                storeAs: z
-                  .string()
-                  .describe(
-                    "The flow input key the resulting id must be stored under via set_flow_defaults, e.g. 'spreadsheet_id'"
-                  ),
-              })
-            )
-            .default([])
-            .describe(
-              'Ordered setup actions to run once the credential exists. Leave EMPTY (or omit) when nothing is deferrable — e.g. a missing API key with no provisioning step; never invent a noop action to fill it.'
+              'A1-notation range or bare tab name, e.g. "Feedback" or "Feedback!A1:C20"'
             ),
         },
-        async ({ credentialType, deferredSetupScript }) => {
+        async ({ spreadsheetId, range }) => {
           try {
-            const deferred = {
-              credentialType,
-              deferredSetupScript,
-              reportedAt: new Date().toISOString(),
-            };
-            await db
-              .insert(buildThreads)
-              .values({
-                flowId,
-                status: 'blocked_on_credential',
-                deferredSetup: deferred,
-              })
-              .onConflictDoUpdate({
-                target: buildThreads.flowId,
-                set: {
-                  status: 'blocked_on_credential',
-                  deferredSetup: deferred,
-                  updatedAt: new Date(),
-                },
-              });
-            // MVP alert: mark + log; the user-facing alert is the agent's own
-            // chat message naming the credential (no webhook yet).
-            console.error(
-              `[credential-gap] flow ${flowId} blocked on ${credentialType}; deferred setup script persisted`
-            );
+            const { values, range: readRange } = await readSheetRange(client, {
+              kind: 'google_sheet_range',
+              spreadsheetId,
+              range,
+            });
             return textResult({
-              status: 'persisted',
-              flowId,
-              credentialType,
-              deferredSetupScript,
-              userAction: `Connect ${credentialType} in Settings -> Credentials; the deferred setup will run once it exists.`,
+              range: readRange,
+              totalRows: values.length,
+              rows: values.slice(0, 20),
             });
           } catch (error) {
             return errorResult(error);
           }
         }
       ),
+
+      tool(
+        'create_page',
+        `Persist the page spec onto the page being built (page ${pageId}) and mark it ready. The spec is validated; a page is ONLY this spec — there is no page code. Read the real data first (read_sheet_range) so every binding targets a spreadsheet/tab/columns that exist.`,
+        pageSpecInput,
+        async ({ spec }) => {
+          try {
+            const row = await getPageRow(pageId);
+            if (row === null) {
+              throw new Error(
+                `Page ${pageId} does not exist; it must be created via the studio first`
+              );
+            }
+            await db
+              .update(pages)
+              .set({
+                title: spec.title,
+                spec,
+                status: 'ready',
+                updatedAt: new Date(),
+              })
+              .where(eq(pages.id, pageId));
+            return textResult({
+              status: 'saved',
+              pageId,
+              title: spec.title,
+              widgets: spec.widgets.map((w) => ({
+                id: w.id,
+                type: w.type,
+                title: w.title,
+              })),
+            });
+          } catch (error) {
+            return errorResult(error);
+          }
+        }
+      ),
+
+      tool(
+        'update_page',
+        `Replace the stored spec of the page being built (page ${pageId}) with a corrected/extended version. Same validation as create_page.`,
+        pageSpecInput,
+        async ({ spec }) => {
+          try {
+            const row = await getPageRow(pageId);
+            if (row === null) throw new Error(`Page ${pageId} does not exist`);
+            await db
+              .update(pages)
+              .set({
+                title: spec.title,
+                spec,
+                status: 'ready',
+                updatedAt: new Date(),
+              })
+              .where(eq(pages.id, pageId));
+            return textResult({ status: 'updated', pageId, title: spec.title });
+          } catch (error) {
+            return errorResult(error);
+          }
+        }
+      ),
+
+      tool(
+        'get_page',
+        `Read the page being built (page ${pageId}): its title, status, and stored spec.`,
+        {},
+        async () => {
+          try {
+            const row = await getPageRow(pageId);
+            if (row === null) throw new Error(`Page ${pageId} does not exist`);
+            return textResult({
+              id: row.id,
+              title: row.title,
+              status: row.status,
+              spec: row.spec ?? null,
+              specValid: parseStoredSpec(row) !== null,
+            });
+          } catch (error) {
+            return errorResult(error);
+          }
+        }
+      ),
+
+      makeReportMissingCredentialTool(pageId, 'page'),
     ],
   });
 }
 
-/** Read the persisted build-thread row for a flow (session id, status, deferred setup). */
-export async function getBuildThread(flowId: number) {
+/** Read the persisted build-thread row for a build subject (session id, status, deferred setup). */
+export async function getBuildThread(subjectId: number, kind: AgentKind) {
   const rows = await db
     .select()
     .from(buildThreads)
-    .where(eq(buildThreads.flowId, flowId))
+    .where(
+      and(
+        eq(buildThreads.subjectId, subjectId),
+        eq(buildThreads.agentKind, kind)
+      )
+    )
     .limit(1);
   return rows[0] ?? null;
 }
