@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect } from 'react';
 
 interface IndexRouteSearch {
+  prompt?: string;
   ref?: string;
 }
 
@@ -9,6 +10,7 @@ export const Route = createFileRoute('/')({
   component: IndexRoute,
   validateSearch: (search: Record<string, unknown>): IndexRouteSearch => {
     return {
+      prompt: typeof search.prompt === 'string' ? search.prompt : undefined,
       ref: typeof search.ref === 'string' ? search.ref : undefined,
     };
   },
@@ -16,15 +18,15 @@ export const Route = createFileRoute('/')({
 
 function IndexRoute() {
   const navigate = useNavigate();
-  const { ref } = Route.useSearch();
+  const { prompt, ref } = Route.useSearch();
 
   useEffect(() => {
     navigate({
       to: '/home',
-      search: { ref },
+      search: { prompt, ref },
       replace: true,
     });
-  }, [navigate, ref]);
+  }, [navigate, prompt, ref]);
 
   return null;
 }

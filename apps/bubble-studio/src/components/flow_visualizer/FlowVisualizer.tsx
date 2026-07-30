@@ -37,6 +37,7 @@ import { extractStepGraph, type StepData } from '@/utils/workflowToSteps';
 import { humanizeConditionLabel } from '@/utils/flowChecklist';
 import { useExecutionStore, getExecutionStore } from '@/stores/executionStore';
 import { useBubbleFlow } from '@/hooks/useBubbleFlow';
+import { useBuildThreadStatus } from '@/hooks/usePearlStream';
 import { useUIStore } from '@/stores/uiStore';
 import { useEditor } from '@/hooks/useEditor';
 import CronScheduleNode from './nodes/CronScheduleNode';
@@ -124,6 +125,14 @@ function FlowVisualizerInner({
     },
   });
   const { unsavedCode, setExecutionHighlight } = useEditor(flowId);
+  // Build-thread status: only consulted while the flow has no code, to tell
+  // "still being built" apart from "build failed" (a failed harness build
+  // leaves a 0-code flow with no generationError on the record).
+  const codeIsEmpty = !currentFlow?.code || currentFlow.code.trim() === '';
+  const buildThreadStatus = useBuildThreadStatus(
+    flowId,
+    Boolean(currentFlow) && codeIsEmpty && !currentFlow?.generationError
+  );
   // Select only needed execution store actions/state to avoid re-renders from events
   // Note: Individual nodes subscribe to their own state - FlowVisualizer only needs minimal state
   const setInputs = useExecutionStore(flowId, (s) => s.setInputs);
@@ -2476,8 +2485,21 @@ function FlowVisualizerInner({
     );
   }
 
+  // Check if code is empty and no error (generating state)
+  // Gate on server truth, not only the cached code: an optimistic mutation can
+  // blank the cached `code`, but a fetched record with parsed bubbleParameters
+  // is a finished build and must never re-show the "still being built" overlay.
+  const hasBuiltArtifacts =
+    Object.keys(currentFlow?.bubbleParameters || {}).length > 0;
+  // A 0-code flow whose build thread ended in 'error' is a FAILED build, not
+  // a pending one; it must show the error state, never the eternal overlay.
+  const buildFailed =
+    (!currentFlow?.code || currentFlow.code.trim() === '') &&
+    !hasBuiltArtifacts &&
+    buildThreadStatus === 'error';
+
   // Show generation error state
-  if (currentFlow?.generationError) {
+  if (currentFlow?.generationError || buildFailed) {
     return (
       <div
         className="h-full flex items-center justify-center"
@@ -2502,10 +2524,13 @@ function FlowVisualizerInner({
             </div>
           </div>
           <p className="text-red-400 text-lg mb-2 font-medium">
-            Code Generation Failed
+            {currentFlow?.generationError
+              ? 'Code Generation Failed'
+              : 'Build Failed'}
           </p>
           <p className="text-gray-400 text-sm mb-4">
-            {currentFlow.generationError}
+            {currentFlow?.generationError ??
+              'The build ended with an error before any code was saved. Open the Conversation tab to retry or describe what to change.'}
           </p>
         </div>
       </div>
@@ -2514,11 +2539,6 @@ function FlowVisualizerInner({
 
   // Check if code is empty and no error (generating state)
   // If there's an error, we show the error state instead.
-  // Gate on server truth, not only the cached code: an optimistic mutation can
-  // blank the cached `code`, but a fetched record with parsed bubbleParameters
-  // is a finished build and must never re-show the "still being built" overlay.
-  const hasBuiltArtifacts =
-    Object.keys(currentFlow?.bubbleParameters || {}).length > 0;
   const isGenerating =
     (!currentFlow?.code || currentFlow.code.trim() === '') &&
     !hasBuiltArtifacts &&

@@ -35,7 +35,14 @@ let harnessCallSeq = 0;
 function refreshFlowQueries(flowId: number): void {
   void queryClient.invalidateQueries({ queryKey: ['bubbleFlow', flowId] });
   void queryClient.invalidateQueries({ queryKey: ['bubbleFlowList'] });
+  void queryClient.invalidateQueries({
+    queryKey: ['build-thread-status', flowId],
+  });
 }
+
+/** Message shown when a harness turn ends in an error result. */
+export const BUILD_FAILED_MESSAGE =
+  'Build failed: the agent session ended with an error before the flow was saved. Retry, or send a message describing what to change.';
 
 /**
  * After a harness turn that saved the flow, the open Monaco buffer still
@@ -186,6 +193,16 @@ export async function sendBuildMessage(
           case 'done': {
             const data = frame.data as { status?: string };
             if (typeof data.status === 'string') finalStatus = data.status;
+            // The sidecar reports 'error' when the SDK turn ended with an
+            // error result; without surfacing it the flow page shows a
+            // permanent "still being built" state for a 0-code flow.
+            if (data.status === 'error' && !sawError) {
+              sawError = true;
+              s().addEvent({
+                type: 'generation_error',
+                message: BUILD_FAILED_MESSAGE,
+              });
+            }
             break;
           }
           case 'error': {
@@ -209,7 +226,7 @@ export async function sendBuildMessage(
     flushAssistantText();
     while (runningCallIds.length > 0) closeOldestRunningTool(false);
     s().removeLastTimelineEventIf((e) => e.type === 'llm_thinking');
-    if (options?.initialGeneration && !sawError && finalStatus === 'done') {
+    if (options?.initialGeneration && !sawError && finalStatus === 'ready') {
       s().addEvent({ type: 'generation_complete', summary: '', code: '' });
     }
   } catch (error) {
@@ -295,8 +312,49 @@ async function rehydrateFromThread(
     }
     flushSegment();
   }
+  // A stored thread whose last turn errored must rehydrate WITH its error
+  // (message + Retry button), not as a silently truncated conversation.
+  if (thread.status === 'error') {
+    store.getState().addEvent({
+      type: 'generation_error',
+      message: BUILD_FAILED_MESSAGE,
+    });
+  }
   store.getState().setGenerationCompleted(true);
   return 'rehydrated';
+}
+
+/**
+ * Build-thread status for a flow ('building' | 'ready' | 'error' |
+ * 'blocked_on_credential', or null when the flow has no build thread). Used
+ * by the canvas to distinguish "still being built" from "build failed" for a
+ * flow with no code: a failed build must show an error state, never an
+ * eternal building overlay.
+ */
+export function useBuildThreadStatus(
+  flowId: number | null,
+  enabled: boolean
+): string | null {
+  const { data } = useQuery({
+    queryKey: ['build-thread-status', flowId],
+    enabled: enabled && flowId !== null,
+    staleTime: 5_000,
+    refetchOnWindowFocus: false,
+    // Aligned with the flow record's own pending poll (10s) so an externally
+    // failed build surfaces without a manual refresh.
+    refetchInterval: 10_000,
+    queryFn: async (): Promise<string | null> => {
+      if (!flowId) return null;
+      try {
+        const thread = await fetchBuildThread('flow', flowId);
+        return thread.status;
+      } catch {
+        // No thread yet (or transient proxy error): treat as unknown.
+        return null;
+      }
+    },
+  });
+  return data ?? null;
 }
 
 /**
