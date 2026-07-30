@@ -45,6 +45,7 @@ import toolsRoutes from './routes/tools.js';
 import buildRoutes from './routes/build.js';
 import buildPageRoutes from './routes/build-page.js';
 import pageRoutes from './routes/pages.js';
+import telemetryRoutes from './routes/telemetry.js';
 import { getBubbleFactory } from './services/bubble-factory-instance.js';
 
 const app = new OpenAPIHono({
@@ -78,6 +79,8 @@ app.use('/build/*', authMiddleware);
 app.use('/build-page/*', authMiddleware);
 app.use('/page', authMiddleware);
 app.use('/page/*', authMiddleware);
+app.use('/telemetry', authMiddleware);
+app.use('/telemetry/*', authMiddleware);
 
 // Note: webhook and execute-bubble-flow routes will handle verification internally
 // They don't need auth middleware since they use their own authentication
@@ -108,6 +111,7 @@ app.route('/tools', toolsRoutes);
 app.route('/build', buildRoutes);
 app.route('/build-page', buildPageRoutes);
 app.route('/page', pageRoutes);
+app.route('/telemetry', telemetryRoutes);
 
 // OpenAPI documentation endpoint
 app.doc('/doc', {

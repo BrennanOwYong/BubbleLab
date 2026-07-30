@@ -40,6 +40,7 @@
 
 import { analytics } from '../services/analytics';
 import { API_BASE_URL } from '../env';
+import { isTokenFunctionReady, refreshToken } from './token-refresh';
 
 export const TELEMETRY_PREFIX = '[bl:telemetry]';
 
@@ -143,18 +144,93 @@ export type TelemetryEventCatalog = {
 export type TelemetryEventName = keyof TelemetryEventCatalog;
 
 /**
- * Track one site-wide event: writes the structured [TELEMETRY] console line
- * and forwards to PostHog through the existing analytics client.
+ * Track one site-wide event: writes the structured [TELEMETRY] console line,
+ * forwards to PostHog through the existing analytics client, and queues the
+ * event for the server-side sink (POST /telemetry) so client errors are
+ * queryable without a browser attached.
  */
 export function track<E extends TelemetryEventName>(
   event: E,
   props: TelemetryEventCatalog[E] & Record<string, unknown>
 ): void {
-  console.info(
-    TELEMETRY_TAG,
-    JSON.stringify({ event, ts: new Date().toISOString(), ...props })
-  );
+  const payload = { event, ts: new Date().toISOString(), ...props };
+  console.info(TELEMETRY_TAG, JSON.stringify(payload));
   analytics.track(event, props);
+  enqueueForServer(payload);
+}
+
+// --- Server sink (POST /telemetry) ------------------------------------------
+//
+// Fire-and-forget batch POST of every track() payload to the API's in-memory
+// telemetry ring buffer. Failures are swallowed (the endpoint being down must
+// never break the app), and two guards prevent recursion:
+// 1. The fetch interceptor below skips the ingest path, so the POST itself
+//    emits no api.call / api.call_failed event.
+// 2. enqueueForServer drops any api.* event whose path IS the ingest path,
+//    so even a capture that slips through cannot re-enter the queue.
+
+export const TELEMETRY_INGEST_PATH = '/telemetry';
+
+const FLUSH_INTERVAL_MS = 1000;
+const MAX_QUEUE = 50;
+
+let serverQueue: Array<Record<string, unknown>> = [];
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+let pageHideFlushInstalled = false;
+
+function enqueueForServer(payload: Record<string, unknown>): void {
+  if (!API_BASE_URL) return;
+  // Loop guard 2: never ship telemetry about the telemetry POST itself.
+  if (
+    typeof payload.event === 'string' &&
+    payload.event.startsWith('api.') &&
+    payload.path === TELEMETRY_INGEST_PATH
+  ) {
+    return;
+  }
+  serverQueue.push(payload);
+  if (!pageHideFlushInstalled && typeof window !== 'undefined') {
+    pageHideFlushInstalled = true;
+    window.addEventListener('pagehide', () => void flushTelemetryQueue());
+  }
+  if (serverQueue.length >= MAX_QUEUE) {
+    void flushTelemetryQueue();
+  } else if (flushTimer === null) {
+    flushTimer = setTimeout(
+      () => void flushTelemetryQueue(),
+      FLUSH_INTERVAL_MS
+    );
+  }
+}
+
+/** Flush queued events to POST /telemetry. Never throws. */
+export async function flushTelemetryQueue(): Promise<void> {
+  if (flushTimer !== null) {
+    clearTimeout(flushTimer);
+    flushTimer = null;
+  }
+  if (serverQueue.length === 0 || !API_BASE_URL) return;
+  const events = serverQueue;
+  serverQueue = [];
+  try {
+    // Best-effort auth: attach the Clerk token when available; the API's dev
+    // mode accepts header-less requests.
+    let token: string | null = null;
+    if (isTokenFunctionReady()) {
+      token = await refreshToken().catch(() => null);
+    }
+    await fetch(`${API_BASE_URL}${TELEMETRY_INGEST_PATH}`, {
+      method: 'POST',
+      keepalive: true,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ events }),
+    });
+  } catch {
+    // Swallow: telemetry must never break the app or loop on its own failure.
+  }
 }
 
 // --- Fetch interceptor ------------------------------------------------------
@@ -184,6 +260,12 @@ export function installFetchInterceptor(): void {
           : input.url;
 
     if (!API_BASE_URL || !url.startsWith(API_BASE_URL)) {
+      return originalFetch(input, init);
+    }
+
+    // Loop guard 1: the telemetry sink's own POST must not emit api.call /
+    // api.call_failed events, or a failing ingest endpoint would loop forever.
+    if (url.startsWith(`${API_BASE_URL}${TELEMETRY_INGEST_PATH}`)) {
       return originalFetch(input, init);
     }
 
