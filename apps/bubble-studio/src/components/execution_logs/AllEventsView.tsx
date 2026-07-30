@@ -277,15 +277,31 @@ export default function AllEventsView({
   const handleFixWithPearl = (issueDetails?: string) => {
     if (!flowId) return;
 
-    // Use specific issue details if provided, otherwise use generic message
-    const prompt = issueDetails
-      ? `The workflow check found the following issue:\n\n${issueDetails}\n\nExplain this error in plain English. Then tell me: is this something I need to do myself (like setting up an API key or reconnecting an account), or a workflow problem you can fix? Only edit the workflow if it is a workflow problem.`
-      : `I'm seeing error(s) in my workflow execution (they are in your context). Explain in plain English what went wrong. Then tell me: is this something I need to do myself (like setting up an API key or reconnecting an account), or a workflow problem you can fix? Only edit the workflow if it is a workflow problem.`;
+    // The harness agent cannot read execution logs itself, so carry the
+    // latest run's error events in the message when no summary is provided.
+    let details = issueDetails;
+    if (!details) {
+      const errorLogs = (executionState.events || []).filter(
+        (e) => e.type === 'error' || e.type === 'fatal'
+      );
+      details = errorLogs
+        .map((log, idx) => {
+          const extra = log.additionalData
+            ? `\n   Additional info: ${JSON.stringify(log.additionalData).slice(0, 1500)}`
+            : '';
+          return `${idx + 1}. ${log.type.toUpperCase()}: ${log.message}${extra}`;
+        })
+        .join('\n');
+    }
 
-    // Trigger Pearl generation (component doesn't subscribe to Pearl state)
+    const prompt = details
+      ? `My latest run of this flow failed with the following error(s):\n\n${details}\n\nExplain this error in plain English. Then tell me: is this something I need to do myself (like setting up an API key or reconnecting an account), or a workflow problem you can fix? Only edit the workflow if it is a workflow problem.`
+      : `I'm seeing error(s) in my workflow execution. Explain in plain English what went wrong. Then tell me: is this something I need to do myself (like setting up an API key or reconnecting an account), or a workflow problem you can fix? Only edit the workflow if it is a workflow problem.`;
+
+    // Trigger the explain/fix turn on the flow's harness session
     pearl.startGeneration(prompt);
 
-    // Open Pearl panel
+    // Open the conversation panel where the explanation streams in
     openConsolidatedPanelWith('pearl');
   };
 
