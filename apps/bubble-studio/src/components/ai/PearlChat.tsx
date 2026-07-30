@@ -45,6 +45,7 @@ import { useEditorStore } from '../../stores/editorStore';
 import { API_BASE_URL } from '../../env';
 import {
   useGenerateInitialFlow,
+  useRehydrateBuildThread,
   startBuildingPhase,
   submitClarificationAndContinue,
 } from '../../hooks/usePearlStream';
@@ -177,6 +178,9 @@ export function PearlChat() {
       [queryClient, selectedFlowId, flowData?.prompt]
     ),
   });
+
+  // For flows that already have code, show the stored build conversation
+  useRehydrateBuildThread(selectedFlowId, !isGenerating);
 
   // Track if we've initialized the generation conversation
   const hasInitializedGenerationRef = useRef(false);

@@ -271,6 +271,38 @@ async function rehydrateFromThread(
   return 'rehydrated';
 }
 
+/**
+ * Rehydrate the conversation panel for a flow that is NOT mid-initial-build
+ * (the initial-generation path rehydrates itself in useGenerateInitialFlow).
+ * Runs once per flow while the store is empty, so a refreshed page shows the
+ * conversation that built the flow.
+ */
+export function useRehydrateBuildThread(
+  flowId: number | null,
+  enabled: boolean
+) {
+  return useQuery({
+    queryKey: ['build-thread-rehydrate', flowId],
+    enabled: enabled && flowId !== null,
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    queryFn: async (): Promise<boolean> => {
+      if (!flowId) return false;
+      const store = getPearlChatStore(flowId);
+      const state = store.getState();
+      if (
+        state.hasActiveGenerationStream() ||
+        state.generationCompleted ||
+        state.messages.length > 0
+      ) {
+        return false;
+      }
+      const disposition = await rehydrateFromThread(flowId);
+      return disposition === 'rehydrated';
+    },
+  });
+}
+
 export interface GenerateCodeParams {
   prompt: string;
   flowId?: number;
