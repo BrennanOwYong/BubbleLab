@@ -35,20 +35,9 @@ import { FlowNotFoundView } from '@/components/FlowNotFoundView';
 
 export interface FlowIDEViewProps {
   flowId: number;
-  /**
-   * Prompt carried from the create-flow box: opens the conversation panel on
-   * the builder chat and auto-sends it as the first agent message.
-   */
-  initialBuildPrompt?: string;
-  /** Called when the initial prompt is consumed, so the caller can clear it. */
-  onInitialBuildPromptSent?: () => void;
 }
 
-export function FlowIDEView({
-  flowId,
-  initialBuildPrompt,
-  onInitialBuildPromptSent,
-}: FlowIDEViewProps) {
+export function FlowIDEView({ flowId }: FlowIDEViewProps) {
   // ============= Zustand Stores =============
   const {
     showLeftPanel,
@@ -61,6 +50,10 @@ export function FlowIDEView({
     toggleConsolidatedPanel,
   } = useUIStore();
 
+  // The old dashboard generation stream is gone; the builder harness always
+  // works on an existing flow, so there is no pre-flow streaming state.
+  const generationPrompt = '';
+  const isStreaming = false;
   const { editor } = useEditor();
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   // Use selector to only subscribe to specific fields and prevent unnecessary re-renders
@@ -227,21 +220,13 @@ export function FlowIDEView({
   // requiring a Run first.
   usePersistCredentialBindings(flowId);
 
-  // Arriving from the create-flow box: surface the builder chat so the
-  // auto-sent prompt streams in view.
-  useEffect(() => {
-    if (initialBuildPrompt) {
-      useUIStore.getState().openConsolidatedPanelWith('build');
-    }
-  }, [initialBuildPrompt]);
-
   if (isFlowNotFound) {
     return <FlowNotFoundView flowId={flowId} onRetry={() => refetch()} />;
   }
 
   const isRunnable = () => {
     if (!currentFlow) return false;
-    // Disable if no bubble parameters (flow has no steps yet)
+    // Disable if no bubble parameters (flow is still generating)
     if (Object.keys(currentFlow.bubbleParameters || {}).length === 0)
       return false;
     const { isValid } = canExecute();
@@ -262,7 +247,7 @@ export function FlowIDEView({
   const getRunDisabledReason = () => {
     if (!currentFlow) return 'Create or select a flow first';
     if (Object.keys(currentFlow.bubbleParameters || {}).length === 0) {
-      return 'Flow has no steps yet';
+      return 'Flow is still generating...';
     }
     if (executionState.isValidating) return 'Validating code...';
     if (isRunning) return 'Working on it...please be patient :)';
@@ -290,13 +275,21 @@ export function FlowIDEView({
               let name = '';
               let hasPrompt = false;
 
-              if (flowId && currentFlow) {
-                name = currentFlow.name;
+              if (isStreaming && generationPrompt) {
+                name = 'New Flow';
                 hasPrompt = true;
+              } else if (flowId) {
+                if (currentFlow) {
+                  name = currentFlow.name;
+                  hasPrompt = true;
+                }
               } else if (currentFlow?.name) {
                 name =
                   currentFlow?.name ||
                   getFlowNameFromCode(currentFlow?.code || '');
+                hasPrompt = true;
+              } else if (generationPrompt.trim()) {
+                name = 'New Flow';
                 hasPrompt = true;
               } else {
                 name = getFlowNameFromCode(editor.getCode());
@@ -393,7 +386,7 @@ export function FlowIDEView({
               </SignedOut>
 
               <SignedIn>
-                {
+                {!isStreaming && (
                   <>
                     <Tooltip
                       content="Run the flow at least once to enable export"
@@ -452,35 +445,38 @@ export function FlowIDEView({
                       </button>
                     </Tooltip>
                   </>
-                }
+                )}
               </SignedIn>
             </div>
 
             {/* Mobile View - Run button + Hamburger menu */}
             <div className="flex md:hidden items-center gap-2">
               <SignedIn>
-                <Tooltip
-                  content={getRunDisabledReason()}
-                  show={!isRunnable()}
-                  position="bottom"
-                >
-                  <button
-                    type="button"
-                    onClick={handleExecuteFromMainPage}
-                    disabled={!isRunnable()}
-                    className={`px-2 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 flex items-center gap-1 ${
-                      isRunnable()
-                        ? 'bg-pink-600/20 hover:bg-pink-600/30 border border-pink-600/50 text-pink-300 hover:text-pink-200'
-                        : 'bg-gray-600/20 border border-gray-600/50 cursor-not-allowed text-gray-400'
-                    }`}
+                {!isStreaming && (
+                  <Tooltip
+                    content={getRunDisabledReason()}
+                    show={!isRunnable()}
+                    position="bottom"
                   >
-                    {executionState.isValidating || executionState.isRunning ? (
-                      <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
-                    ) : (
-                      <Play className="w-3 h-3" />
-                    )}
-                  </button>
-                </Tooltip>
+                    <button
+                      type="button"
+                      onClick={handleExecuteFromMainPage}
+                      disabled={!isRunnable()}
+                      className={`px-2 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 flex items-center gap-1 ${
+                        isRunnable()
+                          ? 'bg-pink-600/20 hover:bg-pink-600/30 border border-pink-600/50 text-pink-300 hover:text-pink-200'
+                          : 'bg-gray-600/20 border border-gray-600/50 cursor-not-allowed text-gray-400'
+                      }`}
+                    >
+                      {executionState.isValidating ||
+                      executionState.isRunning ? (
+                        <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                      ) : (
+                        <Play className="w-3 h-3" />
+                      )}
+                    </button>
+                  </Tooltip>
+                )}
               </SignedIn>
 
               {/* Hamburger Menu Button */}
@@ -523,7 +519,7 @@ export function FlowIDEView({
               </SignedOut>
 
               <SignedIn>
-                {
+                {!isStreaming && (
                   <>
                     {/* Export Button */}
                     <button
@@ -545,9 +541,11 @@ export function FlowIDEView({
 
                     {/* Prompt Toggle */}
                     {(() => {
-                      const hasPrompt = Boolean(
-                        (flowId && currentFlow) || currentFlow?.name
-                      );
+                      let hasPrompt = false;
+                      if (isStreaming && generationPrompt) hasPrompt = true;
+                      else if (flowId && currentFlow) hasPrompt = true;
+                      else if (currentFlow?.name) hasPrompt = true;
+                      else if (generationPrompt.trim()) hasPrompt = true;
 
                       if (!hasPrompt) return null;
 
@@ -584,7 +582,7 @@ export function FlowIDEView({
                       </button>
                     )}
                   </>
-                }
+                )}
               </SignedIn>
             </div>
           </div>
@@ -644,15 +642,32 @@ export function FlowIDEView({
               {/* Editor/Flow Section */}
               <Panel defaultSize={100} minSize={40}>
                 <div className="h-full flex flex-col">
-                  {/* Flow Info Header - Shows current flow's stored prompt */}
+                  {/* Flow Info Header - Shows current flow's prompt */}
                   {(() => {
                     let currentFlowInfo = null;
 
-                    if (flowId && currentFlow) {
+                    if (isStreaming && generationPrompt) {
                       currentFlowInfo = {
-                        name: currentFlow.name,
-                        prompt: currentFlow.prompt || 'No prompt available',
-                        isFromHistory: true,
+                        name: 'New Flow',
+                        prompt: generationPrompt,
+                        isFromHistory: false,
+                        isGenerating: true,
+                      };
+                    } else if (flowId) {
+                      const flow = currentFlow;
+                      if (flow) {
+                        currentFlowInfo = {
+                          name: flow.name,
+                          prompt: flow.prompt || 'No prompt available',
+                          isFromHistory: true,
+                        };
+                      }
+                    } else if (generationPrompt.trim()) {
+                      currentFlowInfo = {
+                        name: 'New Flow',
+                        prompt: generationPrompt,
+                        isFromHistory: false,
+                        isBeingTyped: true,
                       };
                     }
 
@@ -730,12 +745,7 @@ export function FlowIDEView({
                           {/* Desktop view - resizable panel */}
                           <PanelResizeHandle className="w-2 bg-[#30363d] hover:bg-white transition-colors" />
                           <Panel defaultSize={40} minSize={30} maxSize={50}>
-                            <ConsolidatedSidePanel
-                              initialBuildPrompt={initialBuildPrompt}
-                              onInitialBuildPromptSent={
-                                onInitialBuildPromptSent
-                              }
-                            />
+                            <ConsolidatedSidePanel />
                           </Panel>
                         </>
                       )}
@@ -748,10 +758,7 @@ export function FlowIDEView({
                           isConsolidatedPanelOpen ? 'block' : 'hidden'
                         }`}
                       >
-                        <ConsolidatedSidePanel
-                          initialBuildPrompt={initialBuildPrompt}
-                          onInitialBuildPromptSent={onInitialBuildPromptSent}
-                        />
+                        <ConsolidatedSidePanel />
                       </div>
                     )}
                   </div>

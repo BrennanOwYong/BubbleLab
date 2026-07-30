@@ -1,6 +1,7 @@
 import { createPortal } from 'react-dom';
 import { XMarkIcon } from '@heroicons/react/24/solid';
 import {
+  Sparkles,
   AlertCircle,
   CheckCircle2,
   Settings,
@@ -19,16 +20,22 @@ interface EvaluationIssuePopupProps {
   isOpen: boolean;
   onClose: () => void;
   evaluationResult: EvaluationResult;
+  onFixWithPearl: (issueDescription: string) => void;
+  isFixingWithPearl?: boolean;
 }
 
 /**
  * Popup dialog that appears when workflow check completes.
- * Shows summary for successful executions, or issue details for failures.
+ * Shows summary for successful executions, or issue details with fix options for failures.
+ * Every failure gets an "Explain with Pearl" button: Pearl explains the error in
+ * plain English and says whether it is a user setup action or a workflow fix.
  */
 export function EvaluationIssuePopup({
   isOpen,
   onClose,
   evaluationResult,
+  onFixWithPearl,
+  isFixingWithPearl = false,
 }: EvaluationIssuePopupProps) {
   if (!isOpen) {
     return null;
@@ -89,13 +96,25 @@ export function EvaluationIssuePopup({
     }
   };
 
+  const handleFixWithPearl = () => {
+    const issueContext = `The workflow check found the following issue (classified as "${evaluationResult.issueType ?? 'unknown'}"):\n\n${evaluationResult.summary}\n\nExplain this error in plain English. Then tell me: is this something I need to do myself (like setting up an API key or reconnecting an account), or a workflow problem you can fix? Only edit the workflow if it is a workflow problem.`;
+    onFixWithPearl(issueContext);
+  };
+
+  // Show "Explain with Pearl" for every failure. Pearl explains the error and,
+  // for setup/input issues, states the user action plainly instead of editing code.
+  const showFixWithPearl = !evaluationResult.working;
+
   // Different styling based on success/failure
   const isSuccess = evaluationResult.working;
 
   return createPortal(
     <div className="fixed inset-0 z-[100] flex items-center justify-center">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-[#0f1115]/70" onClick={onClose} />
+      <div
+        className="absolute inset-0 bg-[#0f1115]/70"
+        onClick={isFixingWithPearl ? undefined : onClose}
+      />
 
       {/* Modal */}
       <div className="relative bg-[#161b22] rounded-lg shadow-xl max-w-lg w-full mx-4 overflow-hidden border border-[#30363d]">
@@ -139,7 +158,8 @@ export function EvaluationIssuePopup({
               type="button"
               title="Close"
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-200 transition-colors"
+              disabled={isFixingWithPearl}
+              className="text-gray-400 hover:text-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <XMarkIcon className="w-5 h-5" />
             </button>
@@ -195,7 +215,7 @@ export function EvaluationIssuePopup({
                 ? 'Please update your settings or credentials to resolve this issue.'
                 : evaluationResult.issueType === 'input'
                   ? 'Please provide valid input data and try again.'
-                  : 'Details of the failed run are saved in the History tab.'}
+                  : 'Gluu can analyze the results and suggest fixes for your workflow.'}
             </p>
           )}
         </div>
@@ -206,10 +226,31 @@ export function EvaluationIssuePopup({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-gray-300 bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] rounded-md transition-colors"
+              disabled={isFixingWithPearl}
+              className="px-4 py-2 text-sm font-medium text-gray-300 bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSuccess ? 'Close' : 'Dismiss'}
             </button>
+            {showFixWithPearl && (
+              <button
+                type="button"
+                onClick={handleFixWithPearl}
+                disabled={isFixingWithPearl}
+                className="px-4 py-2 text-sm font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {isFixingWithPearl ? (
+                  <>
+                    <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+                    Analyzing...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4" />
+                    Explain with Gluu
+                  </>
+                )}
+              </button>
+            )}
           </div>
         </div>
       </div>

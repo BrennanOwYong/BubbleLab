@@ -4,8 +4,8 @@
  * turns through POST .../message, and tracks per-tool-call progress so the
  * UI can render tool chips (running -> completed/failed).
  *
- * Consumed by BuilderChat (flow-page conversation panel) and BuildChatPage
- * (page builder).
+ * Consumed by BuildChatPage (page builder). The flow-page conversation
+ * panel uses usePearlStream's harness transport instead.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {

@@ -2,7 +2,7 @@ import type { Components } from 'react-markdown';
 
 /**
  * Shared markdown component styles for consistent rendering across the app.
- * Used by BuilderChat (the flow-page conversation panel).
+ * Used by the flow-page conversation panel (PearlChat) and BuildChatPage.
  */
 export const sharedMarkdownComponents: Components = {
   // Headings

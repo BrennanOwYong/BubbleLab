@@ -1,6 +1,7 @@
 import React, { useRef, useMemo, useState } from 'react';
 import { PlayIcon, InformationCircleIcon } from '@heroicons/react/24/solid';
 import {
+  Sparkles,
   CheckCircle2,
   XCircle,
   Loader2,
@@ -16,6 +17,8 @@ import { findLogoForBubble } from '../../lib/integrations';
 import { getVariableNameForDisplay } from '../../utils/bubbleUtils';
 import { useBubbleFlow } from '../../hooks/useBubbleFlow';
 import { useLiveOutput } from '../../hooks/useLiveOutput';
+import { usePearlChatStore } from '../../hooks/usePearlChatStore';
+import { useUIStore } from '../../stores/uiStore';
 import { useExecutionStore } from '../../stores/executionStore';
 import type { TabType } from '../../stores/liveOutputStore';
 import { extractStepGraph, type StepData } from '../../utils/workflowToSteps';
@@ -78,6 +81,10 @@ export default function AllEventsView({
     setSelectedEventIndex,
     selectBubbleInConsole,
   } = useLiveOutput(flowId);
+
+  // Pearl chat integration for error fixing
+  const pearl = usePearlChatStore(flowId);
+  const { openConsolidatedPanelWith } = useUIStore();
 
   // Get execution state for bubble status
   const executionState = useExecutionStore(flowId);
@@ -264,6 +271,22 @@ export default function AllEventsView({
       return selectedTab.index === tabType.index;
     }
     return true;
+  };
+
+  // Handler for "Fix with Pearl" CTA - used in both Results tab and individual bubble views
+  const handleFixWithPearl = (issueDetails?: string) => {
+    if (!flowId) return;
+
+    // Use specific issue details if provided, otherwise use generic message
+    const prompt = issueDetails
+      ? `The workflow check found the following issue:\n\n${issueDetails}\n\nExplain this error in plain English. Then tell me: is this something I need to do myself (like setting up an API key or reconnecting an account), or a workflow problem you can fix? Only edit the workflow if it is a workflow problem.`
+      : `I'm seeing error(s) in my workflow execution (they are in your context). Explain in plain English what went wrong. Then tell me: is this something I need to do myself (like setting up an API key or reconnecting an account), or a workflow problem you can fix? Only edit the workflow if it is a workflow problem.`;
+
+    // Trigger Pearl generation (component doesn't subscribe to Pearl state)
+    pearl.startGeneration(prompt);
+
+    // Open Pearl panel
+    openConsolidatedPanelWith('pearl');
   };
 
   return (
@@ -877,6 +900,37 @@ export default function AllEventsView({
                         ───────────────────────────────────────────────────────────── */}
                     {errorEvents.length > 0 && (
                       <div className="px-4">
+                        {/* Fix with Pearl Banner */}
+                        <div className="mb-4 p-3 bg-gradient-to-r from-orange-950/30 to-transparent border border-orange-500/20 rounded-lg">
+                          <div className="flex items-center justify-between gap-4">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-lg bg-orange-500/20 flex items-center justify-center">
+                                <Sparkles className="w-4 h-4 text-orange-400" />
+                              </div>
+                              <div>
+                                <h4 className="text-xs font-medium text-gray-200">
+                                  Not sure what these errors mean?
+                                </h4>
+                                <p className="text-[10px] text-gray-500">
+                                  Gluu explains the error and tells you what to
+                                  do
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleFixWithPearl()}
+                              disabled={pearl.isPending}
+                              className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 hover:bg-orange-500 disabled:bg-orange-600/50 disabled:cursor-not-allowed text-white text-xs font-medium rounded-md transition-all shadow-lg shadow-orange-900/20"
+                            >
+                              <Sparkles className="w-3.5 h-3.5" />
+                              {pearl.isPending
+                                ? 'Analyzing...'
+                                : 'Explain with Gluu'}
+                            </button>
+                          </div>
+                        </div>
+
                         {/* Errors Header */}
                         <div className="flex items-center gap-2 mb-2">
                           <div className="w-1 h-4 bg-red-500 rounded-full" />
@@ -1168,6 +1222,36 @@ export default function AllEventsView({
                     </div>
                   )}
 
+                  {/* Fix with Pearl CTA - Only show for workflow issues (not setup or input) */}
+                  {!evaluationResult.working &&
+                    evaluationResult.issueType === 'workflow' && (
+                      <div className="bg-[#161b22] rounded-lg border border-[#30363d] p-4">
+                        <div className="flex items-center justify-between gap-4">
+                          <div>
+                            <h4 className="text-sm font-medium text-gray-200 mb-1">
+                              Not sure what this issue means?
+                            </h4>
+                            <p className="text-xs text-gray-400">
+                              Gluu explains the issue and tells you what to do
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleFixWithPearl(evaluationResult.summary)
+                            }
+                            disabled={pearl.isPending}
+                            className="flex-shrink-0 flex items-center gap-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:bg-orange-600/50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-md transition-colors"
+                          >
+                            <Sparkles className="w-4 h-4" />
+                            {pearl.isPending
+                              ? 'Analyzing...'
+                              : 'Explain with Gluu'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                   {/* Help text for setup/input issues */}
                   {!evaluationResult.working &&
                     evaluationResult.issueType !== 'workflow' && (
@@ -1262,6 +1346,20 @@ export default function AllEventsView({
                 (pe) => pe.variableId === varId
               );
 
+              // Check if this bubble has any errors
+              const hasErrorInBubble = evs.some((e) => {
+                // Check for error/fatal events
+                if (e.type === 'error' || e.type === 'fatal') return true;
+                // Check for bubble_execution_complete with result.success === false
+                if (e.type === 'bubble_execution_complete') {
+                  const result = e.additionalData?.result as
+                    | { success?: boolean }
+                    | undefined;
+                  return result && result.success === false;
+                }
+                return false;
+              });
+
               return (
                 <div className="flex flex-col h-full">
                   {/* View Mode Toggle Header */}
@@ -1337,6 +1435,36 @@ export default function AllEventsView({
                       </div>
                     </div>
                   </div>
+
+                  {/* Fix with Pearl Banner - Show if bubble has errors */}
+                  {hasErrorInBubble && (
+                    <div className="px-4 pt-3 pb-2">
+                      <div className="p-3 bg-[#161b22] border border-[#30363d] rounded-lg">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <h4 className="text-xs font-medium text-gray-200 mb-1">
+                              Not sure what this error means?
+                            </h4>
+                            <p className="text-[10px] text-gray-400">
+                              Please wait until the flow finishes executing
+                              before fixing!
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleFixWithPearl()}
+                            disabled={pearl.isPending}
+                            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 hover:bg-orange-700 disabled:bg-orange-600/50 disabled:cursor-not-allowed text-white text-xs font-medium rounded-md transition-colors shadow-sm"
+                          >
+                            <Sparkles className="w-3.5 h-3.5" />
+                            {pearl.isPending
+                              ? 'Analyzing...'
+                              : 'Explain with Gluu'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* UNIFIED VIEW - Shows input/output together */}
                   {viewMode === 'unified' && pairedExecution ? (

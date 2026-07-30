@@ -153,6 +153,75 @@ export function trackWorkflowExecution(
   });
 }
 
+export interface WorkflowGenerationEventProps {
+  prompt: string;
+  templateId?: string;
+  templateName?: string;
+  generatedBubbleCount: number;
+  generatedCodeLength: number;
+  generatedCode?: string;
+  generationDuration?: number;
+  success: boolean;
+  errorMessage?: string;
+}
+
+export function trackWorkflowGeneration(
+  props: WorkflowGenerationEventProps
+): void {
+  analytics.track('workflow_generation', {
+    prompt: props.prompt,
+    prompt_length: props.prompt.length,
+    template_id: props.templateId,
+    template_name: props.templateName,
+    generated_code: props.generatedCode,
+    generated_code_length: props.generatedCodeLength,
+    generation_duration_ms: props.generationDuration,
+    success: props.success,
+    error_message: props.errorMessage,
+  });
+}
+
+export interface AIAssistantEventProps {
+  action:
+    | 'open'
+    | 'close'
+    | 'send_message'
+    | 'receive_response'
+    | 'accept_response';
+  message: string;
+  messageLength?: number;
+  responseLength?: number;
+  conversationTurn?: number;
+  errorMessage?: string;
+}
+
+export function trackAIAssistant(props: AIAssistantEventProps): void {
+  analytics.track('ai_assistant', {
+    action: props.action,
+    message: props.message,
+    message_length: props.messageLength,
+    response_length: props.responseLength,
+    conversation_turn: props.conversationTurn,
+    error_message: props.errorMessage,
+  });
+}
+
+export interface TemplateEventProps {
+  action: 'click' | 'select' | 'generate';
+  templateId: string;
+  templateName: string;
+  templateCategory: string;
+}
+
+export function trackTemplate(props: TemplateEventProps): void {
+  analytics.track('template_interaction', {
+    action: props.action,
+    template_id: props.templateId,
+    template_name: props.templateName,
+    template_category: props.templateCategory,
+  });
+}
+
 export interface CodeEditEventProps {
   action: 'validate' | 'edit' | 'save';
   flowId?: number;

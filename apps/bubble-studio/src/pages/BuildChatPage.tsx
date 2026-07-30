@@ -1,7 +1,7 @@
 /**
  * Standalone builder chat page, used by the page-builder routes
  * (/build-page/:pageId). Flow builds converse inside the flow editor's
- * conversation panel (BuilderChat) instead.
+ * conversation panel (PearlChat, harness-backed) instead.
  *
  * The user messages the embedded builder agent; the agent's streamed thread
  * renders live (text deltas + tool-call chips). Opening an in-progress build
