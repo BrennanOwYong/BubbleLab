@@ -46,7 +46,7 @@ const markdownComponentsWithCollapsibleJson: Components = {
             <span>JSON Response</span>
           </summary>
           <div className="mt-2">
-            <pre className="bg-gray-900/50 rounded-lg overflow-x-auto mb-2">
+            <pre className="bg-gray-900/50 rounded-lg overflow-x-auto whitespace-pre-wrap break-words mb-2">
               {children}
             </pre>
           </div>
@@ -56,7 +56,7 @@ const markdownComponentsWithCollapsibleJson: Components = {
 
     // For non-JSON code blocks, use the default rendering
     return (
-      <pre className="bg-gray-900/50 rounded-lg overflow-x-auto mb-2">
+      <pre className="bg-gray-900/50 rounded-lg overflow-x-auto whitespace-pre-wrap break-words mb-2">
         {children}
       </pre>
     );

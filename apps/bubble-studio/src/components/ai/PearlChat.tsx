@@ -84,7 +84,7 @@ const LazyDetails = memo(function LazyDetails({
       </summary>
       {isOpen && (
         <div className="mt-2 max-h-40 overflow-y-auto">
-          <pre className="text-xs bg-[#0d1117] border border-[#21262d] rounded p-2 overflow-x-auto">
+          <pre className="text-xs bg-[#0d1117] border border-[#21262d] rounded p-2 overflow-x-auto whitespace-pre-wrap break-words">
             {children()}
           </pre>
         </div>

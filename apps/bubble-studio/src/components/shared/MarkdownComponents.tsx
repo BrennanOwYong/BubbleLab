@@ -50,14 +50,14 @@ export const sharedMarkdownComponents: Components = {
       );
     }
     return (
-      <code className="block bg-gray-900/50 text-gray-300 p-4 rounded-lg text-sm font-mono overflow-x-auto mb-2">
+      <code className="block bg-gray-900/50 text-gray-300 p-4 rounded-lg text-sm font-mono overflow-x-auto whitespace-pre-wrap break-words mb-2">
         {children}
       </code>
     );
   },
   // Pre blocks (wraps code blocks)
   pre: ({ children }) => (
-    <pre className="bg-gray-900/50 rounded-lg overflow-x-auto mb-2">
+    <pre className="bg-gray-900/50 rounded-lg overflow-x-auto whitespace-pre-wrap break-words mb-2">
       {children}
     </pre>
   ),
