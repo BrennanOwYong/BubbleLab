@@ -59,8 +59,12 @@ export function useValidateCode({ flowId }: ValidateCodeOptions) {
       executionState.startValidation();
 
       // Optimistically update code in React Query cache
-      // This prevents App.tsx useEffect from overriding editor with stale code
-      updateCode(variables.code);
+      // This prevents App.tsx useEffect from overriding editor with stale code.
+      // Never write an empty string: it would blank the cached flow code and
+      // re-trigger the "still being built" overlay on a finished flow.
+      if (variables.code.trim() !== '') {
+        updateCode(variables.code);
+      }
 
       // Show loading toast
       const loadingToastId = toast.loading('Validating code...');

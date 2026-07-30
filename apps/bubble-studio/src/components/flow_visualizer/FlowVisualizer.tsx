@@ -2513,9 +2513,15 @@ function FlowVisualizerInner({
   }
 
   // Check if code is empty and no error (generating state)
-  // If there's an error, we show the error state instead
+  // If there's an error, we show the error state instead.
+  // Gate on server truth, not only the cached code: an optimistic mutation can
+  // blank the cached `code`, but a fetched record with parsed bubbleParameters
+  // is a finished build and must never re-show the "still being built" overlay.
+  const hasBuiltArtifacts =
+    Object.keys(currentFlow?.bubbleParameters || {}).length > 0;
   const isGenerating =
     (!currentFlow?.code || currentFlow.code.trim() === '') &&
+    !hasBuiltArtifacts &&
     !currentFlow?.generationError;
 
   // Note: We no longer early return when there are no bubbles

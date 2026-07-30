@@ -360,12 +360,23 @@ export function useRunExecution(
         // This ensures we validate inputs against the UPDATED schema
         // Also revalidate flows that haven't been updated since backend parsing changes
         let flowToValidate = currentFlow;
-        const codeChanged = editor.getCode() !== currentFlow?.code;
+        // Monaco unmounts when the side panel is closed, so getCode() can
+        // return ''. Fall back to the saved flow code so a completed flow
+        // never pre-run-validates (or diffs) against an empty string.
+        const editorCode = editor.getCode();
+        const effectiveCode =
+          editorCode.trim() !== '' ? editorCode : (currentFlow?.code ?? '');
+        const codeChanged =
+          editorCode.trim() !== '' && editorCode !== currentFlow?.code;
         const needsDateRevalidation = needsRevalidationByDate(currentFlow);
-        if (validateCode && (codeChanged || needsDateRevalidation)) {
+        if (
+          validateCode &&
+          effectiveCode.trim() !== '' &&
+          (codeChanged || needsDateRevalidation)
+        ) {
           try {
             const validationResult = await validateCodeMutation.mutateAsync({
-              code: editor.getCode(),
+              code: effectiveCode,
               flowId: flowId,
               credentials: getExecutionStore(flowId).pendingCredentials,
               syncInputsWithFlow: true,

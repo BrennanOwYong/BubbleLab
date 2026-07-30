@@ -95,13 +95,65 @@ export function formatParameterValue(value: unknown, type: string): string {
  * Used when parameters don't contain function literals.
  */
 export function condenseToSingleLine(input: string): string {
-  return input
-    .replace(/\s*\n\s*/g, ' ')
-    .replace(/\s{2,}/g, ' ')
-    .replace(/\{\s+/g, '{ ')
-    .replace(/\s+\}/g, ' }')
-    .replace(/\s*,\s*/g, ', ')
-    .trim();
+  // Whitespace/comma normalization must only apply to CODE spans, never to the
+  // contents of string or template literals (mirrors stripCommentsOutsideStrings).
+  // e.g. a URL like `...?current=temperature_2m,relative_humidity_2m` must keep
+  // its commas untouched; injecting ", " breaks the request at runtime.
+  const condenseCode = (code: string): string =>
+    code
+      .replace(/\s*\n\s*/g, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .replace(/\{\s+/g, '{ ')
+      .replace(/\s+\}/g, ' }')
+      .replace(/\s*,\s*/g, ', ');
+
+  let result = '';
+  let codeChunk = '';
+  let inSingle = false;
+  let inDouble = false;
+  let inTemplate = false;
+  let escapeNext = false;
+
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i];
+
+    if (inSingle || inDouble || inTemplate) {
+      result += ch;
+      if (escapeNext) {
+        escapeNext = false;
+        continue;
+      }
+      if (ch === '\\') {
+        escapeNext = true;
+        continue;
+      }
+      if (
+        (inSingle && ch === "'") ||
+        (inDouble && ch === '"') ||
+        (inTemplate && ch === '`')
+      ) {
+        inSingle = false;
+        inDouble = false;
+        inTemplate = false;
+      }
+      continue;
+    }
+
+    if (ch === "'" || ch === '"' || ch === '`') {
+      result += condenseCode(codeChunk);
+      codeChunk = '';
+      result += ch;
+      if (ch === "'") inSingle = true;
+      else if (ch === '"') inDouble = true;
+      else inTemplate = true;
+      continue;
+    }
+
+    codeChunk += ch;
+  }
+
+  result += condenseCode(codeChunk);
+  return result.trim();
 }
 
 /**
