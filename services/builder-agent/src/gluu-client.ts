@@ -124,6 +124,12 @@ export const createFlowResponseSchema = z
   .passthrough();
 export type CreateFlowResponse = z.infer<typeof createFlowResponseSchema>;
 
+// PATCH /bubble-flow/:id/name response (bubble-flows.ts updateBubbleFlowNameRoute)
+export const renameFlowResponseSchema = z.object({
+  message: z.string(),
+});
+export type RenameFlowResponse = z.infer<typeof renameFlowResponseSchema>;
+
 export const runContextFlowResponseSchema = z.object({
   success: z.boolean(),
   result: z.unknown().optional(),
@@ -218,6 +224,15 @@ export class GluuClient {
   // GET /bubble-flow/:id
   getFlow(flowId: number): Promise<FlowDetail> {
     return this.json(flowDetailSchema, `/bubble-flow/${flowId}`);
+  }
+
+  // PATCH /bubble-flow/:id/name — body {name} per
+  // bubble-shared-schemas updateBubbleFlowNameSchema (min 1, max 100 chars).
+  renameFlow(flowId: number, name: string): Promise<RenameFlowResponse> {
+    return this.json(renameFlowResponseSchema, `/bubble-flow/${flowId}/name`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
+    });
   }
 
   // GET /user-profile

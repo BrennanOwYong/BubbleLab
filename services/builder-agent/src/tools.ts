@@ -448,6 +448,38 @@ export function createBuilderServer(
         }
       ),
 
+      // KIV: throttle rename to prevent abuse
+      tool(
+        'rename_flow',
+        `Rename a flow: writes the name to the backend (PATCH /bubble-flow/:id/name); the studio picks it up on its next refetch. Call ONCE at build completion with a concise human-friendly title, or whenever the user explicitly asks for a rename. Never claim a rename happened without calling this tool.`,
+        {
+          flowId: z
+            .number()
+            .int()
+            .positive()
+            .describe(`BubbleFlow id (the flow being built is ${flowId})`),
+          name: z
+            .string()
+            .min(1)
+            .max(100)
+            .describe(
+              'The new flow name: a short human-friendly title (max 100 chars), not the raw prompt'
+            ),
+        },
+        async (args) => {
+          try {
+            await client.renameFlow(args.flowId, args.name);
+            return textResult({
+              status: 'renamed',
+              flowId: args.flowId,
+              name: args.name,
+            });
+          } catch (error) {
+            return errorResult(error);
+          }
+        }
+      ),
+
       makeReportMissingCredentialTool(flowId, 'flow'),
     ],
   });

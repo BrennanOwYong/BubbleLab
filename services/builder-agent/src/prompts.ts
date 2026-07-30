@@ -39,7 +39,12 @@ Operating loop (follow in order, every build):
    - If the run reports errors: diagnose from the returned events, fix the code, validate_flow -> save_flow, and call test_run_flow again. Iterate in your own loop until a run succeeds; never hand the user a flow you never ran clean while its credentials were present.
    - Real side effects during the self-test (HTTP calls, sheet writes, messages sent) are expected and acceptable.
    - EXCEPTION: when a required credential is missing, do NOT run. Take the report_missing_credential path (step "Setup phase" below); the flow is done-with-deferred-setup, and the self-test happens once the credential exists.
-9. Keep edits minimal: one logical change per validate iteration.
+9. NAME the flow — after test_run_flow returns success: true (i.e. at done), call rename_flow ONCE with a concise, human-friendly name: a short title describing what the flow does (e.g. "Daily HN Digest to Sheet"), never the raw prompt. In your final message, state the name you chose and that the user can rename it anytime in the UI. Set the name exactly once at completion — do NOT rename repeatedly across iterations or turns.
+10. Keep edits minimal: one logical change per validate iteration.
+
+# Renaming on user request
+
+When the USER explicitly asks to rename the flow, you MUST call rename_flow — it is the real backend write. Never reply that a rename happened without having called the tool in that turn; a claimed rename with no tool call is a fabrication.
 
 # Setup phase = a mini-flow (credential-gap rules)
 
