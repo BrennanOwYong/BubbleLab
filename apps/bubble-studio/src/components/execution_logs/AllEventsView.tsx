@@ -294,9 +294,14 @@ export default function AllEventsView({
         .join('\n');
     }
 
+    // Binary fixer contract (memory agent-output-behavior): the agent either
+    // fixes + saves the flow itself, or replies with the single action the
+    // user must take. Never an explanation that does neither.
+    const binaryInstruction = `Act on this now, in exactly one of two ways:\n(A) If the cause is a workflow problem you can fix in the flow, fix it, validate it, and save it — then tell me in one sentence that it is fixed so I can re-run. Do not explain the diagnosis.\n(B) If the cause is something only I can do (credential, account connection, setup, permission, input value), reply with ONLY the exact action I must take, in plain English — no error analysis, no code talk.\nDo not reply with an explanation that neither saves a fix nor tells me my exact action.`;
+
     const prompt = details
-      ? `My latest run of this flow failed with the following error(s):\n\n${details}\n\nExplain this error in plain English. Then tell me: is this something I need to do myself (like setting up an API key or reconnecting an account), or a workflow problem you can fix? Only edit the workflow if it is a workflow problem.`
-      : `I'm seeing error(s) in my workflow execution. Explain in plain English what went wrong. Then tell me: is this something I need to do myself (like setting up an API key or reconnecting an account), or a workflow problem you can fix? Only edit the workflow if it is a workflow problem.`;
+      ? `My latest run of this flow failed with the following error(s):\n\n${details}\n\n${binaryInstruction}`
+      : `My latest run of this flow failed, but no error events were captured.\n\n${binaryInstruction}`;
 
     // Trigger the explain/fix turn on the flow's harness session
     pearl.startGeneration(prompt);
