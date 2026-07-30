@@ -1,13 +1,13 @@
 import { memo, useMemo, useState } from 'react';
 import { Handle, Position, useNodeId } from '@xyflow/react';
 import { CogIcon } from '@heroicons/react/24/outline';
-import { BookOpen, ChevronDown, Cpu, Info, Layers } from 'lucide-react';
+import { ChevronDown, Cpu, Info, Layers } from 'lucide-react';
 import { CredentialType, AvailableModels } from '@bubblelab/shared-schemas';
 import type { CredentialResponse } from '@bubblelab/shared-schemas';
 import { CreateCredentialModal } from '@/pages/CredentialsPage';
 import { bindCredentialToAllSteps } from '@/lib/credentialBinding';
 import { useCreateCredential } from '@/hooks/useCredentials';
-import { findLogoForBubble, findDocsUrlForBubble } from '@/lib/integrations';
+import { findLogoForBubble } from '@/lib/integrations';
 import {
   SYSTEM_CREDENTIALS,
   OPTIONAL_CREDENTIALS,
@@ -286,21 +286,9 @@ function BubbleNode({ data }: BubbleNodeProps) {
   const [createModalForType, setCreateModalForType] = useState<string | null>(
     null
   );
-  const [showDocsTooltip, setShowDocsTooltip] = useState(false);
-
   const logo = useMemo(
     () =>
       findLogoForBubble({
-        bubbleName: bubble?.bubbleName,
-        className: bubble?.className,
-        variableName: bubble?.variableName,
-      }),
-    [bubble?.bubbleName, bubble?.className, bubble?.variableName]
-  );
-
-  const docsUrl = useMemo(
-    () =>
-      findDocsUrlForBubble({
         bubbleName: bubble?.bubbleName,
         className: bubble?.className,
         variableName: bubble?.variableName,
@@ -598,26 +586,6 @@ function BubbleNode({ data }: BubbleNodeProps) {
             >
               <Layers className="w-3.5 h-3.5" />
             </button>
-          )}
-          {docsUrl && (
-            <div className="relative">
-              <a
-                href={docsUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                onMouseEnter={() => setShowDocsTooltip(true)}
-                onMouseLeave={() => setShowDocsTooltip(false)}
-                className="inline-flex items-center justify-center p-1.5 rounded-full text-neutral-300 hover:bg-neutral-700 hover:text-neutral-100 transition-colors"
-              >
-                <BookOpen className="w-3.5 h-3.5" />
-              </a>
-              {showDocsTooltip && (
-                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 px-2 py-1 text-xs font-medium text-white bg-neutral-900 rounded shadow-lg whitespace-nowrap border border-neutral-700 z-50">
-                  See Docs
-                </div>
-              )}
-            </div>
           )}
           <ChevronDown
             className={`w-4 h-4 text-neutral-400 transition-transform duration-200 ${
