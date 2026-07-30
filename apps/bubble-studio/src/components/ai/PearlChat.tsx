@@ -22,7 +22,6 @@ import {
   Loader2,
   ArrowUp,
   X,
-  MessageSquare,
   Calendar,
   Webhook,
   HelpCircle,
@@ -83,7 +82,7 @@ const LazyDetails = memo(function LazyDetails({
         {summary}
       </summary>
       {isOpen && (
-        <div className="mt-2 max-h-40 overflow-y-auto">
+        <div className="mt-2 max-h-40 overflow-y-auto overflow-x-hidden">
           <pre className="text-xs bg-[#0d1117] border border-[#21262d] rounded p-2 overflow-x-auto whitespace-pre-wrap break-words">
             {children()}
           </pre>
@@ -863,24 +862,6 @@ export function PearlChat() {
               {/* Assistant Message */}
               {message.type === 'assistant' && (
                 <div className="p-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    {message.resultType === 'code' && (
-                      <Check className="w-4 h-4 text-green-400" />
-                    )}
-                    {message.resultType === 'answer' && (
-                      <MessageSquare className="w-4 h-4 text-white" />
-                    )}
-                    {message.resultType === 'reject' && (
-                      <AlertCircle className="w-4 h-4 text-red-400" />
-                    )}
-                    <span className="text-xs font-medium text-gray-400">
-                      Pearl
-                      {message.resultType === 'code' && ' - Code Generated'}
-                      {message.resultType === 'question' && ' - Question'}
-                      {message.resultType === 'answer' && ' - Answer'}
-                      {message.resultType === 'reject' && ' - Error'}
-                    </span>
-                  </div>
                   {message.resultType === 'code' ? (
                     <>
                       {message.content && (

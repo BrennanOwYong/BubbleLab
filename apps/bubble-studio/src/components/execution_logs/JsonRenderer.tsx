@@ -440,8 +440,8 @@ function renderStringValue(
       ? unescapeContent(displayValue)
       : unescaped;
     const containerClass = isInline
-      ? 'prose prose-invert prose-sm max-w-none inline-block'
-      : 'prose prose-invert prose-sm max-w-none my-2';
+      ? 'prose prose-invert prose-sm max-w-none inline-block [&_*]:break-words'
+      : 'prose prose-invert prose-sm max-w-none my-2 [&_*]:break-words';
 
     const markdownComponents = {
       img: ({ src, alt, ...props }: React.ComponentProps<'img'>) => {
@@ -499,7 +499,7 @@ function renderStringValue(
         ) : (
           <code
             {...props}
-            className="block bg-gray-800 p-2 rounded my-2 overflow-x-auto"
+            className="block bg-gray-800 p-2 rounded my-2 whitespace-pre-wrap break-words"
           >
             {children}
           </code>
@@ -564,8 +564,8 @@ function renderStringValue(
       ? sanitizeHTML(unescapeContent(displayValue))
       : sanitized;
     const containerClass = isInline
-      ? 'prose prose-invert prose-sm max-w-none inline-block [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded [&_img]:my-2 [&_a]:text-gray-300 [&_a]:hover:text-white [&_a]:underline [&_*]:outline-none'
-      : 'prose prose-invert prose-sm max-w-none my-2 [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded [&_img]:my-2 [&_a]:text-gray-300 [&_a]:hover:text-white [&_a]:underline [&_*]:outline-none';
+      ? 'prose prose-invert prose-sm max-w-none inline-block [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded [&_img]:my-2 [&_a]:text-gray-300 [&_a]:hover:text-white [&_a]:underline [&_*]:outline-none [&_*]:break-words'
+      : 'prose prose-invert prose-sm max-w-none my-2 [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded [&_img]:my-2 [&_a]:text-gray-300 [&_a]:hover:text-white [&_a]:underline [&_*]:outline-none [&_*]:break-words';
 
     const htmlContentFactory = () => (
       <div

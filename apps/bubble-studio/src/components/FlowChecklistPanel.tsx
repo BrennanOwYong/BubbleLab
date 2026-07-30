@@ -49,7 +49,7 @@ function ChecklistSection({
           >
             <CheckCircle2 className="w-4 h-4 text-green-400/80 mt-0.5 flex-shrink-0" />
             <div className="min-w-0">
-              <p className="text-sm text-gray-200 leading-relaxed">
+              <p className="text-sm text-gray-200 leading-relaxed break-words">
                 {numbered && (
                   <span className="text-gray-500 mr-1.5">{index + 1}.</span>
                 )}
@@ -139,14 +139,14 @@ export function FlowChecklistPanel({ flowId }: { flowId: number | null }) {
             What this flow does
           </h3>
           {summary && (
-            <p className="text-xs text-gray-400 mt-1 leading-relaxed">
+            <p className="text-xs text-gray-400 mt-1 leading-relaxed break-words">
               {summary}
             </p>
           )}
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-5">
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden break-words px-4 py-4 space-y-5">
         <ChecklistSection
           title="When it runs"
           icon={Clock}

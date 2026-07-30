@@ -78,7 +78,7 @@ function WorkflowStatusBubble({
         <span className="font-medium text-gray-400">Assistant</span>
         {timestamp && <span>{timestamp}</span>}
       </div>
-      <div className="max-w-[92%] w-full rounded-lg border px-3 py-2 text-sm leading-relaxed bg-[#0f1115] border-[#30363d] text-gray-200">
+      <div className="max-w-[92%] w-full rounded-lg border px-3 py-2 text-sm leading-relaxed break-words bg-[#0f1115] border-[#30363d] text-gray-200">
         <p>{message.text}</p>
         <DefaultValueForm
           fields={message.fields ?? []}
@@ -113,7 +113,7 @@ function MessageShell({
         {timestamp && <span>{formatTimestamp(timestamp)}</span>}
       </div>
       <div
-        className={`max-w-[92%] rounded-lg border px-3 py-2 text-sm leading-relaxed ${
+        className={`max-w-[92%] min-w-0 rounded-lg border px-3 py-2 text-sm leading-relaxed break-words ${
           align === 'right'
             ? 'bg-blue-600/15 border-blue-600/40 text-blue-100'
             : 'bg-[#0f1115] border-[#30363d] text-gray-200'
@@ -375,7 +375,7 @@ export function FlowConversationPanel({ flowId }: { flowId: number | null }) {
           approved plan
         </p>
       </div>
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4">
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden break-words px-4 py-4 space-y-4">
         {thread.map((entry, index) =>
           entry.kind === 'coffee' ? (
             <ConversationMessage

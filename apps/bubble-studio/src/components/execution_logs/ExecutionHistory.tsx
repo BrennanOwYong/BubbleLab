@@ -231,7 +231,7 @@ export function ExecutionHistory({ flowId }: ExecutionHistoryProps) {
 
       {/* Content Area */}
       <div className="flex-1 min-h-0 flex flex-col">
-        <div className="flex-1 overflow-y-auto thin-scrollbar p-4">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden thin-scrollbar p-4">
           {historyLoading ? (
             <div className="flex items-center justify-center h-full text-gray-500">
               <div className="text-center">
@@ -361,7 +361,7 @@ export function ExecutionHistory({ flowId }: ExecutionHistoryProps) {
                         <p className="text-sm text-red-300 font-medium mb-1">
                           Error:
                         </p>
-                        <p className="text-sm text-red-200">
+                        <p className="text-sm text-red-200 break-words">
                           {execution.error}
                         </p>
                       </div>
@@ -376,7 +376,7 @@ export function ExecutionHistory({ flowId }: ExecutionHistoryProps) {
                         >
                           Execution Result
                         </summary>
-                        <pre className="json-output text-xs p-3 bg-[#0d0f13] border border-[#30363d] rounded-md overflow-x-auto whitespace-pre leading-relaxed">
+                        <pre className="json-output text-xs p-3 bg-[#0d0f13] border border-[#30363d] rounded-md whitespace-pre-wrap break-words leading-relaxed">
                           <JsonRenderer
                             data={execution.result}
                             flowId={flowId}

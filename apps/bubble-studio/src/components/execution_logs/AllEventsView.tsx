@@ -315,7 +315,7 @@ export default function AllEventsView({
       {/* Vertical Sidebar with Step Hierarchy */}
       <div
         ref={tabsRef}
-        className="flex-shrink-0 border-r border-[#21262d] bg-[#0d1117] overflow-y-auto thin-scrollbar w-56"
+        className="flex-shrink-0 border-r border-[#21262d] bg-[#0d1117] overflow-y-auto overflow-x-hidden thin-scrollbar w-56"
       >
         {/* Header */}
         <div className="px-3 py-2.5 border-b border-[#21262d] bg-[#161b22]/50">
@@ -724,7 +724,7 @@ export default function AllEventsView({
       {/* Event Details */}
       <div
         ref={contentScrollRef}
-        className="flex-1 overflow-y-auto thin-scrollbar"
+        className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden thin-scrollbar break-words"
       >
         {(() => {
           // Handle Results tab - show ALL executions as unified cards + global events
@@ -880,7 +880,7 @@ export default function AllEventsView({
                 {/* ═══════════════════════════════════════════════════════════════
                     SCROLLABLE CONTENT
                     ═══════════════════════════════════════════════════════════════ */}
-                <div className="flex-1 overflow-y-auto thin-scrollbar">
+                <div className="flex-1 overflow-y-auto overflow-x-hidden thin-scrollbar">
                   <div className="py-4 space-y-5">
                     {/* ─────────────────────────────────────────────────────────────
                         FINAL OUTPUT SECTION
@@ -1237,7 +1237,7 @@ export default function AllEventsView({
                       <h4 className="text-sm font-medium text-gray-300 mb-3">
                         {evaluationResult.working ? 'Summary' : 'Issue Details'}
                       </h4>
-                      <p className="text-sm text-gray-400 leading-relaxed whitespace-pre-wrap">
+                      <p className="text-sm text-gray-400 leading-relaxed whitespace-pre-wrap break-words">
                         {evaluationResult.summary}
                       </p>
                     </div>
@@ -1489,7 +1489,7 @@ export default function AllEventsView({
 
                   {/* UNIFIED VIEW - Shows input/output together */}
                   {viewMode === 'unified' && pairedExecution ? (
-                    <div className="flex-1 p-4 overflow-y-auto thin-scrollbar">
+                    <div className="flex-1 p-4 overflow-y-auto overflow-x-hidden thin-scrollbar">
                       <BubbleExecutionCard
                         key={pairedExecution.variableId}
                         execution={pairedExecution}
@@ -1529,7 +1529,7 @@ export default function AllEventsView({
                       </div>
 
                       {selectedEvent ? (
-                        <div className="flex-1 py-2 overflow-y-auto">
+                        <div className="flex-1 py-2 overflow-y-auto overflow-x-hidden">
                           <div
                             className={`px-3 py-2 rounded border-l-2 ${
                               selectedEvent.lineNumber === currentLine

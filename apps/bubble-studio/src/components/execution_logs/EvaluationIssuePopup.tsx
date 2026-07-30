@@ -203,7 +203,7 @@ export function EvaluationIssuePopup({
             <h3 className="text-sm font-medium text-gray-300 mb-2">
               {isSuccess ? 'What Happened' : 'Issue Details'}
             </h3>
-            <p className="text-sm text-gray-400 leading-relaxed whitespace-pre-wrap">
+            <p className="text-sm text-gray-400 leading-relaxed whitespace-pre-wrap break-words">
               {evaluationResult.summary}
             </p>
           </div>

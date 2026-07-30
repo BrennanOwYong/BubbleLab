@@ -398,7 +398,7 @@ export function FlowSetupPanel() {
   ).length;
 
   return (
-    <div className="h-full overflow-y-auto bg-[#1a1a1a] p-4">
+    <div className="h-full overflow-y-auto overflow-x-hidden break-words bg-[#1a1a1a] p-4">
       <div className="mb-4">
         <h2 className="text-sm font-semibold text-gray-100">Setup</h2>
         <p className="text-xs text-gray-400 mt-1">
