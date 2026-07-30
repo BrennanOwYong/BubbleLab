@@ -31,6 +31,7 @@ export const {
   waitlistedUsers,
   buildThreads,
   sessionEntries,
+  pages,
   bubbleFlowsRelations,
   webhooksRelations,
   bubbleFlowExecutionsRelations,

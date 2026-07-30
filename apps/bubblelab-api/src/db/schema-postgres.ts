@@ -10,6 +10,7 @@ import {
   jsonb,
   bigserial,
   doublePrecision,
+  primaryKey,
 } from 'drizzle-orm/pg-core';
 import { relations, isNotNull } from 'drizzle-orm';
 import type { CredentialMetadata } from '@bubblelab/shared-schemas';
@@ -295,18 +296,47 @@ export const bubbleFlowEvaluationsRelations = relations(
 
 // No relations needed for userCredentials as it's a standalone table
 
-// Phase-4 builder-agent harness: one build thread per flow. Holds the Claude
-// Agent SDK session id driving the flow's build conversation, its status
+// Phase-4 builder-agent harness: one build thread per built subject. Holds
+// the Claude Agent SDK session id driving the build conversation, its status
 // (building / ready / error / blocked_on_credential), and — when a required
 // credential is missing — the deferred setup script persisted by the
 // credential-gap rule. Written by services/builder-agent (which re-declares
 // this shape; keep the two in sync) and read by the API's build proxy.
-export const buildThreads = pgTable('build_threads', {
-  flowId: integer('flow_id').primaryKey(),
-  sessionId: text('session_id'),
-  agentKind: text('agent_kind').notNull().default('flow'),
-  status: text('status').notNull().default('idle'),
-  deferredSetup: jsonb('deferred_setup'),
+//
+// Keying: subject_id holds a bubble_flows.id when agent_kind='flow' and a
+// pages.id when agent_kind='page'; the two id sequences overlap, so the
+// primary key is (subject_id, agent_kind). The column keeps its original
+// name flow_id for migration continuity.
+export const buildThreads = pgTable(
+  'build_threads',
+  {
+    subjectId: integer('flow_id').notNull(),
+    sessionId: text('session_id'),
+    agentKind: text('agent_kind').notNull().default('flow'),
+    status: text('status').notNull().default('idle'),
+    deferredSetup: jsonb('deferred_setup'),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => [primaryKey({ columns: [table.subjectId, table.agentKind] })]
+);
+
+// Page-builder agent (agentKind 'page'): a page is a persisted, structured
+// SPEC (title + ordered widgets bound to the user's integrations), never
+// free-form generated code. The spec shape is owned by
+// services/builder-agent/src/page-spec.ts; this table stores it as jsonb.
+export const pages = pgTable('pages', {
+  id: serial().primaryKey(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.clerkId, { onDelete: 'cascade' }),
+  title: text().notNull(),
+  spec: jsonb('spec'),
+  status: text('status').notNull().default('draft'),
   createdAt: timestamp('created_at', { mode: 'date' })
     .notNull()
     .$defaultFn(() => new Date()),

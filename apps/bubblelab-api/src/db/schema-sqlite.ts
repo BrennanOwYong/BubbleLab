@@ -5,6 +5,7 @@ import {
   unique,
   uniqueIndex,
   real,
+  primaryKey,
 } from 'drizzle-orm/sqlite-core';
 import { relations, isNotNull } from 'drizzle-orm';
 import type { CredentialMetadata } from '@bubblelab/shared-schemas';
@@ -300,13 +301,36 @@ export const bubbleFlowEvaluationsRelations = relations(
 
 // Phase-4 builder-agent harness (SQLite mirror of schema-postgres.ts; the
 // live deployment runs Postgres — this exists so the unified schema.ts
-// compiles for both dialects).
-export const buildThreads = sqliteTable('build_threads', {
-  flowId: int('flow_id').primaryKey(),
-  sessionId: text('session_id'),
-  agentKind: text('agent_kind').notNull().default('flow'),
-  status: text('status').notNull().default('idle'),
-  deferredSetup: text('deferred_setup', { mode: 'json' }),
+// compiles for both dialects). subject_id holds a bubble_flows.id when
+// agent_kind='flow' and a pages.id when agent_kind='page' (column keeps its
+// original name flow_id for migration continuity).
+export const buildThreads = sqliteTable(
+  'build_threads',
+  {
+    subjectId: int('flow_id').notNull(),
+    sessionId: text('session_id'),
+    agentKind: text('agent_kind').notNull().default('flow'),
+    status: text('status').notNull().default('idle'),
+    deferredSetup: text('deferred_setup', { mode: 'json' }),
+    createdAt: int('created_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: int('updated_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => [primaryKey({ columns: [table.subjectId, table.agentKind] })]
+);
+
+// Page-builder agent (SQLite mirror of schema-postgres.ts pages).
+export const pages = sqliteTable('pages', {
+  id: int().primaryKey({ autoIncrement: true }),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.clerkId, { onDelete: 'cascade' }),
+  title: text().notNull(),
+  spec: text('spec', { mode: 'json' }),
+  status: text('status').notNull().default('draft'),
   createdAt: int('created_at', { mode: 'timestamp' })
     .notNull()
     .$defaultFn(() => new Date()),

@@ -148,6 +148,13 @@
       "when": 1785349416737,
       "tag": "0020_bent_paibok",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1785375982172,
+      "tag": "0021_lucky_stingray",
+      "breakpoints": true
     }
   ]
 }
