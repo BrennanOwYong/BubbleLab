@@ -20,9 +20,8 @@ export const Route = createFileRoute('/home')({
 });
 
 /**
- * Auth landing page. Flows are created by an external agent, so the studio
- * has no in-app flow creation: signed-in users go straight to their flow
- * list; signed-out users get the sign-in modal.
+ * Auth landing page. Signed-in users go straight to /flows (flow list +
+ * create-a-flow prompt box); signed-out users get the sign-in modal.
  */
 function LandingPage() {
   const { ref } = Route.useSearch();

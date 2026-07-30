@@ -45,17 +45,25 @@ function transcriptToChat(transcript: BuildTranscriptItem[]): ChatItem[] {
 export function BuildChatPage({
   subjectId,
   kind = 'flow',
+  initialMessage,
+  onInitialMessageSent,
 }: {
   subjectId: number;
   kind?: BuilderKind;
+  /** Auto-sent as the first message once the (empty) thread has loaded. */
+  initialMessage?: string;
+  /** Called when the initial message is consumed, so the caller can clear it. */
+  onInitialMessageSent?: () => void;
 }) {
   const [items, setItems] = useState<ChatItem[]>([]);
   const [liveText, setLiveText] = useState('');
   const [liveTools, setLiveTools] = useState<string[]>([]);
   const [status, setStatus] = useState<string>('loading');
+  const [threadLoaded, setThreadLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [input, setInput] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
+  const initialSentRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -64,8 +72,12 @@ export function BuildChatPage({
         if (cancelled) return;
         setItems(transcriptToChat(thread.transcript));
         setStatus(thread.status);
+        setThreadLoaded(true);
       })
-      .catch(() => setStatus('none'));
+      .catch(() => {
+        setStatus('none');
+        setThreadLoaded(true);
+      });
     return () => {
       cancelled = true;
     };
@@ -75,91 +87,117 @@ export function BuildChatPage({
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [items, liveText, liveTools]);
 
-  const send = useCallback(async () => {
-    const message = input.trim();
-    if (message === '' || busy) return;
-    setInput('');
-    setBusy(true);
-    setItems((prev) => [
-      ...prev,
-      { role: 'user', text: message, toolCalls: [] },
-    ]);
-    setLiveText('');
-    setLiveTools([]);
-
-    let pendingText = '';
-    let pendingTools: string[] = [];
-    const flushAssistant = () => {
-      if (pendingText.trim() !== '' || pendingTools.length > 0) {
-        const text = pendingText;
-        const toolCalls = pendingTools;
-        setItems((prev) => [...prev, { role: 'assistant', text, toolCalls }]);
-      }
-      pendingText = '';
-      pendingTools = [];
-      setLiveText('');
-      setLiveTools([]);
-    };
-
-    try {
-      await streamBuildMessage(kind, subjectId, message, (frame) => {
-        if (frame.event === 'stream_event') {
-          const ev = frame.data as {
-            type?: string;
-            delta?: { type?: string; text?: string };
-          };
-          if (
-            ev.type === 'content_block_delta' &&
-            ev.delta?.type === 'text_delta' &&
-            typeof ev.delta.text === 'string'
-          ) {
-            pendingText += ev.delta.text;
-            setLiveText(pendingText);
-          }
-        } else if (frame.event === 'assistant') {
-          const data = frame.data as {
-            blocks?: Array<{ type: string; text?: string; name?: string }>;
-          };
-          for (const block of data.blocks ?? []) {
-            if (block.type === 'tool_use' && typeof block.name === 'string') {
-              pendingTools = [
-                ...pendingTools,
-                block.name.replace('mcp__builder__', ''),
-              ];
-              setLiveTools(pendingTools);
-            }
-          }
-        } else if (frame.event === 'result') {
-          flushAssistant();
-        } else if (frame.event === 'done') {
-          const data = frame.data as { status?: string };
-          if (typeof data.status === 'string') setStatus(data.status);
-        } else if (frame.event === 'error') {
-          const data = frame.data as { message?: string };
-          setItems((prev) => [
-            ...prev,
-            {
-              role: 'assistant',
-              text: `Build error: ${data.message ?? 'unknown'}`,
-              toolCalls: [],
-            },
-          ]);
-        }
-      });
-      flushAssistant();
-    } catch (error) {
+  const sendMessage = useCallback(
+    async (message: string) => {
+      if (message === '' || busy) return;
+      setBusy(true);
       setItems((prev) => [
         ...prev,
-        {
-          role: 'assistant',
-          text: `Request failed: ${error instanceof Error ? error.message : String(error)}`,
-          toolCalls: [],
-        },
+        { role: 'user', text: message, toolCalls: [] },
       ]);
-    } finally {
-      setBusy(false);
-    }
-  }, [busy, kind, subjectId, input]);
+      setLiveText('');
+      setLiveTools([]);
+
+      let pendingText = '';
+      let pendingTools: string[] = [];
+      const flushAssistant = () => {
+        if (pendingText.trim() !== '' || pendingTools.length > 0) {
+          const text = pendingText;
+          const toolCalls = pendingTools;
+          setItems((prev) => [...prev, { role: 'assistant', text, toolCalls }]);
+        }
+        pendingText = '';
+        pendingTools = [];
+        setLiveText('');
+        setLiveTools([]);
+      };
+
+      try {
+        await streamBuildMessage(kind, subjectId, message, (frame) => {
+          if (frame.event === 'stream_event') {
+            const ev = frame.data as {
+              type?: string;
+              delta?: { type?: string; text?: string };
+            };
+            if (
+              ev.type === 'content_block_delta' &&
+              ev.delta?.type === 'text_delta' &&
+              typeof ev.delta.text === 'string'
+            ) {
+              pendingText += ev.delta.text;
+              setLiveText(pendingText);
+            }
+          } else if (frame.event === 'assistant') {
+            const data = frame.data as {
+              blocks?: Array<{ type: string; text?: string; name?: string }>;
+            };
+            for (const block of data.blocks ?? []) {
+              if (block.type === 'tool_use' && typeof block.name === 'string') {
+                pendingTools = [
+                  ...pendingTools,
+                  block.name.replace('mcp__builder__', ''),
+                ];
+                setLiveTools(pendingTools);
+              }
+            }
+          } else if (frame.event === 'result') {
+            flushAssistant();
+          } else if (frame.event === 'done') {
+            const data = frame.data as { status?: string };
+            if (typeof data.status === 'string') setStatus(data.status);
+          } else if (frame.event === 'error') {
+            const data = frame.data as { message?: string };
+            setItems((prev) => [
+              ...prev,
+              {
+                role: 'assistant',
+                text: `Build error: ${data.message ?? 'unknown'}`,
+                toolCalls: [],
+              },
+            ]);
+          }
+        });
+        flushAssistant();
+      } catch (error) {
+        setItems((prev) => [
+          ...prev,
+          {
+            role: 'assistant',
+            text: `Request failed: ${error instanceof Error ? error.message : String(error)}`,
+            toolCalls: [],
+          },
+        ]);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy, kind, subjectId]
+  );
+
+  const send = useCallback(() => {
+    const message = input.trim();
+    if (message === '') return;
+    setInput('');
+    void sendMessage(message);
+  }, [input, sendMessage]);
+
+  // Auto-send the initial prompt (from the create-flow box) once the thread
+  // has loaded and only when the conversation is still empty.
+  useEffect(() => {
+    if (initialSentRef.current) return;
+    if (!initialMessage || !threadLoaded || busy) return;
+    if (items.length > 0) return;
+    initialSentRef.current = true;
+    onInitialMessageSent?.();
+    void sendMessage(initialMessage);
+  }, [
+    initialMessage,
+    threadLoaded,
+    busy,
+    items.length,
+    sendMessage,
+    onInitialMessageSent,
+  ]);
 
   return (
     <div className="h-full flex flex-col max-w-3xl mx-auto w-full">

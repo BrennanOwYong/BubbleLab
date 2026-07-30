@@ -8,9 +8,11 @@ import {
   X,
   Search,
   Copy,
+  Plus,
 } from 'lucide-react';
 import { useBubbleFlowList } from '../hooks/useBubbleFlowList';
 import { MonthlyUsageBar } from '../components/MonthlyUsageBar';
+import { NewFlowPrompt } from '../components/NewFlowPrompt';
 import { SignedIn } from '../components/AuthComponents';
 import { findLogoForBubble } from '../lib/integrations';
 import { useRenameFlow } from '../hooks/useRenameFlow';
@@ -158,6 +160,17 @@ export const HomePage: React.FC<HomePageProps> = ({ onFlowDelete }) => {
           </SignedIn>
         </div>
 
+        {/* Create a new flow */}
+        <div className="mb-10">
+          <h2 className="text-xl font-semibold text-white font-sans mb-1">
+            Create a new flow
+          </h2>
+          <p className="text-gray-400 mb-4 text-sm font-sans">
+            Describe what you want and the builder agent takes it from there
+          </p>
+          <NewFlowPrompt />
+        </div>
+
         {/* Flows Section */}
         <div className="mb-6">
           <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
@@ -169,6 +182,13 @@ export const HomePage: React.FC<HomePageProps> = ({ onFlowDelete }) => {
                 Manage and monitor your workflows
               </p>
             </div>
+            <Link
+              to="/build"
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-purple-700 hover:bg-purple-600 rounded-lg text-sm text-white transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              New flow
+            </Link>
           </div>
 
           {/* Search Bar */}
@@ -216,7 +236,8 @@ export const HomePage: React.FC<HomePageProps> = ({ onFlowDelete }) => {
                   No flows yet
                 </h2>
                 <p className="text-gray-500 text-sm">
-                  Flows built for you will appear here
+                  Describe an automation in the box above to build your first
+                  flow
                 </p>
               </>
             )}
