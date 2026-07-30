@@ -452,6 +452,30 @@ export function createPageServer(
       makeListFlowsTool(client),
 
       tool(
+        'get_flow',
+        "Read one flow's details — most usefully its default_inputs, which hold the REAL resource ids (e.g. spreadsheet_id) that flow was set up with. Use this to find the spreadsheet a user's existing automation already writes to.",
+        {
+          flowId: z.number().int().positive().describe('BubbleFlow id'),
+        },
+        async (args) => {
+          try {
+            const flow = await client.getFlow(args.flowId);
+            return textResult({
+              id: flow.id,
+              name: flow.name,
+              description: flow.description,
+              eventType: flow.eventType,
+              inputSchema: flow.inputSchema,
+              defaultInputs: flow.defaultInputs,
+              requiredCredentials: flow.requiredCredentials,
+            });
+          } catch (error) {
+            return errorResult(error);
+          }
+        }
+      ),
+
+      tool(
         'list_integrations',
         "List the user's connected integrations (credential type, OAuth provider, granted scopes). Use this FIRST to learn which data sources the page can bind to; if a needed integration is absent, call report_missing_credential.",
         {},
