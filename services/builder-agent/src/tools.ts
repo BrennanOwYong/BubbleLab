@@ -421,6 +421,33 @@ export function createBuilderServer(
         }
       ),
 
+      tool(
+        'test_run_flow',
+        `SELF-TEST tool: execute the flow being built (flow ${flowId}) through the SAME path the studio "Test Flow" button uses (POST /bubble-flow/:id/execute-stream), and return the same outcome the user sees in the run popup: every error/fatal event (with the failing bubble and message), the final result, and success. Real side effects (HTTP calls, sheet writes, messages) happen — that is expected and acceptable. Call this AFTER save_flow; the build is done ONLY once a run returns success: true. When errors come back, diagnose from them, fix the code (validate_flow -> save_flow), and run again. Do NOT run while a required credential is missing — take the report_missing_credential path instead.`,
+        {
+          inputs: z
+            .record(z.string(), z.unknown())
+            .optional()
+            .describe(
+              "Payload inputs for this run, merged over the flow's saved default_inputs. Omit to run with the defaults alone."
+            ),
+        },
+        async ({ inputs }) => {
+          try {
+            const flow = await client.getFlow(flowId);
+            if (flow.code === '') {
+              throw new Error(
+                `Flow ${flowId} has no saved code yet; save_flow before test_run_flow`
+              );
+            }
+            const payload = { ...flow.defaultInputs, ...(inputs ?? {}) };
+            return textResult(await client.executeFlowStream(flowId, payload));
+          } catch (error) {
+            return errorResult(error);
+          }
+        }
+      ),
+
       makeReportMissingCredentialTool(flowId, 'flow'),
     ],
   });
