@@ -107,7 +107,7 @@ export function ConsolidatedSidePanel() {
     <div className="h-full flex flex-col bg-[#1a1a1a] border-l border-[#30363d]">
       {/* Tab Bar — horizontally scrollable; each tab is icon-only and expands
           to show its word only while active (clicking one collapses the rest). */}
-      <div className="flex overflow-x-auto border-b border-[#30363d] bg-[#0f1115]">
+      <div className="flex overflow-x-auto thin-scrollbar border-b border-[#30363d] bg-[#0f1115]">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;

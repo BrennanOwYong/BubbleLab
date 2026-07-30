@@ -315,7 +315,7 @@ export default function AllEventsView({
       {/* Vertical Sidebar with Step Hierarchy */}
       <div
         ref={tabsRef}
-        className="flex-shrink-0 border-r border-[#21262d] bg-[#0d1117] overflow-y-auto overflow-x-hidden thin-scrollbar w-56"
+        className="flex-shrink-0 border-r border-[#21262d] bg-[#0d1117] overflow-y-auto overflow-x-hidden thin-scrollbar w-56 max-w-[45%]"
       >
         {/* Header */}
         <div className="px-3 py-2.5 border-b border-[#21262d] bg-[#161b22]/50">
@@ -811,7 +811,7 @@ export default function AllEventsView({
                     }
                   `}
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
                       {/* Status Icon */}
                       <div
                         className={`
@@ -923,7 +923,7 @@ export default function AllEventsView({
                       <div className="px-4">
                         {/* Fix with Pearl Banner */}
                         <div className="mb-4 p-3 bg-gradient-to-r from-orange-950/30 to-transparent border border-orange-500/20 rounded-lg">
-                          <div className="flex items-center justify-between gap-4">
+                          <div className="flex flex-wrap items-center justify-between gap-4">
                             <div className="flex items-center gap-3">
                               <div className="w-8 h-8 rounded-lg bg-orange-500/20 flex items-center justify-center">
                                 <Sparkles className="w-4 h-4 text-orange-400" />
@@ -1461,7 +1461,7 @@ export default function AllEventsView({
                   {hasErrorInBubble && (
                     <div className="px-4 pt-3 pb-2">
                       <div className="p-3 bg-[#161b22] border border-[#30363d] rounded-lg">
-                        <div className="flex items-center justify-between gap-3">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
                           <div className="flex-1 min-w-0">
                             <h4 className="text-xs font-medium text-gray-200 mb-1">
                               Not sure what this error means?
