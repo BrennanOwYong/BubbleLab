@@ -15,7 +15,7 @@ import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { and, eq } from 'drizzle-orm';
-import { systemPromptFor, type AgentKind } from './prompts.ts';
+import { isFixRequest, systemPromptFor, type AgentKind } from './prompts.ts';
 import { tryResolveDeferredSetup } from './deferred.ts';
 import {
   createBuilderServer,
@@ -158,7 +158,12 @@ export async function runBuildTurn(opts: {
       env: { ...process.env, CLAUDE_CONFIG_DIR: config.claudeConfigDir },
       cwd: serviceRoot,
       model: config.model,
-      systemPrompt: systemPromptFor(agentKind),
+      // Fix-mode turns (message carries the studio's run-error marker) load
+      // the FIXING skill on the SAME session — same agent, same thread; only
+      // this turn's system prompt gains the fix-mode module.
+      systemPrompt: systemPromptFor(agentKind, {
+        fixMode: agentKind === 'flow' && isFixRequest(message),
+      }),
       includePartialMessages: true,
       tools: [],
       mcpServers: {

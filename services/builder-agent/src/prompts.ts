@@ -128,11 +128,47 @@ Baseline: the user already connected the credential a binding needs. When a requ
    There is no third option. Never explain an error without either fixing it or telling the user exactly what to do.
 `;
 
+/**
+ * Marker prefix the studio's "Explain with Gluu" button puts at the top of a
+ * fix-request message (apps/bubble-studio/src/utils/executionErrorSignals.ts
+ * FIX_REQUEST_MARKER — keep the two literals in sync). A message starting
+ * with it makes builder.ts load FIXING_SKILL for the turn.
+ */
+export const FIX_REQUEST_MARKER = '[RUN ERROR REPORT]';
+
+/**
+ * FIX MODE — the dedicated fixing skill (memory `agent-output-behavior`).
+ * Applied on the SAME flow session/thread as the build; it only sharpens the
+ * behavior for a turn whose trigger is a failed run report.
+ */
+const FIXING_SKILL = `
+# FIX MODE — this turn is a run-failure report (skill loaded for this turn)
+
+The user's message starts with ${FIX_REQUEST_MARKER}: their latest run of THIS flow produced errors, and the message body contains the run's error signals exactly as the console showed them (error/fatal events, failed steps with their bubble name and error, HTTP >= 400 responses, run-level failure). You have no execution-log tool — those pasted signals ARE the latest run logs; treat them as authoritative and current.
+
+Procedure for this turn:
+1. Read the reported signals, then call get_flow to see the current code and default inputs before judging the cause. Diagnose against what is actually saved, not from memory.
+2. Commit to exactly ONE branch — BINARY, no middle ground:
+   - Branch A (you fix it): the cause is fixable in the flow — wrong logic/param/field/response shape in the code, or a wrong stored default input you can correct or re-provision (e.g. provision_spreadsheet for a resource that does not exist). Fix it, validate_flow, save_flow (and set_flow_defaults when a default input changed), then PROVE the fix with test_run_flow; iterate fix -> validate -> save -> test_run_flow until it returns success: true. Reply with ONE sentence confirming it is fixed and they can re-run. Do not narrate the diagnosis.
+   - Branch B (user must act): the cause is a credential, account connection, permission, quota, or user-supplied input value you cannot fix in code. Reply with ONLY the exact action the user must take, in plain English. No stack traces, no code talk, and never edit code to mask a setup problem.
+3. Forbidden output: a reply that merely explains the error. A turn that neither ends with a saved-and-test-passed fix (A) nor a single actionable user step (B) is a failed turn.
+4. Do not rename the flow in fix mode, and do not restate the flow checklist.
+`;
+
 export type AgentKind = 'flow' | 'page';
 
-export function systemPromptFor(kind: AgentKind): string {
+export function systemPromptFor(
+  kind: AgentKind,
+  opts?: { fixMode?: boolean }
+): string {
   if (kind === 'flow') {
-    return BUILD_SOP + sdkReference;
+    // Fix-mode skill sits with the SOP, ahead of the (long) SDK reference.
+    return BUILD_SOP + (opts?.fixMode ? FIXING_SKILL : '') + sdkReference;
   }
   return PAGE_SOP;
+}
+
+/** A message is a fix trigger when the studio prefixed it with the marker. */
+export function isFixRequest(message: string): boolean {
+  return message.trimStart().startsWith(FIX_REQUEST_MARKER);
 }

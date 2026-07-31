@@ -13,11 +13,7 @@ import {
   type PlanMessage,
 } from '../types/conversation';
 import { extractStepGraph } from './workflowToSteps';
-import {
-  humanizeFieldName,
-  isFieldDescriptor,
-  type FieldDescriptor,
-} from './fieldDescriptor';
+import { humanizeFieldName } from './fieldDescriptor';
 
 export interface ChecklistItem {
   id: string;
@@ -25,75 +21,6 @@ export interface ChecklistItem {
   text: string;
   /** Friendly names of the tools (bubbles) the step uses */
   tools: string[];
-}
-
-/**
- * Programmatic status message the generate route appends to
- * metadata.conversationMessages when a build finishes. Distinct from the
- * ConversationMessage union (role/kind/timestampMs instead of type/id/timestamp).
- */
-export interface WorkflowStatusMessage {
-  role: 'system';
-  kind: 'workflow-done' | 'workflow-done-needs-info';
-  /** Unix epoch milliseconds */
-  timestampMs: number;
-  text: string;
-  /** Present on workflow-done-needs-info: the default-value form to re-render */
-  fields?: FieldDescriptor[];
-}
-
-/** One entry of the full conversation thread, in persisted order */
-export type ConversationEntry =
-  | { kind: 'coffee'; message: ConversationMessage }
-  | { kind: 'status'; message: WorkflowStatusMessage };
-
-function isWorkflowStatusMessage(
-  entry: unknown
-): entry is WorkflowStatusMessage {
-  if (typeof entry !== 'object' || entry === null) return false;
-  const candidate = entry as Record<string, unknown>;
-  if (candidate.role !== 'system') return false;
-  if (
-    candidate.kind !== 'workflow-done' &&
-    candidate.kind !== 'workflow-done-needs-info'
-  ) {
-    return false;
-  }
-  return (
-    typeof candidate.timestampMs === 'number' &&
-    typeof candidate.text === 'string'
-  );
-}
-
-/**
- * Parse the FULL persisted thread — Coffee planning messages AND programmatic
- * workflow-status messages — preserving array order. Unknown shapes are
- * skipped individually so one bad entry never drops the thread.
- */
-export function parseConversationThread(
-  metadata: Record<string, unknown> | undefined
-): ConversationEntry[] {
-  const raw = metadata?.conversationMessages;
-  if (!Array.isArray(raw)) return [];
-
-  const entries: ConversationEntry[] = [];
-  for (const entry of raw) {
-    if (isWorkflowStatusMessage(entry)) {
-      const fields = Array.isArray((entry as { fields?: unknown[] }).fields)
-        ? (entry as { fields: unknown[] }).fields.filter(isFieldDescriptor)
-        : undefined;
-      entries.push({
-        kind: 'status',
-        message: { ...entry, fields },
-      });
-      continue;
-    }
-    const parsed = ConversationMessageSchema.safeParse(entry);
-    if (parsed.success) {
-      entries.push({ kind: 'coffee', message: parsed.data });
-    }
-  }
-  return entries;
 }
 
 /**

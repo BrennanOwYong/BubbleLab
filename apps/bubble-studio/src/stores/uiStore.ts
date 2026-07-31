@@ -18,7 +18,6 @@ export type SidePanelMode = 'closed' | 'bubbleList' | 'milktea' | 'pearl';
 export type ConsolidatedPanelTab =
   | 'pearl'
   | 'checklist'
-  | 'conversation'
   | 'output'
   | 'history'
   | 'setup';

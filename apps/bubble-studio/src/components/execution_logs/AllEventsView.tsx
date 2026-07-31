@@ -22,6 +22,10 @@ import { useUIStore } from '../../stores/uiStore';
 import { useExecutionStore } from '../../stores/executionStore';
 import type { TabType } from '../../stores/liveOutputStore';
 import { extractStepGraph, type StepData } from '../../utils/workflowToSteps';
+import {
+  collectRunErrorSignals,
+  composeFixRequestMessage,
+} from '../../utils/executionErrorSignals';
 import { BubbleExecutionCard } from './BubbleExecutionCard';
 import { pairBubbleEvents } from './pairBubbleEvents';
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
@@ -278,30 +282,16 @@ export default function AllEventsView({
     if (!flowId) return;
 
     // The harness agent cannot read execution logs itself, so carry the
-    // latest run's error events in the message when no summary is provided.
-    let details = issueDetails;
-    if (!details) {
-      const errorLogs = (executionState.events || []).filter(
-        (e) => e.type === 'error' || e.type === 'fatal'
-      );
-      details = errorLogs
-        .map((log, idx) => {
-          const extra = log.additionalData
-            ? `\n   Additional info: ${JSON.stringify(log.additionalData).slice(0, 1500)}`
-            : '';
-          return `${idx + 1}. ${log.type.toUpperCase()}: ${log.message}${extra}`;
-        })
-        .join('\n');
-    }
-
-    // Binary fixer contract (memory agent-output-behavior): the agent either
-    // fixes + saves the flow itself, or replies with the single action the
-    // user must take. Never an explanation that does neither.
-    const binaryInstruction = `Act on this now, in exactly one of two ways:\n(A) If the cause is a workflow problem you can fix in the flow, fix it, validate it, and save it — then tell me in one sentence that it is fixed so I can re-run. Do not explain the diagnosis.\n(B) If the cause is something only I can do (credential, account connection, setup, permission, input value), reply with ONLY the exact action I must take, in plain English — no error analysis, no code talk.\nDo not reply with an explanation that neither saves a fix nor tells me my exact action.`;
-
-    const prompt = details
-      ? `My latest run of this flow failed with the following error(s):\n\n${details}\n\n${binaryInstruction}`
-      : `My latest run of this flow failed, but no error events were captured.\n\n${binaryInstruction}`;
+    // latest run's error signals (error/fatal events, failed bubble results,
+    // HTTP >= 400 responses, run-level failure) in the message. The marker
+    // prefix makes the sidecar apply its fix-mode prompt module; the binary
+    // fixer contract (memory agent-output-behavior) lives there and in the
+    // base SOP: the agent either fixes + saves + test-runs the flow, or
+    // replies with the single action the user must take.
+    const prompt = composeFixRequestMessage(
+      executionState.events || [],
+      issueDetails
+    );
 
     // Trigger the explain/fix turn on the flow's harness session
     pearl.startGeneration(prompt);
@@ -758,13 +748,17 @@ export default function AllEventsView({
               (e) => e.type === 'execution_complete'
             );
 
-            const errorEvents = globalEvents
-              .filter((e) => e.type === 'error' || e.type === 'fatal')
-              .sort(
-                (a, b) =>
-                  new Date(a.timestamp).getTime() -
-                  new Date(b.timestamp).getTime()
-              );
+            // Every error signal the run produced: error/fatal events PLUS
+            // failed bubble results, HTTP >= 400 responses, and run-level
+            // failure. A failed Google Sheets step emits NO error/fatal event
+            // (only bubble_execution_complete success:false + a warn), so the
+            // Errors section and the Explain-with-Gluu banner key on this
+            // unified list, never on error/fatal events alone.
+            const errorSignals = collectRunErrorSignals(events).sort(
+              (a, b) =>
+                new Date(a.timestamp).getTime() -
+                new Date(b.timestamp).getTime()
+            );
 
             const warningEvents = globalEvents
               .filter((e) => e.type === 'warn')
@@ -790,7 +784,7 @@ export default function AllEventsView({
             const executionMessage = completionEvent
               ? formatEventMessage(completionEvent)
               : null;
-            const hasErrors = errorEvents.length > 0;
+            const hasErrors = errorSignals.length > 0;
             const hasWarnings = warningEvents.length > 0;
 
             return (
@@ -860,10 +854,10 @@ export default function AllEventsView({
 
                       {/* Quick Stats Badges */}
                       <div className="flex items-center gap-2 flex-shrink-0">
-                        {errorEvents.length > 0 && (
+                        {errorSignals.length > 0 && (
                           <span className="px-2 py-0.5 text-[10px] font-medium bg-red-500/20 text-red-400 rounded border border-red-500/30">
-                            {errorEvents.length} error
-                            {errorEvents.length !== 1 ? 's' : ''}
+                            {errorSignals.length} error
+                            {errorSignals.length !== 1 ? 's' : ''}
                           </span>
                         )}
                         {warningEvents.length > 0 && (
@@ -919,7 +913,7 @@ export default function AllEventsView({
                     {/* ─────────────────────────────────────────────────────────────
                         ERRORS SECTION
                         ───────────────────────────────────────────────────────────── */}
-                    {errorEvents.length > 0 && (
+                    {errorSignals.length > 0 && (
                       <div className="px-4">
                         {/* Fix with Pearl Banner */}
                         <div className="mb-4 p-3 bg-gradient-to-r from-orange-950/30 to-transparent border border-orange-500/20 rounded-lg">
@@ -959,13 +953,15 @@ export default function AllEventsView({
                             Errors
                           </h3>
                           <span className="text-[10px] text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded">
-                            {errorEvents.length}
+                            {errorSignals.length}
                           </span>
                         </div>
 
-                        {/* Errors List */}
+                        {/* Errors List — one entry per error signal (raw
+                            error/fatal events keep their formatted message;
+                            bubble/HTTP/run signals show the composed one) */}
                         <div className="space-y-2 rounded-lg border border-red-500/20 bg-red-950/10 p-2">
-                          {errorEvents.map((event, idx) => (
+                          {errorSignals.map((signal, idx) => (
                             <div
                               key={idx}
                               className="px-3 py-2 rounded-md bg-[#0d1117]/60 border-l-2 border-red-500/60"
@@ -975,22 +971,24 @@ export default function AllEventsView({
                                 <div className="flex-1 min-w-0">
                                   <p className="text-xs text-gray-300 break-words">
                                     {makeLinksClickable(
-                                      formatEventMessage(event)
+                                      signal.source === 'event'
+                                        ? formatEventMessage(signal.event)
+                                        : signal.message
                                     )}
                                   </p>
                                   <span className="text-[9px] text-gray-600 font-mono">
-                                    {formatTimestamp(event.timestamp)}
+                                    {formatTimestamp(signal.timestamp)}
                                   </span>
                                 </div>
                               </div>
-                              {event.additionalData &&
-                                Object.keys(event.additionalData).length >
+                              {signal.additionalData &&
+                                Object.keys(signal.additionalData).length >
                                   0 && (
                                   <pre className="json-output text-[11px] mt-2 p-2 bg-[#0d1117] border border-[#21262d] rounded whitespace-pre-wrap break-words leading-relaxed overflow-x-auto">
                                     <JsonRenderer
-                                      data={event.additionalData}
+                                      data={signal.additionalData}
                                       flowId={flowId}
-                                      timestamp={event.timestamp}
+                                      timestamp={signal.timestamp}
                                     />
                                   </pre>
                                 )}
@@ -1367,19 +1365,9 @@ export default function AllEventsView({
                 (pe) => pe.variableId === varId
               );
 
-              // Check if this bubble has any errors
-              const hasErrorInBubble = evs.some((e) => {
-                // Check for error/fatal events
-                if (e.type === 'error' || e.type === 'fatal') return true;
-                // Check for bubble_execution_complete with result.success === false
-                if (e.type === 'bubble_execution_complete') {
-                  const result = e.additionalData?.result as
-                    | { success?: boolean }
-                    | undefined;
-                  return result && result.success === false;
-                }
-                return false;
-              });
+              // Check if this bubble produced any error signal (error/fatal
+              // events, a failed result, or an HTTP >= 400 response)
+              const hasErrorInBubble = collectRunErrorSignals(evs).length > 0;
 
               return (
                 <div className="flex flex-col h-full">

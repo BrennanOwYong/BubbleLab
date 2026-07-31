@@ -1,16 +1,8 @@
-import {
-  Activity,
-  Clock,
-  KeyRound,
-  ListChecks,
-  MessageSquare,
-  Sparkles,
-} from 'lucide-react';
+import { Activity, Clock, KeyRound, ListChecks, Sparkles } from 'lucide-react';
 import { useMemo } from 'react';
 import { PearlChat } from './ai/PearlChat';
 import { FlowSetupPanel } from './FlowSetupPanel';
 import { FlowChecklistPanel } from './FlowChecklistPanel';
-import { FlowConversationPanel } from './FlowConversationPanel';
 import { MonacoEditor } from './MonacoEditor';
 import LiveOutput from './execution_logs/LiveOutput';
 import { ExecutionHistory } from './execution_logs/ExecutionHistory';
@@ -21,7 +13,6 @@ import { useExecutionHistory } from '../hooks/useExecutionHistory';
 import {
   deriveChecklistItems,
   parseConversationMessages,
-  parseConversationThread,
 } from '../utils/flowChecklist';
 import { shallow } from 'zustand/shallow';
 
@@ -35,12 +26,6 @@ export function ConsolidatedSidePanel() {
 
   const conversationMessages = useMemo(
     () => parseConversationMessages(currentFlow?.metadata),
-    [currentFlow?.metadata]
-  );
-  // Full thread (Coffee messages + programmatic workflow-status messages)
-  // drives the Conversation tab badge so "needs info" messages count too.
-  const conversationThreadLength = useMemo(
-    () => parseConversationThread(currentFlow?.metadata).length,
     [currentFlow?.metadata]
   );
   const checklistItems = useMemo(
@@ -76,12 +61,6 @@ export function ConsolidatedSidePanel() {
       label: 'Checklist',
       icon: ListChecks,
       badge: checklistItems.length > 0 ? checklistItems.length : null,
-    },
-    {
-      id: 'conversation' as const,
-      label: 'Conversation',
-      icon: MessageSquare,
-      badge: conversationThreadLength > 0 ? conversationThreadLength : null,
     },
     {
       id: 'output' as const,
@@ -163,13 +142,6 @@ export function ConsolidatedSidePanel() {
         {activeTab === 'checklist' && (
           <div className="absolute inset-0">
             <FlowChecklistPanel flowId={flowId} />
-          </div>
-        )}
-
-        {/* Conversation Tab - the saved thread that built this flow */}
-        {activeTab === 'conversation' && (
-          <div className="absolute inset-0">
-            <FlowConversationPanel flowId={flowId} />
           </div>
         )}
 
