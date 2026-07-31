@@ -135,8 +135,11 @@ export function composeFixRequestMessage(
   issueDetails?: string
 ): string {
   let details = issueDetails;
+  let signalCount = 0;
   if (!details) {
-    details = collectRunErrorSignals(events)
+    const signals = collectRunErrorSignals(events);
+    signalCount = signals.length;
+    details = signals
       .map((signal, idx) => {
         const extra = signal.additionalData
           ? `\n   Additional info: ${JSON.stringify(signal.additionalData).slice(0, 1500)}`
@@ -146,9 +149,13 @@ export function composeFixRequestMessage(
       .join('\n');
   }
 
+  const countNote =
+    signalCount > 0
+      ? `the following ${signalCount} error signal${signalCount === 1 ? '' : 's'}`
+      : 'the following error(s)';
   const body = details
-    ? `My latest run of this flow failed with the following error(s):\n\n${details}`
+    ? `My latest run of this flow failed with ${countNote}:\n\n${details}`
     : `My latest run of this flow failed, but no error events were captured.`;
 
-  return `${FIX_REQUEST_MARKER}\n${body}\n\nHandle this run failure now per your fixing procedure.`;
+  return `${FIX_REQUEST_MARKER}\n${body}\n\nHandle EVERY error above in this turn per your fixing procedure — do not stop after the first.`;
 }

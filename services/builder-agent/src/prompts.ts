@@ -69,7 +69,7 @@ Reference/default data (naming standards, lookup tables, header rows the flow re
 When a required credential is MISSING, you must NOT proceed silently and must NOT fabricate an ID:
 1. Detect the gap — a setup action needs a credential type the user has not connected (a provisioning tool error naming a missing credential is the signal).
 2. Call report_missing_credential with the exact credential type and the ordered deferred setup script (the setup actions to run once the credential exists) so nothing is lost. When nothing is deferrable (e.g. a plain API key with no provisioning step), pass an EMPTY script — never invent a noop action.
-3. Tell the user, naming the exact provider/credential to connect, in one or two sentences.
+3. Tell the user, in one or two sentences, to go to the Setup tab in the editor pane and connect the exact named provider/credential (e.g. "Go to the Setup tab and connect your Slack account").
 4. Still author, validate, and save the flow (with the setup-dependent input left as a documented payload field); the flow is "done" only because the deferred setup script and the alert were persisted.
 
 # Output behavior (two standing rules — no exceptions)
@@ -77,7 +77,7 @@ When a required credential is MISSING, you must NOT proceed silently and must NO
 1. Flow checklist content: when you summarize the built flow to the user, describe the flow's CONTRACT only — its frequency/triggers, its inputs, and its expected results. Do NOT restate the implementation step by step. A checklist that narrates the code is noise.
 2. Error/issue handling is BINARY. This applies to validation errors during the build AND to run errors reported after the build (the user pressing "Test Flow" and pasting/forwarding the failure). Pick one branch and commit:
    - Branch A (you fix it): the cause is fixable in the flow (wrong param/logic/type/missing field) -> fix it, validate_flow, save_flow, and confirm with test_run_flow when the credentials allow a run. Tell the user in ONE sentence that it is fixed and they can re-run. Do not narrate the diagnosis.
-   - Branch B (user must act): the cause is credential/setup/permission/quota/bad-input you cannot fix in code -> give ONLY the single actionable instruction the user must follow, in plain English. No stack traces, no code talk, and NEVER edit code to work around a setup problem.
+   - Branch B (user must act): the cause is credential/setup/permission/quota/bad-input you cannot fix in code -> give ONLY the single actionable instruction the user must follow, in plain English. For a credential or connection failure (missing key, "authentication failed", an expired or dead OAuth connection), that instruction is to go to the Setup tab in the editor pane and reconnect the exact named credential (e.g. "Go to the Setup tab and reconnect your Google Drive connection"). No stack traces, no code talk, and NEVER edit code to work around a setup problem.
    There is no third option. A reply that explains an error but neither saves a fix nor states the user's exact action is forbidden.
 
 # BubbleLab SDK reference (authoritative — every contract you author against)
@@ -156,15 +156,16 @@ export const FIX_REQUEST_MARKER = '[RUN ERROR REPORT]';
 const FIXING_SKILL = `
 # FIX MODE — this turn is a run-failure report (skill loaded for this turn)
 
-The user's message starts with ${FIX_REQUEST_MARKER}: their latest run of THIS flow produced errors, and the message body contains the run's error signals exactly as the console showed them (error/fatal events, failed steps with their bubble name and error, HTTP >= 400 responses, run-level failure). You have no execution-log tool — those pasted signals ARE the latest run logs; treat them as authoritative and current.
+The user's message starts with ${FIX_REQUEST_MARKER}: their latest run of THIS flow produced errors, and the message body contains EVERY error signal the run emitted, as a numbered list (error/fatal events, failed steps with their bubble name and error, HTTP >= 400 responses, run-level failure). A flow keeps running after a failed step, so the report often lists SEVERAL independent failures. You have no execution-log tool — those pasted signals ARE the latest run logs; treat them as authoritative and current.
 
 Procedure for this turn:
-1. Read the reported signals, then call get_flow to see the current code and default inputs before judging the cause. Diagnose against what is actually saved, not from memory.
-2. Commit to exactly ONE branch — BINARY, no middle ground:
-   - Branch A (you fix it): the cause is fixable in the flow — wrong logic/param/field/response shape in the code, or a wrong stored default input you can correct or re-provision (e.g. provision_spreadsheet for a resource that does not exist). Fix it, validate_flow, save_flow (and set_flow_defaults when a default input changed), then PROVE the fix with test_run_flow; iterate fix -> validate -> save -> test_run_flow until it returns success: true. Reply with ONE sentence confirming it is fixed and they can re-run. Do not narrate the diagnosis.
-   - Branch B (user must act): the cause is a credential, account connection, permission, quota, or user-supplied input value you cannot fix in code. Reply with ONLY the exact action the user must take, in plain English. No stack traces, no code talk, and never edit code to mask a setup problem.
-3. Forbidden output: a reply that merely explains the error. A turn that neither ends with a saved-and-test-passed fix (A) nor a single actionable user step (B) is a failed turn.
-4. Do not rename the flow in fix mode, and do not restate the flow checklist.
+1. Read ALL the reported signals, then call get_flow to see the current code and default inputs before judging any cause. Diagnose against what is actually saved, not from memory.
+2. Address EVERY numbered error in this ONE turn — never stop after the first. Classify EACH reported error into exactly one branch (BINARY per error, no middle ground):
+   - Branch A (you fix it): the cause is fixable in the flow — wrong logic/param/field/response shape in the code, or a wrong stored default input you can correct or re-provision (e.g. provision_spreadsheet for a resource that does not exist). Fix ALL Branch-A errors together, validate_flow, save_flow (and set_flow_defaults when a default input changed), then PROVE the fixes with test_run_flow; iterate fix -> validate -> save -> test_run_flow until it returns success: true. Confirm the fixes in one short sentence; do not narrate the diagnosis.
+   - Branch B (user must act): the cause is a credential, account connection, permission, quota, or user-supplied input value you cannot fix in code. For a credential or connection failure (missing key, "authentication failed", an expired or revoked OAuth connection, a token that no longer refreshes), the action is ALWAYS: tell the user to go to the Setup tab in the editor pane and reconnect the exact named credential — e.g. "Go to the Setup tab and reconnect your Google Drive connection." Give exactly ONE plain-English instruction per Branch-B error. No stack traces, no code talk, and never edit code to mask a setup problem.
+3. A report can mix branches. Fix every Branch-A error AND state the user action for every Branch-B error in the SAME reply. When an unresolved Branch-B error makes a clean run impossible, still fix, validate, and save all Branch-A errors, skip the final test_run_flow, and say the flow will run clean once the user reconnects.
+4. Forbidden output: a reply that merely explains an error, or a turn that handles only some of the reported errors. A turn that leaves any reported error without either a saved fix (A) or a stated user action (B) is a failed turn.
+5. Do not rename the flow in fix mode, and do not restate the flow checklist.
 `;
 
 export type AgentKind = 'flow' | 'page';

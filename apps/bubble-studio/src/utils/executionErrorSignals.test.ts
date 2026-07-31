@@ -130,4 +130,31 @@ describe('composeFixRequestMessage', () => {
     expect(msg).toContain('the summary');
     expect(msg.startsWith(FIX_REQUEST_MARKER)).toBe(true);
   });
+
+  it('enumerates EVERY failed step when a run has multiple failures', () => {
+    const failedHttpBubble = ev({
+      type: 'bubble_execution_complete',
+      bubbleName: 'http',
+      variableId: 111,
+      additionalData: {
+        result: {
+          success: false,
+          data: { status: 400, statusText: 'Bad Request' },
+          error: 'HTTP 400: Bad Request',
+        },
+        variableId: 111,
+      },
+    });
+    const msg = composeFixRequestMessage([
+      ev({ type: 'info', message: 'start' }),
+      failedHttpBubble,
+      failedSheetsBubble,
+      succeededRunComplete,
+    ]);
+    expect(msg).toContain('2 error signals');
+    expect(msg).toContain('1. FAILED STEP: Step "http" failed');
+    expect(msg).toContain('2. FAILED STEP: Step "google-sheets" failed');
+    expect(msg).toContain('Requested entity was not found.');
+    expect(msg).toContain('Handle EVERY error above');
+  });
 });
