@@ -120,6 +120,23 @@ export function getBuilderTarget(): string | null {
   return targetFor(mode);
 }
 
+/**
+ * Shared-secret header for every request to builder-agent. In 'external'
+ * mode (a real deployment, e.g. Render) builder-agent is a public web
+ * service with no platform-level network isolation, so this header is the
+ * only thing stopping a stranger who finds its URL from calling it — the
+ * app-layer substitute for a private service Render would otherwise charge
+ * for. In 'managed' mode the spawned child inherits this same env var via
+ * the `...process.env` spread in spawnChild, so the header still matches;
+ * harmless when BUILDER_AGENT_SECRET is unset (local dev — builder-agent's
+ * own check only enforces the header when ITS OWN copy of the secret is
+ * also set, so an empty local dev setup stays open on both sides).
+ */
+export function builderAuthHeaders(): Record<string, string> {
+  const secret = process.env.BUILDER_AGENT_SECRET;
+  return secret ? { 'x-builder-secret': secret } : {};
+}
+
 export function getBuilderMode(): BuilderMode {
   return mode;
 }
@@ -171,6 +188,7 @@ async function fetchHealth(base: string): Promise<SidecarHealth | null> {
   try {
     const res = await fetch(`${base}/health`, {
       signal: AbortSignal.timeout(2000),
+      headers: builderAuthHeaders(),
     });
     if (!res.ok) return null;
     const parsed = sidecarHealthSchema.safeParse(await res.json());

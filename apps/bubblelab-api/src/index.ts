@@ -51,6 +51,7 @@ import { getBubbleFactory } from './services/bubble-factory-instance.js';
 import {
   initBuilderRuntime,
   getBuilderTarget,
+  builderAuthHeaders,
 } from './services/builder-runtime.js';
 
 const app = new OpenAPIHono({
@@ -121,6 +122,7 @@ app.get('/wake', async (c) => {
     try {
       const res = await fetch(`${builderTarget}/health`, {
         signal: AbortSignal.timeout(60_000),
+        headers: builderAuthHeaders(),
       });
       builderAwake = res.ok;
     } catch {

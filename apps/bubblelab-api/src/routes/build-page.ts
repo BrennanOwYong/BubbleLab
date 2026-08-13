@@ -19,6 +19,7 @@ import { db, pages } from '../db/index.js';
 import { getUserId } from '../middleware/auth.js';
 import {
   builderDisabledResponse,
+  builderAuthHeaders,
   getBuilderTarget,
 } from '../services/builder-runtime.js';
 
@@ -59,7 +60,10 @@ async function forward(
       userId
     );
   }
-  const upstream = await fetch(`${target}/build-page/${pageId}/${path}`, init);
+  const upstream = await fetch(`${target}/build-page/${pageId}/${path}`, {
+    ...init,
+    headers: { ...init.headers, ...builderAuthHeaders() },
+  });
   // Pass the sidecar body through untouched (SSE for message/resume, JSON for
   // thread); copying the content-type keeps EventSource clients working.
   return new Response(upstream.body, {

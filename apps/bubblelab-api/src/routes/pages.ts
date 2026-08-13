@@ -21,6 +21,7 @@ import { db, pages } from '../db/index.js';
 import { getUserId } from '../middleware/auth.js';
 import {
   builderDisabledResponse,
+  builderAuthHeaders,
   getBuilderTarget,
 } from '../services/builder-runtime.js';
 
@@ -102,7 +103,10 @@ async function proxyToSidecar(
   if (target === null) {
     return builderDisabledResponse(`/page/${pageId}/${path}`, pageId);
   }
-  const upstream = await fetch(`${target}/page/${pageId}/${path}`, init);
+  const upstream = await fetch(`${target}/page/${pageId}/${path}`, {
+    ...init,
+    headers: { ...init.headers, ...builderAuthHeaders() },
+  });
   return new Response(upstream.body, {
     status: upstream.status,
     headers: {

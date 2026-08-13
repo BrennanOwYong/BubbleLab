@@ -25,6 +25,7 @@ import { db, bubbleFlows } from '../db/index.js';
 import { getUserId } from '../middleware/auth.js';
 import {
   builderDisabledResponse,
+  builderAuthHeaders,
   getBuilderTarget,
 } from '../services/builder-runtime.js';
 
@@ -74,6 +75,7 @@ async function forward(
         ? { 'content-type': 'application/json' }
         : {}),
       'x-user-id': userId,
+      ...builderAuthHeaders(),
     },
   });
   // Pass the sidecar body through untouched (SSE for message/resume, JSON for

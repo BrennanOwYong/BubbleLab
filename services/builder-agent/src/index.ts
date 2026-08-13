@@ -56,6 +56,26 @@ import { broadcast, buildKeyFor, subscribe } from './subscribers.ts';
 
 const app = new Hono();
 
+// Shared-secret gate, only enforced when BUILDER_AGENT_SECRET is actually
+// set. This service is deployed as a genuinely public web service on
+// Render's free plan (private services have no free tier) — this header
+// check is the entire substitute for real network isolation, so it must
+// cover every route except /health, which Render's own platform prober
+// hits with no custom headers and would otherwise mark the service
+// unhealthy and restart it. Unset locally (dev, tests) -> no-op, matching
+// the API-side builderAuthHeaders() contract exactly (both sides silent
+// when the secret isn't configured).
+app.use('*', async (c, next) => {
+  const secret = process.env.BUILDER_AGENT_SECRET;
+  if (!secret || c.req.path === '/health') {
+    return next();
+  }
+  if (c.req.header('x-builder-secret') !== secret) {
+    return c.json({ error: 'unauthorized' }, 401);
+  }
+  return next();
+});
+
 const messageBodySchema = z.object({
   message: z.string().min(1),
 });

@@ -7,17 +7,19 @@
 # reads this file, provisions everything below, and prompts once for every
 # `sync: false` env var (never stored in the repo).
 #
-# Architecture: bubble-studio (static, always-on CDN, no cold start) calls
-# bubblelab-api (public web service) over the internet; bubblelab-api calls
-# builder-agent (private service, not internet-reachable) over Render's
-# private network. Postgres is shared by both.
+# Architecture: bubble-studio (static, always-on CDN, no cold start) and
+# bubblelab-api are both public web services; builder-agent is ALSO a public
+# web service (not Render's genuinely private `pserv` type — that has no
+# free tier, confirmed at render.com/docs/free, $7/mo minimum). Since
+# builder-agent's URL is technically internet-reachable, every request to it
+# must carry a shared-secret header (BUILDER_AGENT_SECRET) or it 401s — see
+# builderAuthHeaders() in apps/bubblelab-api/src/services/builder-runtime.ts
+# and the request-gating middleware in services/builder-agent/src/index.ts.
+# This is an application-layer substitute for real network isolation, not
+# equivalent to it: the URL is discoverable and probeable, just useless
+# without the secret. Postgres is shared by all three services.
 #
-# Cost: bubblelab-db + bubblelab-api + bubble-studio are free. builder-agent
-# is deliberately kept private (never internet-reachable, only bubblelab-api
-# can reach it) rather than switched to a free public web service — that
-# requires Render's Starter plan, $7/month, since private services have no
-# free tier. Same-region placement (oregon) on both bubblelab-api and
-# builder-agent is required for the private network path between them.
+# Cost: $0/month, everything free tier.
 
 databases:
   - name: bubblelab-db
@@ -45,23 +47,21 @@ services:
       - key: DISABLE_AUTH
         value: 'true'
       # Render web services are always served over TLS at a deterministic
-      # https://<name>.onrender.com address (unlike private services, which
-      # get a random-suffixed internal hostname) — safe to hardcode since
-      # "bubblelab-api" is this same file's fixed service name.
+      # https://<name>.onrender.com address — safe to hardcode since these
+      # names are this same file's own fixed service names.
       - key: NODEX_API_URL
         value: https://bubblelab-api.onrender.com
-      # UNVERIFIED at write time: fromService/property:host is confirmed to
-      # return the private service's bare hostname, but whether a scheme is
-      # included is not confirmed against a live deploy. If bubblelab-api
-      # can't reach builder-agent after first deploy, open builder-agent's
-      # Connect tab in the Render Dashboard, copy its exact internal address
-      # (e.g. http://builder-agent-xxxx:10000), and paste it here as a
-      # literal `value:` instead of fromService.
       - key: BUILDER_AGENT_URL
+        value: https://builder-agent.onrender.com
+      # Shared secret every request to builder-agent must carry (see the
+      # architecture note above). fromService/envVarKey reads it from
+      # builder-agent's own generated value below, so both sides always
+      # agree — never generated independently on each service.
+      - key: BUILDER_AGENT_SECRET
         fromService:
           name: builder-agent
-          type: pserv
-          property: host
+          type: web
+          envVarKey: BUILDER_AGENT_SECRET
       - key: CREDENTIAL_ENCRYPTION_KEY
         generateValue: true
       # The Telegram bot's GET /wake?secret=... trigger. Auto-generated so
@@ -89,17 +89,16 @@ services:
       - key: FIRE_CRAWL_API_KEY
         sync: false
 
-  # --- Builder-agent sidecar (private, no public URL ever — Starter plan,
-  #     $7/mo, always-on, no cold start at all) --------------------------
+  # --- Builder-agent sidecar (public web service, free tier — locked down
+  #     with BUILDER_AGENT_SECRET, not Render network isolation) ----------
   - name: builder-agent
-    type: pserv
+    type: web
     runtime: docker
-    # Private services have no free tier (confirmed: render.com/docs/free) —
-    # Starter is the cheapest plan that supports type: pserv, $7/month.
-    plan: starter
+    plan: free
     region: oregon
     dockerfilePath: ./Dockerfile.builder-agent
     dockerContext: .
+    healthCheckPath: /health
     envVars:
       - key: BUILDER_PORT
         value: '10000'
@@ -109,12 +108,22 @@ services:
           property: connectionString
       - key: GLUU_API_URL
         value: https://bubblelab-api.onrender.com
+      # The gate every non-/health request must pass (see architecture note
+      # above). Generated once, here; bubblelab-api reads this exact value
+      # via fromService/envVarKey so the two can never drift apart.
+      - key: BUILDER_AGENT_SECRET
+        generateValue: true
       - key: OPENROUTER_API_KEY
         sync: false
       - key: BUILDER_MODEL
         value: z-ai/glm-5.2
+      # This service is NOT spawned by bubblelab-api as a child process here
+      # — it's its own independent Render service — so its own serve-
+      # identity stamp should read 'external', matching how it's actually
+      # running (config.ts's serveMode default). 'managed' would misreport
+      # its own SERVED_BY telemetry.
       - key: BUILDER_SERVE_MODE
-        value: managed
+        value: external
 
   # --- Studio frontend (static, always-on, no sleep/cold-start) ----------
   - name: bubble-studio

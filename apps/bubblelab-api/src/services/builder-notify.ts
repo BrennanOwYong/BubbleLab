@@ -19,7 +19,7 @@
  */
 import { emitServerTelemetry } from '../utils/telemetry.js';
 import { recordServerTelemetryEvent } from '../routes/telemetry.js';
-import { getBuilderTarget } from './builder-runtime.js';
+import { getBuilderTarget, builderAuthHeaders } from './builder-runtime.js';
 
 function record(event: string, data: Record<string, unknown>): void {
   emitServerTelemetry(event, data);
@@ -46,7 +46,7 @@ export function notifyBuilderCredentialsChanged(
   }
   void fetch(`${target}/internal/credentials-changed`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...builderAuthHeaders() },
     body: JSON.stringify({ userId, credentialType }),
     signal: AbortSignal.timeout(10_000),
   })
