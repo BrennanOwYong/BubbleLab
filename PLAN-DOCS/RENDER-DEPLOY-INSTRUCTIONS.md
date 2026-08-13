@@ -5,7 +5,14 @@ What's already built, in the repo: `render.yaml`, `Dockerfile.builder-agent`
 below is what only a human can do — Render Dashboard clicks, secret values,
 DNS. Sources consulted: render.com/docs/blueprint-spec,
 render.com/docs/private-services, render.com/docs/private-network,
-render.com/docs/static-sites (2026-08-13).
+render.com/docs/static-sites, render.com/docs/free (2026-08-13).
+
+**Cost: $7/month.** `bubblelab-db`, `bubblelab-api`, `bubble-studio` are
+free. `builder-agent` is kept a genuine private service (never reachable
+except by `bubblelab-api`, over Render's internal network) rather than
+exposed as a free public web service — private services have no free tier
+on Render, confirmed at render.com/docs/free. Cheapest plan that supports
+`type: pserv` is Starter, $7/month, billed by the second while running.
 
 ## 1. Deploy the Blueprint
 
@@ -92,11 +99,11 @@ the JSON response.
 
 ## 6. Known gaps, not addressed by this deploy
 
-- **Free tier cold start**: `bubblelab-api` and `builder-agent` sleep after
-  ~15 min idle (Render's own documented free-tier behavior, no official way
-  to prevent it without a paid plan). First request after sleep takes
-  ~30-50s. The `/wake` call in step 5 exists specifically to absorb this
-  before the friend clicks anything, not eliminate it.
+- **Free tier cold start — `bubblelab-api` only.** Sleeps after ~15 min idle
+  (Render's documented free-tier behavior), ~30-50s to wake. `builder-agent`
+  is on the paid Starter plan and never sleeps. The `/wake` call in step 5
+  exists to absorb `bubblelab-api`'s cold start before the friend clicks
+  anything, not to eliminate it.
 - **No custom domain**: everything is on `*.onrender.com`. Adding one later
   is a dashboard action (render.com/docs/custom-domains) + a DNS CNAME at
   your registrar — Cloudflare DNS specifically documented at

@@ -1,6 +1,7 @@
 # Render Blueprint for the BubbleLab MVP.
 # Docs consulted (2026-08-13): https://render.com/docs/blueprint-spec,
-# https://render.com/docs/private-services, https://render.com/docs/private-network
+# https://render.com/docs/private-services, https://render.com/docs/private-network,
+# https://render.com/docs/free (confirms private services have no free tier)
 #
 # Deploy: Render Dashboard -> New -> Blueprint -> connect this repo. Render
 # reads this file, provisions everything below, and prompts once for every
@@ -10,6 +11,13 @@
 # bubblelab-api (public web service) over the internet; bubblelab-api calls
 # builder-agent (private service, not internet-reachable) over Render's
 # private network. Postgres is shared by both.
+#
+# Cost: bubblelab-db + bubblelab-api + bubble-studio are free. builder-agent
+# is deliberately kept private (never internet-reachable, only bubblelab-api
+# can reach it) rather than switched to a free public web service — that
+# requires Render's Starter plan, $7/month, since private services have no
+# free tier. Same-region placement (oregon) on both bubblelab-api and
+# builder-agent is required for the private network path between them.
 
 databases:
   - name: bubblelab-db
@@ -23,6 +31,7 @@ services:
     type: web
     runtime: docker
     plan: free
+    region: oregon
     dockerfilePath: ./Dockerfile.api
     dockerContext: .
     healthCheckPath: /
@@ -80,12 +89,15 @@ services:
       - key: FIRE_CRAWL_API_KEY
         sync: false
 
-  # --- Builder-agent sidecar (private, no public URL, no cold start seen
-  #     by testers — bubblelab-api wakes it via the private network) ------
+  # --- Builder-agent sidecar (private, no public URL ever — Starter plan,
+  #     $7/mo, always-on, no cold start at all) --------------------------
   - name: builder-agent
     type: pserv
     runtime: docker
-    plan: free
+    # Private services have no free tier (confirmed: render.com/docs/free) —
+    # Starter is the cheapest plan that supports type: pserv, $7/month.
+    plan: starter
+    region: oregon
     dockerfilePath: ./Dockerfile.builder-agent
     dockerContext: .
     envVars:
