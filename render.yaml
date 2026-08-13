@@ -131,7 +131,8 @@ services:
     runtime: static
     rootDir: .
     buildCommand: >-
-      corepack enable && pnpm install --frozen-lockfile &&
+      export HUSKY=0 CI=true && corepack enable &&
+      pnpm install --frozen-lockfile &&
       cd packages/bubble-shared-schemas && pnpm run build &&
       cd ../bubble-core && pnpm run build &&
       cd ../../apps/bubble-studio && pnpm run build

@@ -9,6 +9,11 @@ COPY apps/bubble-studio ./apps/bubble-studio/
 COPY tools ./tools/
 COPY .npmrc ./. 
 
+# HUSKY=0 + CI=true — husky's "prepare" script throws when .git is missing
+# from the build context (it is here); CI=true forces pnpm non-interactive
+# for the build-script-approval prompt. See Dockerfile.api for detail.
+ENV HUSKY=0
+ENV CI=true
 # Install all dependencies
 RUN pnpm install --frozen-lockfile
 

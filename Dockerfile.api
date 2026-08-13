@@ -6,12 +6,23 @@ WORKDIR /workspace
 
 # Copy workspace files
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
-COPY .npmrc ./. 
+COPY .npmrc ./.
 COPY packages ./packages/
 COPY apps ./apps/
 COPY tools ./tools/
 
-# Install all dependencies
+# HUSKY=0: root package.json's "prepare" script runs `husky install`
+# automatically as part of `pnpm install`. husky 8's own source throws a
+# hard error when .git is missing (node_modules/husky/lib/index.js) —
+# Docker's build context above never COPYs .git, so without this the whole
+# `pnpm install --frozen-lockfile` step fails. HUSKY=0 is husky's own
+# documented bypass (it checks process.env.HUSKY === '0' and skips
+# cleanly). Confirmed root cause of the Render build failure, not a guess.
+# CI=true additionally forces pnpm non-interactive (pnpm 10.16+ can prompt
+# to approve dependency build scripts; a Docker RUN step has no TTY to
+# answer that).
+ENV HUSKY=0
+ENV CI=true
 RUN pnpm install --frozen-lockfile
 
 # Build bubble-core (but not bubblelab-api yet)

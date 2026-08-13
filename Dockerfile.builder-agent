@@ -11,6 +11,11 @@ COPY packages ./packages/
 COPY services ./services/
 COPY tools ./tools/
 
+# HUSKY=0 + CI=true — see Dockerfile.api for why both are needed (husky's
+# "prepare" script throws when .git is missing from the build context;
+# CI=true forces pnpm non-interactive for the build-script-approval prompt).
+ENV HUSKY=0
+ENV CI=true
 RUN pnpm install --frozen-lockfile
 
 RUN cd packages/bubble-shared-schemas && pnpm run build
