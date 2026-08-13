@@ -10,6 +10,11 @@ COPY .npmrc ./.
 COPY packages ./packages/
 COPY apps ./apps/
 COPY tools ./tools/
+# package.json's patchedDependencies points at patches/@sendsafely__...patch
+# — pnpm reads this file during install to apply the patch; without it
+# copied into the build context, install crashes trying to read a file
+# that doesn't exist (confirmed root cause of a real Render build failure).
+COPY patches ./patches/
 
 # HUSKY=0: root package.json's "prepare" script runs `husky install`
 # automatically as part of `pnpm install`. husky 8's own source throws a

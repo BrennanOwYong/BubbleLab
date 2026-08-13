@@ -7,7 +7,10 @@ COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY packages ./packages/
 COPY apps/bubble-studio ./apps/bubble-studio/
 COPY tools ./tools/
-COPY .npmrc ./. 
+COPY .npmrc ./.
+# package.json's patchedDependencies needs this file present at install
+# time — see Dockerfile.api for the confirmed failure this fixes.
+COPY patches ./patches/
 
 # HUSKY=0 + CI=true — husky's "prepare" script throws when .git is missing
 # from the build context (it is here); CI=true forces pnpm non-interactive

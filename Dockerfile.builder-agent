@@ -10,6 +10,9 @@ COPY .npmrc ./.
 COPY packages ./packages/
 COPY services ./services/
 COPY tools ./tools/
+# package.json's patchedDependencies needs this file present at install
+# time — see Dockerfile.api for the confirmed failure this fixes.
+COPY patches ./patches/
 
 # HUSKY=0 + CI=true — see Dockerfile.api for why both are needed (husky's
 # "prepare" script throws when .git is missing from the build context;
