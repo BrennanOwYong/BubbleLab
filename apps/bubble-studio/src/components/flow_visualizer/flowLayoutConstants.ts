@@ -46,7 +46,9 @@ export const FLOW_LAYOUT = {
 
   // Transformation node layout
   TRANSFORMATION: {
-    FIXED_HEIGHT: 100, // Fixed height since transformation nodes only show header (no code)
+    FIXED_HEIGHT: 100, // Reserved height without a description (icon row + p-4 ≈ 74px content)
+    WITH_DESCRIPTION_HEIGHT: 132, // Reserved height with a 2-line-clamped description (+mt-1.5 +2×16px)
+    DESCRIPTION_MAX_LINES: 2, // TransformationNode description clamps here (ellipsis + title tooltip)
     HEADER_HEIGHT: 80,
     CODE_LINE_HEIGHT: 18,
     CODE_PADDING: 20, // Padding inside code area
@@ -71,3 +73,16 @@ export const FLOW_LAYOUT = {
     STEP_CONTAINER: -1, // Behind bubbles
   },
 } as const;
+
+/**
+ * The single source of truth for a TransformationNode's height. The layout
+ * reservation (FlowVisualizer.calculateStepHeight) and the node's explicit
+ * DOM height (TransformationNode style.height) both call this, so
+ * reserved === rendered by construction. The description clamps to
+ * TRANSFORMATION.DESCRIPTION_MAX_LINES lines inside that box.
+ */
+export function transformationNodeHeight(hasDescription: boolean): number {
+  return hasDescription
+    ? FLOW_LAYOUT.TRANSFORMATION.WITH_DESCRIPTION_HEIGHT
+    : FLOW_LAYOUT.TRANSFORMATION.FIXED_HEIGHT;
+}

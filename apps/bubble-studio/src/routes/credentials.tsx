@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { CredentialsPage } from '@/pages/CredentialsPage';
 import { useAuth } from '@/hooks/useAuth';
+import { useUIStore } from '@/stores/uiStore';
 import { API_BASE_URL } from '@/env';
 
 export const Route = createFileRoute('/credentials')({
@@ -13,8 +14,9 @@ function CredentialsRoute() {
 
   // Redirect if not signed in
   if (!isSignedIn) {
-    // Open up sign in modal
-    navigate({ to: '/home', search: { showSignIn: true }, replace: true });
+    // Flag /home to auto-open the sign-in modal (in-memory, not a URL param)
+    useUIStore.getState().requestShowSignIn();
+    navigate({ to: '/home', replace: true });
     return null;
   }
 

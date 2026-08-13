@@ -154,6 +154,26 @@ export async function executeBubbleFlowWithTracking(
     }
   };
 
+  // Pre-flight credential check (S1): every required non-platform,
+  // non-optional slot still unbound after auto-bind means no matching
+  // connected account exists — the run WILL fail at that bubble. Emit an
+  // observable warn event up front (streamed + persisted in executionLogs)
+  // instead of letting the failure surface only as a deep bubble error.
+  for (const slot of autoBind.unbound) {
+    const bubbleName =
+      flowBubbleParameters[slot.bubbleKey]?.bubbleName ?? slot.bubbleKey;
+    await collectionCallback({
+      type: 'warn',
+      timestamp: new Date().toISOString(),
+      message: `Credential pre-flight: no connected account satisfies ${slot.credentialType} required by ${bubbleName}`,
+      additionalData: {
+        preflight: 'missing_credential',
+        bubbleKey: slot.bubbleKey,
+        credentialType: slot.credentialType,
+      },
+    });
+  }
+
   try {
     // Always use streaming execution to capture logs
     // The collectionCallback will collect events regardless of whether

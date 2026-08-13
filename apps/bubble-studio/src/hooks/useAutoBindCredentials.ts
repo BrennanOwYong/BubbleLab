@@ -21,6 +21,7 @@ import { useBubbleFlow } from './useBubbleFlow';
 import { useCredentials } from './useCredentials';
 import { getExecutionStore, useExecutionStore } from '../stores/executionStore';
 import { computeAutoBindings } from '../lib/credentialBinding';
+import { usePlatformCredentialTypes } from './usePlatformCredentialTypes';
 import type { AutoBinding } from '../lib/credentialBinding';
 import { emitTelemetry } from '../lib/telemetry';
 import { API_BASE_URL } from '../env';
@@ -28,6 +29,7 @@ import { API_BASE_URL } from '../env';
 export function useAutoBindCredentials(flowId: number | null): void {
   const { data: flow } = useBubbleFlow(flowId);
   const { data: credentials = [] } = useCredentials(API_BASE_URL);
+  const platformCredentialTypes = usePlatformCredentialTypes();
   const pendingCredentials = useExecutionStore(
     flowId,
     (state) => state.pendingCredentials
@@ -47,6 +49,7 @@ export function useAutoBindCredentials(flowId: number | null): void {
       requiredCredentials: flow.requiredCredentials ?? {},
       pendingCredentials: store.pendingCredentials,
       credentials,
+      platformCredentialTypes,
     }).filter(
       (binding) =>
         !store.suppressedAutoBindSlots.has(
@@ -83,5 +86,12 @@ export function useAutoBindCredentials(flowId: number | null): void {
         candidateCount: group[0].candidateCount,
       });
     }
-  }, [flowId, flow, credentials, pendingCredentials, suppressedSlots]);
+  }, [
+    flowId,
+    flow,
+    credentials,
+    pendingCredentials,
+    suppressedSlots,
+    platformCredentialTypes,
+  ]);
 }

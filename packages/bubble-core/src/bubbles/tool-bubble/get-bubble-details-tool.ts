@@ -1,9 +1,18 @@
 import { z } from 'zod';
 import { ToolBubble } from '../../types/tool-bubble-class.js';
 import type { BubbleContext } from '../../types/bubble.js';
-import { CredentialType } from '@bubblelab/shared-schemas';
+import {
+  CredentialType,
+  NativeCapabilitySchema,
+  getNativeCapabilitiesForBubble,
+} from '@bubblelab/shared-schemas';
 import { BubbleFactory } from '../../bubble-factory.js';
 import type { BubbleName } from '@bubblelab/shared-schemas';
+import {
+  findByAlias,
+  searchBubbleMetadata,
+  type SearchableBubbleMetadata,
+} from '../../utils/bubble-search.js';
 
 // Define the parameters schema
 const GetBubbleDetailsToolParamsSchema = z.object({
@@ -62,6 +71,29 @@ const GetBubbleDetailsToolResultSchema = z.object({
     .describe(
       'Per-operation side-effect classifications (read / write / read_with_side_effects) with provenance. Operations marked write or read_with_side_effects mutate real systems when executed.'
     ),
+  nativeCapabilities: z
+    .array(NativeCapabilitySchema)
+    .optional()
+    .describe(
+      'FE4: native capabilities this bubble carries WITHOUT any tool bubble (from the shared native-capability manifest). Routing rule: when a native capability covers the task, enable it via the bubble param and bind NO tool bubble it replaces.'
+    ),
+  suggestions: z
+    .array(
+      z.object({
+        name: z.string().describe('Registered name of the suggested bubble'),
+        shortDescription: z.string().describe('What the suggested bubble does'),
+        matchedOperations: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'Operations of the suggested bubble that matched the query'
+          ),
+      })
+    )
+    .optional()
+    .describe(
+      'On a miss only (S3): registered bubbles that likely OWN the requested capability under a different product name (e.g. Google Docs lives inside google-drive)'
+    ),
   success: z.boolean().describe('Whether the operation was successful'),
   error: z.string().describe('Error message if operation failed'),
 });
@@ -103,23 +135,75 @@ export class GetBubbleDetailsTool extends ToolBubble<
     this.factory = new BubbleFactory();
   }
 
+  /** Registry metadata narrowed to the searchable structural subset (S3). */
+  private searchableMetadata(): SearchableBubbleMetadata[] {
+    return this.factory
+      .getAllMetadata()
+      .filter(
+        (entry): entry is NonNullable<typeof entry> => entry !== undefined
+      );
+  }
+
   async performAction(
     context?: BubbleContext
   ): Promise<GetBubbleDetailsToolResult> {
     void context; // Context available but not currently used
     await this.factory.registerDefaults();
-    const metadata = this.factory.getMetadata(
-      this.params.bubbleName as BubbleName
-    );
+    const requestedName = this.params.bubbleName;
+    let resolvedName = requestedName;
+    let metadata = this.factory.getMetadata(requestedName as BubbleName);
 
     if (!metadata) {
-      throw new Error(
-        `Bubble '${this.params.bubbleName}' not found in registry`
+      // S3 alias resolution: a declared alias ('gdrive') resolves to its
+      // owning bubble instead of dead-ending. Exact-name hits above are
+      // untouched.
+      const allMetadata = this.searchableMetadata();
+      const aliasOwner = findByAlias(allMetadata, requestedName);
+      if (aliasOwner !== undefined) {
+        resolvedName = aliasOwner.name;
+        metadata = this.factory.getMetadata(resolvedName as BubbleName);
+      }
+    }
+
+    if (!metadata) {
+      // S3 miss path: never a bare dead end. Score the whole registry
+      // (name/alias/descriptions/operation literals) against the requested
+      // name so a capability living INSIDE an owning bubble under a different
+      // product name ("google-docs" -> google-drive) is surfaced.
+      const suggestions = searchBubbleMetadata(
+        this.searchableMetadata(),
+        requestedName,
+        3
       );
+      const suggestionText = suggestions
+        .map((match) => {
+          const operations =
+            match.matchedOperations.length > 0
+              ? `; operations: ${match.matchedOperations.join(', ')}`
+              : '';
+          return `${match.name} (${match.shortDescription}${operations})`;
+        })
+        .join(' | ');
+      const error =
+        suggestions.length > 0
+          ? `Bubble '${requestedName}' not found in registry. The capability may live inside: ${suggestionText}. Call get_bubble_details with the owning bubble's exact registry name.`
+          : `Bubble '${requestedName}' not found in registry`;
+      return {
+        name: requestedName,
+        outputSchema: '',
+        usageExample: '',
+        suggestions: suggestions.map((match) => ({
+          name: match.name,
+          shortDescription: match.shortDescription,
+          matchedOperations: match.matchedOperations,
+        })),
+        success: false,
+        error,
+      };
     }
 
     // Get the actual bubble class to extract its class name
-    const BubbleClass = this.factory.get(this.params.bubbleName as BubbleName);
+    const BubbleClass = this.factory.get(resolvedName as BubbleName);
     const className = BubbleClass
       ? (BubbleClass as unknown as { name: string }).name
       : this.toPascalCase(metadata.name) + 'Bubble'; // Fallback
@@ -160,6 +244,11 @@ export class GetBubbleDetailsTool extends ToolBubble<
       metadata.operationMetadata
     );
 
+    // FE4: enumerate the bubble's native capabilities from the shared
+    // manifest so the discovery record routes work to a native ability
+    // before any redundant tool bubble is bound.
+    const nativeCapabilities = getNativeCapabilitiesForBubble(metadata.name);
+
     return {
       name: metadata.name,
       alias: metadata.alias,
@@ -168,6 +257,7 @@ export class GetBubbleDetailsTool extends ToolBubble<
       outputSchema: outputSchemaString,
       usageExample,
       operationSideEffects,
+      ...(nativeCapabilities.length > 0 ? { nativeCapabilities } : {}),
       success: true,
       error: '',
     };

@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Handle, Position, useNodeId } from '@xyflow/react';
 import { CogIcon } from '@heroicons/react/24/outline';
 import { ChevronDown, Cpu, Info, Layers } from 'lucide-react';
@@ -6,12 +6,11 @@ import { CredentialType, AvailableModels } from '@bubblelab/shared-schemas';
 import type { CredentialResponse } from '@bubblelab/shared-schemas';
 import { CreateCredentialModal } from '@/pages/CredentialsPage';
 import { bindCredentialToAllSteps } from '@/lib/credentialBinding';
+import { isPlatformProvided } from '@/lib/platformCredentials';
+import { usePlatformCredentialTypes } from '@/hooks/usePlatformCredentialTypes';
 import { useCreateCredential } from '@/hooks/useCredentials';
 import { findLogoForBubble } from '@/lib/integrations';
-import {
-  SYSTEM_CREDENTIALS,
-  OPTIONAL_CREDENTIALS,
-} from '@bubblelab/shared-schemas';
+import { OPTIONAL_CREDENTIALS } from '@bubblelab/shared-schemas';
 import type { ParsedBubbleWithInfo } from '@bubblelab/shared-schemas';
 import BubbleExecutionBadge from '@/components/flow_visualizer/BubbleExecutionBadge';
 import {
@@ -35,7 +34,15 @@ import {
   getModelParamConfig,
   getExcludedParamNames,
 } from '@/config/bubbleInlineParams';
-import { emitTelemetry } from '@/lib/telemetry';
+import { emitTelemetry, track } from '@/lib/telemetry';
+import {
+  deriveCuratedNodeView,
+  curatedViewTelemetryPayload,
+  humanizeSlug,
+} from '@/components/flow_visualizer/curatedNodeView';
+import AutoResizeTextarea from '@/components/AutoResizeTextarea';
+import { useOverflowTripwire } from '@/components/flow_visualizer/nodes/useOverflowTripwire';
+import { countWrappedLines } from '@/components/flow_visualizer/stepContainerUtils';
 
 export interface BubbleNodeData {
   flowId: number;
@@ -59,6 +66,40 @@ interface BubbleNodeProps {
 // Left/right handles sit at the vertical center of the collapsed plate so
 // spine edges stay horizontal when the node expands downward.
 const PLATE_HANDLE_TOP = FLOW_LAYOUT.EXPANDED.PLATE_HEIGHT / 2;
+
+// U3 containment for the curated view's free-text fields (system prompt, tool
+// description): the only U1 fields that are unbounded natural-language text,
+// so they're the ones that can genuinely outgrow their box. Clamp to a fixed
+// line count and reserve exactly that many lines of height, mirroring
+// stepContainerUtils.reservedDescriptionLines (reserved >= rendered by
+// construction). Width assumes the narrowest curated field box in the app
+// (small/custom-tool bubbles, w-64 scaled) so the line estimate is never an
+// under-count for the wider (w-80) main-bubble variant.
+const CURATED_TEXT_FONT =
+  '12px Inter, system-ui, Avenir, Helvetica, Arial, sans-serif'; // text-xs
+const CURATED_TEXT_LINE_HEIGHT_PX = 16; // text-xs leading (1rem)
+const CURATED_TEXT_MAX_LINES = 6;
+const CURATED_TEXT_AVAILABLE_WIDTH_PX = 190;
+
+/** Reserved line count for a curated text field: hard newlines each force a row. */
+function reservedCuratedTextLines(text: string): number {
+  const total = text
+    .split('\n')
+    .reduce(
+      (sum, line) =>
+        sum +
+        Math.max(
+          countWrappedLines(
+            line,
+            CURATED_TEXT_AVAILABLE_WIDTH_PX,
+            CURATED_TEXT_FONT
+          ),
+          1
+        ),
+      0
+    );
+  return Math.min(total, CURATED_TEXT_MAX_LINES);
+}
 
 function BubbleNode({ data }: BubbleNodeProps) {
   const {
@@ -150,6 +191,7 @@ function BubbleNode({ data }: BubbleNodeProps) {
 
   // Get available credentials
   const { data: availableCredentials = [] } = useCredentials(API_BASE_URL);
+  const platformCredentialTypes = usePlatformCredentialTypes();
 
   // Subscribe to selected event index and tab reactively (causes re-render when changed)
   const selectedEventIndexByVariableId = useLiveOutputStore(
@@ -198,8 +240,12 @@ function BubbleNode({ data }: BubbleNodeProps) {
   const isCompleted = bubbleId in completedBubbles;
   const executionStats = completedBubbles[bubbleId];
 
-  // Get selected credentials for this bubble
-  const selectedBubbleCredentials = pendingCredentials[credentialsKey] || {};
+  // Get selected credentials for this bubble (memoized: the {} fallback must
+  // stay referentially stable for the curated-view derivation below)
+  const selectedBubbleCredentials = useMemo(
+    () => pendingCredentials[credentialsKey] || {},
+    [pendingCredentials, credentialsKey]
+  );
 
   // Get required credential types - prefer prop (from flow.requiredCredentials), fallback to bubble parameters
   const requiredCredentialTypes = useMemo(() => {
@@ -221,7 +267,7 @@ function BubbleNode({ data }: BubbleNodeProps) {
 
   // Check if credentials are missing (exclude system and optional credentials)
   const hasMissingRequirements = requiredCredentialTypes.some((credType) => {
-    if (SYSTEM_CREDENTIALS.has(credType as CredentialType)) return false;
+    if (isPlatformProvided(credType, platformCredentialTypes)) return false;
     if (OPTIONAL_CREDENTIALS.has(credType as CredentialType)) return false;
     const selectedId = selectedBubbleCredentials[credType];
     return selectedId === undefined || selectedId === null;
@@ -297,8 +343,9 @@ function BubbleNode({ data }: BubbleNodeProps) {
   );
 
   const isSystemCredential = useMemo(() => {
-    return (credType: CredentialType) => SYSTEM_CREDENTIALS.has(credType);
-  }, []);
+    return (credType: CredentialType) =>
+      isPlatformProvided(credType, platformCredentialTypes);
+  }, [platformCredentialTypes]);
 
   const getCredentialsForType = (credType: string) => {
     return availableCredentials.filter(
@@ -320,6 +367,45 @@ function BubbleNode({ data }: BubbleNodeProps) {
   const currentModel = modelExtracted?.value as string | undefined;
   const isModelEditable = modelExtracted?.shouldBeEditable ?? false;
   const excludedParamNames = getExcludedParamNames(bubble.bubbleName);
+
+  // U1: curated default view for the expanded panel — one derivation feeds
+  // both the render and the node.curated_view_rendered telemetry event, so
+  // they cannot disagree (PLAN-DOCS/discovery/U1.md).
+  const curatedView = useMemo(
+    () => deriveCuratedNodeView({ bubble }),
+    [bubble]
+  );
+
+  // U3 tripwire: fires layout.node_overflow if a clamped curated text field's
+  // actual DOM wrap needs more lines than reservedCuratedTextLines predicted.
+  const descriptionRef = useRef<HTMLDivElement>(null);
+  useOverflowTripwire(descriptionRef, reactFlowNodeId, 'bubble-description');
+  const systemPromptRef = useRef<HTMLDivElement>(null);
+  useOverflowTripwire(systemPromptRef, reactFlowNodeId, 'bubble-system-prompt');
+
+  // Draft for the curated system-prompt editor; committed on blur through the
+  // same updateBubbleParam code-rewrite path the param editors use.
+  const [promptDraft, setPromptDraft] = useState<string | null>(null);
+
+  // Full raw param editor survives behind this closed-by-default disclosure
+  // (power-user escape hatch; deletion of the param-editors family is a
+  // follow-up once the curated view is validated).
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  // Emit once per expansion; the ref gates re-emission while expanded.
+  const emittedExpansionRef = useRef(false);
+  useEffect(() => {
+    if (!isExpanded) {
+      emittedExpansionRef.current = false;
+      return;
+    }
+    if (emittedExpansionRef.current) return;
+    emittedExpansionRef.current = true;
+    track(
+      'node.curated_view_rendered',
+      curatedViewTelemetryPayload(flowId, bubble, curatedView)
+    );
+  }, [isExpanded, flowId, bubble, curatedView]);
 
   const handleErrorClick = () => {
     // Navigate to the console showing this bubble's last log
@@ -610,156 +696,316 @@ function BubbleNode({ data }: BubbleNodeProps) {
             <div className="px-5 pt-4">
               {bubble.bubbleName && (
                 <span className="inline-block rounded-full border border-purple-500/40 px-2.5 py-0.5 text-[10px] uppercase tracking-wide text-purple-200">
-                  {bubble.bubbleName}
+                  {logo?.name ?? humanizeSlug(bubble.bubbleName)}
                 </span>
               )}
               {bubble.description && (
-                <p className="mt-2 text-xs text-neutral-400 break-words">
-                  {bubble.description}
-                </p>
+                <div
+                  ref={descriptionRef}
+                  className="mt-2 overflow-hidden"
+                  style={{
+                    height:
+                      reservedCuratedTextLines(bubble.description) *
+                      CURATED_TEXT_LINE_HEIGHT_PX,
+                  }}
+                >
+                  <p
+                    className="text-xs text-neutral-400 break-words"
+                    style={{
+                      display: '-webkit-box',
+                      WebkitLineClamp: reservedCuratedTextLines(
+                        bubble.description
+                      ),
+                      WebkitBoxOrient: 'vertical',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    {bubble.description}
+                  </p>
+                </div>
               )}
             </div>
           )}
 
-          {/* Model Section - Only for bubbles with model config */}
-          {modelConfig && (
-            <div className="px-5 pt-4">
-              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-neutral-400">
-                <Cpu className="h-3.5 w-3.5" />
-                Model
-              </div>
-              <div className="mt-2 space-y-2 rounded-xl border border-neutral-700 bg-neutral-900/60 p-3">
-                <div className="flex items-start justify-between gap-3">
-                  <p className="text-xs font-semibold text-neutral-100">
-                    {modelConfig.label || 'AI Model'}
-                  </p>
-                  {!isModelEditable && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/20 px-2 py-0.5 text-[10px] font-medium text-blue-300 border border-blue-500/30">
-                      Dynamic
-                    </span>
+          {/* Curated default view (U1): agent = model / instructions / tools /
+              memory; tool = description (header above) + connected account.
+              Rendered from the same view-model the telemetry event carries. */}
+          {curatedView.kind === 'agent' ? (
+            <>
+              {/* Instructions (system prompt) */}
+              <div className="px-5 pt-4">
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-neutral-400">
+                  <Info className="h-3.5 w-3.5" />
+                  Instructions
+                </div>
+                <div className="mt-2 rounded-xl border border-neutral-700 bg-neutral-900/60 p-3">
+                  {curatedView.systemPrompt.editable ? (
+                    <AutoResizeTextarea
+                      title="Edit the instructions"
+                      value={
+                        promptDraft ?? curatedView.systemPrompt.value ?? ''
+                      }
+                      maxHeight={160}
+                      onChange={(e) => setPromptDraft(e.target.value)}
+                      onBlur={() => {
+                        if (
+                          promptDraft !== null &&
+                          promptDraft !== (curatedView.systemPrompt.value ?? '')
+                        ) {
+                          updateBubbleParam(
+                            bubble.variableId,
+                            'systemPrompt',
+                            promptDraft
+                          );
+                        }
+                        setPromptDraft(null);
+                      }}
+                      className="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-2 py-1.5 text-xs text-neutral-100 focus:border-purple-500 focus:outline-none resize-none"
+                    />
+                  ) : (
+                    <div
+                      ref={systemPromptRef}
+                      className="overflow-hidden"
+                      style={{
+                        height:
+                          reservedCuratedTextLines(
+                            curatedView.systemPrompt.value ||
+                              'Written by the flow'
+                          ) * CURATED_TEXT_LINE_HEIGHT_PX,
+                      }}
+                    >
+                      <p
+                        className="text-xs text-neutral-400 whitespace-pre-wrap break-words"
+                        style={{
+                          display: '-webkit-box',
+                          WebkitLineClamp: reservedCuratedTextLines(
+                            curatedView.systemPrompt.value ||
+                              'Written by the flow'
+                          ),
+                          WebkitBoxOrient: 'vertical',
+                          overflow: 'hidden',
+                        }}
+                      >
+                        {curatedView.systemPrompt.value ||
+                          'Written by the flow'}
+                      </p>
+                    </div>
                   )}
                 </div>
-                {isModelEditable ? (
-                  <select
-                    title="Select AI Model"
-                    className="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-2 py-1.5 text-xs text-neutral-100 focus:border-purple-500 focus:outline-none"
-                    value={currentModel}
-                    onChange={(e) =>
-                      updateBubbleParam(
-                        bubble.variableId,
-                        modelConfig.paramPath,
-                        e.target.value
-                      )
-                    }
-                  >
-                    {AvailableModels.options.map((model) => (
-                      <option key={model} value={model}>
-                        {model}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <pre className="w-full rounded-lg border border-neutral-700 bg-neutral-950/50 px-2 py-1.5 text-xs text-neutral-400 font-mono">
-                    {currentModel || 'Variable'}
-                  </pre>
-                )}
               </div>
-            </div>
-          )}
 
-          {/* Parameters Section - same form the details popup used to show */}
-          <div className="px-5 pt-4">
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-neutral-400 mb-3">
-              <Info className="h-3.5 w-3.5" />
-              Parameters
-            </div>
-            <SchemaParamsSection
-              bubble={bubble}
-              updateBubbleParam={updateBubbleParam}
-              excludedParamNames={excludedParamNames}
-            />
-          </div>
-
-          {/* Credentials Section */}
-          <div className="px-5 py-4">
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-neutral-400 mb-3">
-              <Info className="h-3.5 w-3.5" />
-              Credentials
-            </div>
-            {requiredCredentialTypes.length === 0 ? (
-              <p className="rounded-xl border border-neutral-700 bg-neutral-900/60 px-3 py-4 text-xs text-neutral-400">
-                This bubble does not require credentials.
-              </p>
-            ) : (
-              <div className="grid grid-cols-1 gap-2">
-                {requiredCredentialTypes.map((credType) => {
-                  const availableForType = getCredentialsForType(credType);
-                  const systemCred = isSystemCredential(
-                    credType as CredentialType
-                  );
-                  const optionalCred = OPTIONAL_CREDENTIALS.has(
-                    credType as CredentialType
-                  );
-                  const isMissingSelection =
-                    !systemCred &&
-                    !optionalCred &&
-                    (selectedBubbleCredentials[credType] === undefined ||
-                      selectedBubbleCredentials[credType] === null);
-
-                  return (
-                    <div key={credType} className={`space-y-1`}>
-                      <label className="block text-[11px] text-neutral-300">
-                        {credType}
-                        {!systemCred &&
-                          !optionalCred &&
-                          availableForType.length > 0 && (
-                            <span className="text-red-400 ml-1">*</span>
-                          )}
-                      </label>
-                      <select
-                        title={`${bubble.bubbleName} ${credType}`}
-                        value={
-                          selectedBubbleCredentials[credType] !== undefined &&
-                          selectedBubbleCredentials[credType] !== null
-                            ? String(selectedBubbleCredentials[credType])
-                            : ''
-                        }
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          if (val === '__ADD_NEW__') {
-                            emitTelemetry('setup.add_another_opened', {
-                              flowId,
-                              credentialType: credType,
-                              existingCount: availableForType.length,
-                              source: 'bubble_node',
-                            });
-                            setCreateModalForType(credType);
-                            return;
-                          }
-                          const credId = val ? parseInt(val, 10) : null;
-                          handleCredentialChange(credType, credId);
-                        }}
-                        className={`w-full px-2 py-1 text-xs bg-neutral-700 border ${isMissingSelection ? 'border-amber-500' : 'border-neutral-500'} rounded text-neutral-100`}
-                      >
-                        <option value="">
-                          {systemCred
-                            ? 'Use system default'
-                            : 'Select credential...'}
-                        </option>
-                        {availableForType.map((cred) => (
-                          <option key={cred.id} value={String(cred.id)}>
-                            {cred.name || `${cred.credentialType} (${cred.id})`}
-                          </option>
-                        ))}
-                        <option disabled>────────────</option>
-                        <option value="__ADD_NEW__">
-                          + Add New Credential…
-                        </option>
-                      </select>
+              {/* Tools it can use */}
+              <div className="px-5 pt-4">
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-neutral-400">
+                  <Layers className="h-3.5 w-3.5" />
+                  Tools
+                </div>
+                <div className="mt-2 rounded-xl border border-neutral-700 bg-neutral-900/60 p-3">
+                  {curatedView.allowedTools.length === 0 ? (
+                    <p className="text-xs text-neutral-400">None</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {curatedView.allowedTools.map((toolName) => (
+                        <span
+                          key={toolName}
+                          className="inline-flex items-center rounded-full border border-neutral-600 bg-neutral-800 px-2.5 py-0.5 text-[11px] text-neutral-200"
+                        >
+                          {toolName}
+                        </span>
+                      ))}
                     </div>
-                  );
-                })}
+                  )}
+                </div>
+              </div>
+
+              {/* Memory sources (read-only) — labeled "Skills" for the user */}
+              <div className="px-5 pt-4">
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-neutral-400">
+                  <Info className="h-3.5 w-3.5" />
+                  Skills
+                </div>
+                <div className="mt-2 rounded-xl border border-neutral-700 bg-neutral-900/60 p-3">
+                  {curatedView.memorySources.length === 0 ? (
+                    <p className="text-xs text-neutral-400">Off</p>
+                  ) : (
+                    <ul className="space-y-1">
+                      {curatedView.memorySources.map((source) => (
+                        <li key={source} className="text-xs text-neutral-200">
+                          {source}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </>
+          ) : null}
+
+          {/* Advanced (closed by default): the full raw parameter editor kept
+              as a power-user escape hatch for one release — slated for
+              deletion once the curated view is validated (U1 deviation). */}
+          <div className="px-5 py-4">
+            <button
+              type="button"
+              onClick={() => setShowAdvanced((prev) => !prev)}
+              className="flex items-center gap-1.5 text-[11px] font-medium text-neutral-500 hover:text-neutral-300 transition-colors"
+            >
+              <ChevronDown
+                className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                  showAdvanced ? 'rotate-0' : '-rotate-90'
+                }`}
+              />
+              Advanced
+            </button>
+
+            {showAdvanced && (
+              <div className="mt-3 space-y-4">
+                {/* Model Section - legacy dropdown for non-agent bubbles with a
+                    model config (agents get the curated model control above) */}
+                {modelConfig && curatedView.kind === 'tool' && (
+                  <div>
+                    <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-neutral-400">
+                      <Cpu className="h-3.5 w-3.5" />
+                      Model
+                    </div>
+                    <div className="mt-2 space-y-2 rounded-xl border border-neutral-700 bg-neutral-900/60 p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="text-xs font-semibold text-neutral-100">
+                          {modelConfig.label || 'AI Model'}
+                        </p>
+                        {!isModelEditable && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/20 px-2 py-0.5 text-[10px] font-medium text-blue-300 border border-blue-500/30">
+                            Dynamic
+                          </span>
+                        )}
+                      </div>
+                      {isModelEditable ? (
+                        <select
+                          title="Select AI Model"
+                          className="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-2 py-1.5 text-xs text-neutral-100 focus:border-purple-500 focus:outline-none"
+                          value={currentModel}
+                          onChange={(e) =>
+                            updateBubbleParam(
+                              bubble.variableId,
+                              modelConfig.paramPath,
+                              e.target.value
+                            )
+                          }
+                        >
+                          {AvailableModels.options.map((model) => (
+                            <option key={model} value={model}>
+                              {model}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <pre className="w-full rounded-lg border border-neutral-700 bg-neutral-950/50 px-2 py-1.5 text-xs text-neutral-400 font-mono">
+                          {currentModel || 'Variable'}
+                        </pre>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Parameters Section - same form the details popup used to show */}
+                <div>
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-neutral-400 mb-3">
+                    <Info className="h-3.5 w-3.5" />
+                    Parameters
+                  </div>
+                  <SchemaParamsSection
+                    bubble={bubble}
+                    updateBubbleParam={updateBubbleParam}
+                    excludedParamNames={excludedParamNames}
+                  />
+                </div>
+
+                {/* Credentials Section (raw types) */}
+                <div>
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-neutral-400 mb-3">
+                    <Info className="h-3.5 w-3.5" />
+                    Credentials
+                  </div>
+                  {requiredCredentialTypes.length === 0 ? (
+                    <p className="rounded-xl border border-neutral-700 bg-neutral-900/60 px-3 py-4 text-xs text-neutral-400">
+                      This bubble does not require credentials.
+                    </p>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-2">
+                      {requiredCredentialTypes.map((credType) => {
+                        const availableForType =
+                          getCredentialsForType(credType);
+                        const systemCred = isSystemCredential(
+                          credType as CredentialType
+                        );
+                        const optionalCred = OPTIONAL_CREDENTIALS.has(
+                          credType as CredentialType
+                        );
+                        const isMissingSelection =
+                          !systemCred &&
+                          !optionalCred &&
+                          (selectedBubbleCredentials[credType] === undefined ||
+                            selectedBubbleCredentials[credType] === null);
+
+                        return (
+                          <div key={credType} className={`space-y-1`}>
+                            <label className="block text-[11px] text-neutral-300">
+                              {credType}
+                              {!systemCred &&
+                                !optionalCred &&
+                                availableForType.length > 0 && (
+                                  <span className="text-red-400 ml-1">*</span>
+                                )}
+                            </label>
+                            <select
+                              title={`${bubble.bubbleName} ${credType}`}
+                              value={
+                                selectedBubbleCredentials[credType] !==
+                                  undefined &&
+                                selectedBubbleCredentials[credType] !== null
+                                  ? String(selectedBubbleCredentials[credType])
+                                  : ''
+                              }
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val === '__ADD_NEW__') {
+                                  emitTelemetry('setup.add_another_opened', {
+                                    flowId,
+                                    credentialType: credType,
+                                    existingCount: availableForType.length,
+                                    source: 'bubble_node',
+                                  });
+                                  setCreateModalForType(credType);
+                                  return;
+                                }
+                                const credId = val ? parseInt(val, 10) : null;
+                                handleCredentialChange(credType, credId);
+                              }}
+                              className={`w-full px-2 py-1 text-xs bg-neutral-700 border ${isMissingSelection ? 'border-amber-500' : 'border-neutral-500'} rounded text-neutral-100`}
+                            >
+                              <option value="">
+                                {systemCred
+                                  ? 'Use system default'
+                                  : 'Select credential...'}
+                              </option>
+                              {availableForType.map((cred) => (
+                                <option key={cred.id} value={String(cred.id)}>
+                                  {cred.name ||
+                                    `${cred.credentialType} (${cred.id})`}
+                                </option>
+                              ))}
+                              <option disabled>────────────</option>
+                              <option value="__ADD_NEW__">
+                                + Add New Credential…
+                              </option>
+                            </select>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>

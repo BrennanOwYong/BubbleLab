@@ -1,0 +1,1 @@
+ALTER TABLE "build_threads" ADD COLUMN "served_by" jsonb;

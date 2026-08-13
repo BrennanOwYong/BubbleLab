@@ -3,11 +3,17 @@
  *
  * The studio talks ONLY to this API; these routes keep flow/credential
  * ownership here and forward build traffic to the Node sidecar
- * (services/builder-agent, BUILDER_AGENT_URL, default http://localhost:3010):
+ * (services/builder-agent). The per-request target comes from the FE5 builder
+ * runtime manager (services/builder-runtime.ts: external url, managed child,
+ * or null=off -> 503 builder_disabled):
  *
- *   POST /build/:flowId/message  -> sidecar SSE stream, passed through
- *   POST /build/:flowId/resume   -> sidecar SSE stream, passed through
- *   GET  /build/:flowId/thread   -> stored transcript + thread status
+ *   POST /build/:flowId/message   -> sidecar SSE stream, passed through
+ *   POST /build/:flowId/resume    -> sidecar SSE stream, passed through
+ *   GET  /build/:flowId/thread    -> stored transcript + thread status
+ *   GET  /build/:flowId/subscribe -> sidecar SSE stream, passed through:
+ *                                    history frame then live frames if the
+ *                                    thread is still building, else closes
+ *                                    right after history
  *
  * Session id / status persist on the flow's build-thread record
  * (build_threads, keyed by flow_id) which both this API and the sidecar read
@@ -17,9 +23,10 @@ import { Hono } from 'hono';
 import { eq, and } from 'drizzle-orm';
 import { db, bubbleFlows } from '../db/index.js';
 import { getUserId } from '../middleware/auth.js';
-
-const BUILDER_AGENT_URL =
-  process.env.BUILDER_AGENT_URL ?? 'http://localhost:3010';
+import {
+  builderDisabledResponse,
+  getBuilderTarget,
+} from '../services/builder-runtime.js';
 
 const app = new Hono();
 
@@ -39,8 +46,8 @@ function parseFlowId(raw: string): number | null {
 async function forward(
   flowIdRaw: string,
   userId: string,
-  path: 'message' | 'resume' | 'thread',
-  init: RequestInit
+  path: 'message' | 'resume' | 'thread' | 'subscribe',
+  init: { method: 'GET' | 'POST'; body?: string }
 ): Promise<Response> {
   const flowId = parseFlowId(flowIdRaw);
   if (flowId === null) {
@@ -49,10 +56,26 @@ async function forward(
   if (!(await ownsFlow(userId, flowId))) {
     return Response.json({ error: 'BubbleFlow not found' }, { status: 404 });
   }
-  const upstream = await fetch(
-    `${BUILDER_AGENT_URL}/build/${flowId}/${path}`,
-    init
-  );
+  // FE5: the builder runtime manager owns the target per request — external
+  // sidecar url, the API's own managed child, or null when the builder is off
+  // (clean 503 + logged event instead of an opaque fetch failure).
+  const target = getBuilderTarget();
+  if (target === null) {
+    return builderDisabledResponse(`/build/${flowId}/${path}`, flowId, userId);
+  }
+  // FE2: forward the authenticated user so the sidecar scopes its silent
+  // user-default memory (x-user-id is the only supported identity channel;
+  // direct sidecar hits fall back to the dev user).
+  const upstream = await fetch(`${target}/build/${flowId}/${path}`, {
+    method: init.method,
+    ...(init.body !== undefined ? { body: init.body } : {}),
+    headers: {
+      ...(init.body !== undefined
+        ? { 'content-type': 'application/json' }
+        : {}),
+      'x-user-id': userId,
+    },
+  });
   // Pass the sidecar body through untouched (SSE for message/resume, JSON for
   // thread); copying the content-type keeps EventSource clients working.
   return new Response(upstream.body, {
@@ -69,7 +92,6 @@ app.post('/:flowId/message', async (c) => {
   const body = await c.req.text();
   return forward(c.req.param('flowId'), getUserId(c), 'message', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
     body,
   });
 });
@@ -78,13 +100,18 @@ app.post('/:flowId/resume', async (c) => {
   const body = await c.req.text();
   return forward(c.req.param('flowId'), getUserId(c), 'resume', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
     body,
   });
 });
 
 app.get('/:flowId/thread', async (c) => {
   return forward(c.req.param('flowId'), getUserId(c), 'thread', {
+    method: 'GET',
+  });
+});
+
+app.get('/:flowId/subscribe', async (c) => {
+  return forward(c.req.param('flowId'), getUserId(c), 'subscribe', {
     method: 'GET',
   });
 });

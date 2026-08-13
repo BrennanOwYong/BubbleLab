@@ -166,8 +166,23 @@ app.openapi(oauthRevokeRoute, async (c) => {
   const credentialId = c.req.valid('param').credentialId;
 
   try {
-    await oauthService.revokeCredential(credentialId);
-    return c.json({ message: 'Credential revoked successfully' }, 200);
+    const { revocation, manageApps } =
+      await oauthService.revokeCredential(credentialId);
+    return c.json(
+      {
+        message: 'Credential revoked successfully',
+        providerRevocation: {
+          status: revocation.status,
+          ...(manageApps
+            ? {
+                manageAppsUrl: manageApps.url,
+                manageAppsInstructions: manageApps.instructions,
+              }
+            : {}),
+        },
+      },
+      200
+    );
   } catch (error) {
     console.error('Credential revocation failed:', error);
     return c.json(

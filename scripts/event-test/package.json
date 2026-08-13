@@ -1,0 +1,9 @@
+{
+  "name": "@bubblelab/event-test",
+  "private": true,
+  "type": "module",
+  "description": "Event-assertion test harness (DISPATCH-CONTRACT Pillar 2, F0.1). Zero npm deps; node >= 20 built-ins only.",
+  "engines": {
+    "node": ">=20"
+  }
+}

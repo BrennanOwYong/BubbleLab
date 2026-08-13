@@ -33,6 +33,13 @@
  *                                           credential" | credentials_page — "Also grants:
  *                                           Google Sheets, ...")
  *
+ * U1 curated node panel (PLAN-DOCS/discovery/U1.md):
+ * - `node.curated_view_rendered`          — an expanded canvas node rendered its curated
+ *                                           view-model (agent: model/systemPrompt/allowedTools/
+ *                                           memorySources; tool: description/credentialSlots);
+ *                                           payload derives from the SAME object the panel
+ *                                           renders (curatedNodeView.ts), server-sunk via track()
+ *
  * The API emits the same format server-side (src/utils/telemetry.ts):
  * - `setup.account_email_backfilled`      — a pre-existing Google credential's account email
  *                                           was probed (OIDC userinfo) and persisted
@@ -139,6 +146,68 @@ export type TelemetryEventCatalog = {
   'tool.add_started': { toolName?: string };
   'tool.add_succeeded': { toolName?: string };
   'tool.add_failed': { toolName?: string; error: string };
+  // U3 layout containment tripwire: a canvas node's rendered content exceeds
+  // the height its layout formula reserved (reserved >= rendered violated).
+  // Always-on; measured by a useLayoutEffect probe in StepContainerNode /
+  // TransformationNode. Zero events in GET /telemetry after a canvas render
+  // asserts no-overflow.
+  'layout.node_overflow': {
+    nodeId: string;
+    kind: string;
+    allocated: number;
+    rendered: number;
+  };
+  // U-3 node-position durability: a drag persisted a node's canvas position
+  // to localStorage (per-flow key), or a mount restored positions a prior
+  // session had persisted there. Proves survival across a real reload/reopen,
+  // not just in-session state (FlowVisualizer's persistedPositions ref alone
+  // only survives an in-place recompute of the same mounted instance).
+  'canvas.node_position_persisted': {
+    flowId: number;
+    action: 'persisted' | 'restored';
+    nodeCount: number;
+  };
+  // U1 curated node panel: an expanded node rendered the curated view-model.
+  // fields is the exact key whitelist rendered (agent vs tool); label-bearing
+  // arrays let the event test assert no technical leakage (F0.5).
+  'node.curated_view_rendered': {
+    flowId: number;
+    bubbleName: string;
+    nodeKind: 'agent' | 'tool';
+    fields: string[];
+    allowedTools?: string[];
+    memorySources?: string[];
+    credentialSlots?: {
+      type: string;
+      displayName: string;
+      selectedId: number | null;
+      name?: string;
+    }[];
+  };
+  // U5 setup-tab completeness: the Setup panel derived its manifest — one
+  // entry per credential the flow needs (nested agent tools included,
+  // platform-provided types excluded per S1 classification). The payload IS
+  // the render-feeding data (lib/setupManifest.ts + connect state), so the
+  // event test asserts completeness and the F0.5 no-leakage lens on labels.
+  'setup.manifest_rendered': {
+    flowId: number;
+    entries: {
+      credentialType: string;
+      label: string;
+      steps: string[];
+      connected: boolean;
+    }[];
+    missingCount: number;
+  };
+  // U2 result surfaces: the headline result was revealed to the user
+  // (canvas ResultNode click or conversation widget render). hasValue is
+  // false when no successful run has produced the registered value yet.
+  result_node_reveal: {
+    flowId: number;
+    kind: 'artefact' | 'process' | 'both';
+    hasValue: boolean;
+    surface: 'canvas' | 'conversation';
+  };
 };
 
 export type TelemetryEventName = keyof TelemetryEventCatalog;

@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react';
+import { memo, useMemo, useRef } from 'react';
 import { Handle, Position } from '@xyflow/react';
 import {
   STEP_CONTAINER_LAYOUT,
@@ -7,7 +7,9 @@ import {
   calculateStepContainerHeight,
   calculateHeaderHeight,
   calculateCustomToolListHeight,
+  reservedDescriptionLines,
 } from '@/components/flow_visualizer/stepContainerUtils';
+import { useOverflowTripwire } from '@/components/flow_visualizer/nodes/useOverflowTripwire';
 import { useExecutionStore } from '@/stores/executionStore';
 import { useUIStore } from '@/stores/uiStore';
 import { BUBBLE_COLORS } from '@/components/flow_visualizer/BubbleColors';
@@ -95,6 +97,22 @@ function StepContainerNode({ data }: StepContainerNodeProps) {
       : calculateStepContainerHeight(bubbleIds.length, baseHeaderHeight)) +
     expandedExtra;
 
+  // Rendered description clamps to the SAME line count the header reserves
+  // (reservedDescriptionLines), so reserved >= rendered by construction.
+  const descriptionLines = description
+    ? reservedDescriptionLines(description)
+    : 0;
+
+  // U3 tripwire: the header is the only text site that can outgrow its
+  // reservation (child plates are separate React Flow nodes; list rows are
+  // fixed-height). Fires layout.node_overflow when rendered > reserved.
+  const headerRef = useRef<HTMLDivElement>(null);
+  useOverflowTripwire(
+    headerRef,
+    stepId,
+    isCustomTool ? 'step-container-custom-tool' : 'step-container'
+  );
+
   return (
     <div
       // No backdrop-filter here: inside React Flow's transformed viewport,
@@ -154,74 +172,88 @@ function StepContainerNode({ data }: StepContainerNodeProps) {
         />
       )}
 
-      {/* Header Section */}
-      <div
-        className={`bg-neutral-900/80 border-b border-neutral-600/60 rounded-t-[28px] flex-shrink-0 pointer-events-none ${
-          isCustomTool ? 'px-3 py-2' : 'px-5 py-4'
-        }`}
-        style={{
-          height: `${headerHeight}px`,
-        }}
-      >
-        <div className="flex items-center gap-2 mb-1">
-          <span
-            className={`font-semibold text-white truncate ${
-              isCustomTool ? 'text-sm' : 'text-xl'
-            }`}
-          >
-            {functionName}()
-          </span>
+      {/* Clip wrapper: last-resort guarantee that header/content can never
+          paint past the rounded box. Handles stay OUTSIDE so they are never
+          clipped (they hang at -6px). */}
+      <div className="absolute inset-0 overflow-hidden rounded-[28px]">
+        {/* Header Section */}
+        <div
+          ref={headerRef}
+          className={`bg-neutral-900/80 border-b border-neutral-600/60 rounded-t-[28px] flex-shrink-0 pointer-events-none ${
+            isCustomTool ? 'px-3 py-2' : 'px-5 py-4'
+          }`}
+          style={{
+            height: `${headerHeight}px`,
+          }}
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <span
+              className={`font-semibold text-white truncate min-w-0 ${
+                isCustomTool ? 'text-sm' : 'text-xl'
+              }`}
+              title={`${functionName}()`}
+            >
+              {functionName}()
+            </span>
+          </div>
+          {description && (
+            <p
+              className={`text-neutral-200 break-words ${
+                isCustomTool ? 'text-xs' : 'text-base'
+              }`}
+              title={description}
+              style={{
+                display: '-webkit-box',
+                WebkitLineClamp: descriptionLines,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+              }}
+            >
+              {description}
+            </p>
+          )}
         </div>
-        {description && (
-          <p
-            className={`text-neutral-200 break-words ${
-              isCustomTool ? 'text-xs' : 'text-base'
-            }`}
-          >
-            {description}
-          </p>
-        )}
-      </div>
 
-      {/* Content Area: custom-tool steps list their inner calls statically
-          (no drag-and-drop, no interactivity — credential needs surface in
-          the Setup tab); regular steps position child bubble nodes here. */}
-      <div
-        className="relative flex-shrink-0"
-        style={{
-          height: `${calculatedHeight - headerHeight}px`,
-          padding: `${layout.PADDING}px`,
-        }}
-      >
-        {isCustomTool && toolCalls.length > 0 && (
-          <ul className="pointer-events-none select-none space-y-0 list-none m-0 p-0">
-            {toolCalls.map((toolCall) => {
-              const logo = findLogoForBubble(toolCall);
-              return (
-                <li
-                  key={toolCall.variableId}
-                  className="flex items-center gap-2 px-2"
-                  style={{ height: `${CUSTOM_TOOL_LIST_ROW_HEIGHT}px` }}
-                >
-                  {logo ? (
-                    <img
-                      src={logo.file}
-                      alt={`${logo.name} logo`}
-                      className="w-5 h-5 object-contain flex-shrink-0"
-                    />
-                  ) : (
-                    <span className="w-5 h-5 rounded bg-neutral-700 flex-shrink-0" />
-                  )}
-                  <span className="text-xs text-neutral-200 truncate">
-                    {toolCall.variableName ||
-                      toolCall.bubbleName ||
-                      String(toolCall.variableId)}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        )}
+        {/* Content Area: custom-tool steps list their inner calls statically
+            (no drag-and-drop, no interactivity — credential needs surface in
+            the Setup tab); regular steps position child bubble nodes here. */}
+        <div
+          className="relative flex-shrink-0"
+          style={{
+            height: `${calculatedHeight - headerHeight}px`,
+            padding: `${layout.PADDING}px`,
+          }}
+        >
+          {isCustomTool && toolCalls.length > 0 && (
+            <ul className="pointer-events-none select-none space-y-0 list-none m-0 p-0">
+              {toolCalls.map((toolCall) => {
+                const logo = findLogoForBubble(toolCall);
+                return (
+                  <li
+                    key={toolCall.variableId}
+                    className="flex items-center gap-2 px-2"
+                    style={{ height: `${CUSTOM_TOOL_LIST_ROW_HEIGHT}px` }}
+                  >
+                    {logo ? (
+                      <img
+                        src={logo.file}
+                        alt={`${logo.name} logo`}
+                        className="w-5 h-5 object-contain flex-shrink-0"
+                      />
+                    ) : (
+                      <span className="w-5 h-5 rounded bg-neutral-700 flex-shrink-0" />
+                    )}
+                    <span className="text-xs text-neutral-200 truncate">
+                      {toolCall.variableName ||
+                        toolCall.bubbleName ||
+                        String(toolCall.variableId)}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
       </div>
     </div>
   );

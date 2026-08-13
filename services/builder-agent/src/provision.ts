@@ -13,6 +13,7 @@ import { z } from 'zod';
 import type { Credential, GluuClient } from './gluu-client.ts';
 
 const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
+const DRIVE_READ_SCOPE = 'https://www.googleapis.com/auth/drive.readonly';
 
 /**
  * Mirror of the server's resolveSheetsCredentialId recency rule
@@ -35,6 +36,31 @@ export function pickSheetsCredential(
         c.isOauth === true &&
         c.oauthProvider === 'google' &&
         (c.oauthScopes ?? []).includes(SHEETS_SCOPE)
+    )
+    .sort(byRecency)[0];
+}
+
+/**
+ * Same recency rule as pickSheetsCredential, for Drive listing: exact
+ * GOOGLE_DRIVE_CRED first, else the most recently connected Google OAuth
+ * credential whose granted scopes cover drive.readonly (list_files only
+ * reads metadata, never a file's content).
+ */
+export function pickDriveCredential(
+  credentials: Credential[]
+): Credential | undefined {
+  const byRecency = (a: Credential, b: Credential) =>
+    b.createdAt.localeCompare(a.createdAt) || b.id - a.id;
+  const exact = credentials
+    .filter((c) => c.credentialType === 'GOOGLE_DRIVE_CRED')
+    .sort(byRecency);
+  if (exact[0]) return exact[0];
+  return credentials
+    .filter(
+      (c) =>
+        c.isOauth === true &&
+        c.oauthProvider === 'google' &&
+        (c.oauthScopes ?? []).includes(DRIVE_READ_SCOPE)
     )
     .sort(byRecency)[0];
 }
@@ -258,4 +284,115 @@ export async function provisionSpreadsheet(
     credentialId: credential.id,
     credentialType: credential.credentialType,
   };
+}
+
+/**
+ * Minimal BubbleFlow that runs GoogleDriveBubble list_files and returns a
+ * trimmed file list. Same shape/pattern as buildProvisionFlowCode — real
+ * bubble call through the user's real credential, not a bespoke API.
+ */
+export function buildFindDriveFilesFlowCode(
+  query: string,
+  maxResults: number
+): string {
+  return `import type { BubbleTriggerEventRegistry } from '@bubblelab/bubble-core';
+import { BubbleFlow, GoogleDriveBubble } from '@bubblelab/bubble-core';
+
+export interface Output {
+  success: boolean;
+  files: { id: string; name: string; mimeType: string; webViewLink: string; modifiedTime: string }[];
+  error: string;
+}
+
+export class FindDriveFilesFlow extends BubbleFlow<'webhook/http'> {
+  constructor() {
+    super('find-drive-files-flow', 'Searches Google Drive for matching files');
+  }
+
+  private async find(): Promise<Output> {
+    const result = await new GoogleDriveBubble({
+      operation: 'list_files',
+      query: ${JSON.stringify(query)},
+      max_results: ${JSON.stringify(maxResults)},
+    }).action();
+    const files = (result.data?.files ?? []).map((f) => ({
+      id: f.id,
+      name: f.name,
+      mimeType: f.mimeType,
+      webViewLink: f.webViewLink ?? '',
+      modifiedTime: f.modifiedTime ?? '',
+    }));
+    return {
+      success: result.success === true,
+      files,
+      error: result.error ?? '',
+    };
+  }
+
+  async handle(
+    payload: BubbleTriggerEventRegistry['webhook/http']
+  ): Promise<Output> {
+    return this.find();
+  }
+}
+`;
+}
+
+const findDriveFilesOutputSchema = z.object({
+  success: z.boolean(),
+  files: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      mimeType: z.string(),
+      webViewLink: z.string(),
+      modifiedTime: z.string(),
+    })
+  ),
+  error: z.string(),
+});
+
+export interface DriveFileMatch {
+  id: string;
+  name: string;
+  mimeType: string;
+  webViewLink: string;
+  modifiedTime: string;
+}
+
+/**
+ * Searches the user's connected Google Drive for files matching a Drive
+ * query string (e.g. "name contains 'sesame'"), through the SAME
+ * already-authenticated real-execution path provisionSpreadsheet uses — no
+ * bespoke auth, the same credential the user already connected. Setup-phase
+ * discovery, not flow code: never called from inside a saved flow's handle().
+ */
+export async function findDriveFiles(
+  client: GluuClient,
+  query: string,
+  maxResults = 20
+): Promise<DriveFileMatch[]> {
+  const credentials = await client.listCredentials();
+  const credential = pickDriveCredential(credentials);
+  if (!credential) {
+    throw new Error(
+      'No connected credential covers Google Drive (need GOOGLE_DRIVE_CRED or a Google OAuth credential granting the drive.readonly scope). Connect one in the Gluu studio first, or ask the user for the file directly.'
+    );
+  }
+  const flowCode = buildFindDriveFilesFlowCode(query, maxResults);
+  const execution = await client.runContextFlow(flowCode, {
+    GOOGLE_DRIVE_CRED: credential.id,
+  });
+  if (!execution.success) {
+    throw new Error(
+      `Drive search flow failed: ${execution.error ?? 'unknown error'}`
+    );
+  }
+  const output = findDriveFilesOutputSchema.parse(execution.result);
+  if (!output.success) {
+    throw new Error(
+      `list_files did not complete: ${output.error || 'unknown'}`
+    );
+  }
+  return output.files;
 }

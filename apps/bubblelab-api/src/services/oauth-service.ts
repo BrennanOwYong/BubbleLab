@@ -7,12 +7,23 @@ import {
   type GoogleOAuthMetadata,
 } from '@bubblelab/shared-schemas';
 import { emitServerTelemetry } from '../utils/telemetry.js';
+import { recordServerTelemetryEvent } from '../routes/telemetry.js';
 import { db } from '../db/index.js';
 import { userCredentials } from '../db/schema.js';
 import { CredentialEncryption } from '../utils/encryption.js';
+import {
+  sealOAuthState,
+  openOAuthState,
+  oauthStateHash,
+  oauthStateTtlMs,
+  OAUTH_STATE_INVALID_ERROR,
+  OAUTH_STATE_EXPIRED_ERROR,
+  type OAuthStatePayload,
+} from '../utils/oauth-state.js';
 import { and, eq } from 'drizzle-orm';
 import { env } from '../config/env.js';
 import { syncDerivedCredentialsById } from './derived-credential-service.js';
+import { notifyBuilderCredentialsChanged } from './builder-notify.js';
 
 /**
  * The OAuth account email recorded on a credential's metadata (GoogleOAuthMetadata et al),
@@ -52,6 +63,46 @@ export interface StoredOAuthCredential {
   provider: string;
 }
 
+/** S9: outcome of a provider-side revoke call, distinct from the local row delete. */
+export type ProviderRevocationStatus =
+  | 'revoked'
+  | 'already_invalid'
+  | 'unsupported'
+  | 'error';
+
+export interface ProviderRevocationResult {
+  provider: string;
+  status: ProviderRevocationStatus;
+  detail?: string;
+}
+
+/** S9c: where a no-revoke provider's own connected-apps page lives. */
+export interface ProviderManageAppsInfo {
+  url: string;
+  instructions: string;
+}
+
+export interface RevokeCredentialResult {
+  revocation: ProviderRevocationResult;
+  manageApps?: ProviderManageAppsInfo;
+}
+
+/**
+ * S9c: providers with NO programmatic revoke endpoint — deleting the local row
+ * can't touch the provider-side grant, so the delete response must tell the
+ * user where to remove it themselves. Only providers actually wired into
+ * `clients` (setupOAuthClients) ever reach revokeCredential, so this only
+ * needs an entry for those; any other provider falls through to the generic
+ * 'unsupported' status in revokeProviderToken's default case with no link.
+ */
+const PROVIDER_MANAGE_APPS: Partial<Record<string, ProviderManageAppsInfo>> = {
+  jira: {
+    url: 'https://id.atlassian.com/manage-profile/apps',
+    instructions:
+      "Atlassian does not offer a programmatic way to revoke this grant. Remove BubbleLab from your Atlassian account's connected apps to fully disconnect it.",
+  },
+};
+
 /**
  * OAuth service that handles OAuth flows, token management, and refresh
  * Uses @badgateway/oauth2-client for OAuth 2.0 operations
@@ -68,39 +119,55 @@ export interface StoredOAuthCredential {
  *   https://developers.google.com/identity/openid-connect/openid-connect
  * Verified against these pages on 2026-07-20.
  *
- * ## References (token revocation, verified 2026-07-21)
+ * ## References (token revocation, verified 2026-07-21; re-verified 2026-08-01 for S9)
  * - Google: POST https://oauth2.googleapis.com/revoke with
  *   `Content-Type: application/x-www-form-urlencoded`, body `token=<access-or-refresh>`;
  *   200 on success, 400 when the token is already invalid/expired:
  *   https://developers.google.com/identity/protocols/oauth2/web-server#tokenrevoke
+ * - Google `prompt` param accepts a space-delimited list; `consent` and
+ *   `select_account` combine to force both a fresh consent screen and an
+ *   account chooser on a brand-new add (S9b):
+ *   https://developers.google.com/identity/protocols/oauth2/web-server
  * - Notion: POST https://api.notion.com/v1/oauth/revoke, Basic auth
  *   (client_id:client_secret), JSON `{token}`, `Notion-Version` header:
  *   https://developers.notion.com/reference/revoke-token
- * - Atlassian OAuth 2.0 (3LO) documents NO programmatic revocation endpoint
- *   (users revoke via their Atlassian account console):
+ * - Follow Up Boss DOES document a revoke endpoint (found during S9 research —
+ *   contradicts the earlier assumption that it had none, alongside Atlassian):
+ *   DELETE https://api.followupboss.com/v1/oauthApps/revokeAccess,
+ *   `Authorization: Bearer <access_token>` + `X-System`/`X-System-Key`
+ *   (same partner headers every other FUB call sends), no body; 200
+ *   `{success:true}`, or `{errorMessage:"OAuth application not found or not
+ *   connected."}` when the token/grant is already gone:
+ *   https://docs.followupboss.com/docs/oauth-authentication-and-authorization
+ * - Atlassian OAuth 2.0 (3LO) documents NO programmatic revocation endpoint;
+ *   the user revokes via their Atlassian account's connected-apps page
+ *   (https://id.atlassian.com/manage-profile/apps — confirmed current 2026-08-01
+ *   via Atlassian Support's "Update your profile and visibility settings" docs):
  *   https://developer.atlassian.com/cloud/jira/platform/oauth-2-3lo-apps/
  */
 export class OAuthService {
   private clients: Map<string, OAuth2Client> = new Map();
-  private stateStore: Map<
-    string,
-    {
-      userId: string;
-      provider: string;
-      credentialType: CredentialType;
-      credentialName?: string;
-      timestamp: number;
-      scopes: string[];
-      /** Incremental re-consent: existing credential row the callback must UPDATE (no insert). */
-      credentialId?: number;
-    }
-  > = new Map();
 
   constructor() {
     this.setupOAuthClients();
+  }
 
-    // Clean up expired states every 10 minutes
-    setInterval(() => this.cleanupExpiredStates(), 10 * 60 * 1000);
+  /**
+   * S7/S9 observability (Pillar 2): every state issue/validate/reject/revoke
+   * lands in BOTH the console telemetry line and the queryable /telemetry
+   * ring buffer, so cross-process state (and revoke) validation is assertable
+   * per process via curl.
+   */
+  private emitOAuthStateEvent(
+    event:
+      | 'oauth.state_issued'
+      | 'oauth.state_validated'
+      | 'oauth.state_rejected'
+      | 'oauth.revoke_attempted',
+    data: Record<string, unknown>
+  ): void {
+    emitServerTelemetry(event, data);
+    recordServerTelemetryEvent({ event, ...data });
   }
 
   /**
@@ -198,14 +265,21 @@ export class OAuthService {
       );
     }
 
-    // Generate secure state parameter
-    const state = crypto.randomUUID();
-    const timestamp = Date.now();
-
     // Incremental re-consent: the authorization ADDS scopes to an existing grant and the
     // callback updates that credential row in place. Google's include_granted_scopes=true
     // makes the returned token cover previously granted scopes too, so requesting only the
     // missing scopes yields a token for the accumulated set. See ## References above.
+    //
+    // S9(b): existingCredentialId is undefined ONLY for a genuinely new add (the studio
+    // never sends it unless the user is re-authorizing a specific row already on file), so
+    // extraAuthParams below stays empty on a new add — no login_hint/include_granted_scopes
+    // ever leak in from a prior connection. On top of that, force a fresh account/consent
+    // choice: without select_account, Google silently reuses the last-selected account in an
+    // active browser session and shows the consent screen with the SAME previously-granted
+    // scopes pre-checked, which reads as "reconnecting" rather than a clean new connection
+    // even though the user explicitly deleted first. `prompt` accepts a space-delimited list
+    // (consent + select_account combine); confirmed against the Web Server Applications guide
+    // referenced above (verified 2026-08-01).
     const extraAuthParams: Record<string, string> = {};
     let effectiveCredentialType = credentialType;
     if (existingCredentialId !== undefined) {
@@ -233,6 +307,8 @@ export class OAuthService {
           extraAuthParams.login_hint = email;
         }
       }
+    } else if (provider === 'google') {
+      extraAuthParams.prompt = 'consent select_account';
     }
 
     // Validate that the credential type is supported by this provider
@@ -263,15 +339,25 @@ export class OAuthService {
       requestedScopes
     );
 
-    // Store state for CSRF protection with requested scopes (expires in 10 minutes)
-    this.stateStore.set(state, {
+    // S7 stateless CSRF state: the sealed payload IS the store. Any process
+    // holding CREDENTIAL_ENCRYPTION_KEY validates it at the callback; nothing
+    // is kept in this process's memory. TTL is enforced at the callback from
+    // the sealed iat (default 10 minutes, matching the old Map behavior).
+    const state = await sealOAuthState({
+      v: 1,
       userId,
       provider,
       credentialType: effectiveCredentialType,
       credentialName,
-      timestamp,
       scopes: requestedScopes,
       credentialId: existingCredentialId,
+      redirectUri,
+      iat: Date.now(),
+    });
+    this.emitOAuthStateEvent('oauth.state_issued', {
+      provider,
+      credentialType: effectiveCredentialType,
+      stateHash: oauthStateHash(state),
     });
 
     try {
@@ -316,8 +402,6 @@ export class OAuthService {
 
       return { authUrl: finalAuthUrl, state };
     } catch (error) {
-      // Clean up state on error
-      this.stateStore.delete(state);
       throw new Error(
         `Failed to generate OAuth authorization URL: ${error instanceof Error ? error.message : String(error)}`
       );
@@ -333,27 +417,61 @@ export class OAuthService {
     state: string,
     credentialName?: string
   ): Promise<OAuthCallbackResult> {
-    // Validate state parameter
-    const stateData = this.stateStore.get(state);
-    if (!stateData || stateData.provider !== provider) {
-      throw new Error('Invalid or expired state parameter');
+    // S7 stateless validation: decrypt-or-die (the GCM auth tag is the CSRF
+    // guarantee), then provider match and TTL from the sealed iat. Works on
+    // ANY process holding CREDENTIAL_ENCRYPTION_KEY — no shared memory.
+    const stateHash = oauthStateHash(state);
+    let stateData: OAuthStatePayload;
+    try {
+      stateData = await openOAuthState(state);
+    } catch {
+      this.emitOAuthStateEvent('oauth.state_rejected', {
+        provider,
+        reason: 'decrypt_failed',
+        stateHash,
+      });
+      throw new Error(OAUTH_STATE_INVALID_ERROR);
     }
 
-    // Check state expiration (10 minutes)
-    if (Date.now() - stateData.timestamp > 10 * 60 * 1000) {
-      this.stateStore.delete(state);
-      throw new Error('State parameter expired');
+    if (stateData.provider !== provider) {
+      this.emitOAuthStateEvent('oauth.state_rejected', {
+        provider,
+        reason: 'provider_mismatch',
+        stateHash,
+      });
+      throw new Error(OAUTH_STATE_INVALID_ERROR);
     }
 
-    // Clean up state
-    this.stateStore.delete(state);
+    const stateAgeMs = Date.now() - stateData.iat;
+    const stateTtlMs = oauthStateTtlMs();
+    if (stateAgeMs > stateTtlMs) {
+      this.emitOAuthStateEvent('oauth.state_rejected', {
+        provider,
+        reason: 'expired',
+        stateHash,
+        stateAgeMs,
+        stateTtlMs,
+      });
+      throw new Error(OAUTH_STATE_EXPIRED_ERROR);
+    }
+
+    this.emitOAuthStateEvent('oauth.state_validated', {
+      provider,
+      credentialType: stateData.credentialType,
+      stateHash,
+      stateAgeMs,
+      stateTtlMs,
+    });
 
     const client = this.clients.get(provider);
     if (!client) {
       throw new Error(`OAuth provider '${provider}' not supported`);
     }
 
-    const redirectUri = `${env.NODEX_API_URL || 'http://localhost:3001'}/oauth/${provider}/callback`;
+    // Authorize-time redirect URI from the sealed payload — the token exchange
+    // must present the EXACT redirect_uri the provider saw, even if this
+    // process's env differs from the issuing process's (S7 drift fix).
+    const redirectUri = stateData.redirectUri;
 
     try {
       let token;
@@ -882,6 +1000,14 @@ export class OAuthService {
     // derived-credential records in lockstep with it.
     await syncDerivedCredentialsById(credentialId);
 
+    // FE1: a scope-widening re-consent can close a gap on an EXISTING row
+    // (e.g. adding the sheets scope to a Google credential) — notify the
+    // builder sidecar just like a fresh connect.
+    notifyBuilderCredentialsChanged(
+      credential.userId,
+      credential.credentialType
+    );
+
     return credentialId;
   }
 
@@ -946,6 +1072,10 @@ export class OAuthService {
     // derived-credential records.
     await syncDerivedCredentialsById(result.id);
 
+    // FE1: a fresh OAuth connect may close a blocked build's credential gap —
+    // fire-and-forget notify to the builder sidecar.
+    notifyBuilderCredentialsChanged(userId, credentialType);
+
     return result.id;
   }
 
@@ -1006,36 +1136,15 @@ export class OAuthService {
   }
 
   /**
-   * Clean up expired state parameters
-   */
-  private cleanupExpiredStates(): void {
-    const now = Date.now();
-    const expiredStates: string[] = [];
-
-    for (const [state, data] of this.stateStore.entries()) {
-      if (now - data.timestamp > 10 * 60 * 1000) {
-        // 10 minutes
-        expiredStates.push(state);
-      }
-    }
-
-    for (const state of expiredStates) {
-      this.stateStore.delete(state);
-    }
-
-    if (expiredStates.length > 0) {
-      console.info(
-        `[oauthService] Cleaned up ${expiredStates.length} expired OAuth states`
-      );
-    }
-  }
-
-  /**
    * Revoke the token at the provider (best effort), then remove the credential
    * from the database. Provider unreachable / token already invalid never blocks
-   * the delete — the row goes regardless; the revocation outcome is logged.
+   * the delete — the row goes regardless; the revocation outcome is logged AND
+   * returned to the caller (S9) so the delete response can tell the user what
+   * actually happened at the provider instead of a blanket "deleted".
    */
-  async revokeCredential(credentialId: number): Promise<void> {
+  async revokeCredential(
+    credentialId: number
+  ): Promise<RevokeCredentialResult> {
     const credential = await db.query.userCredentials.findFirst({
       where: eq(userCredentials.id, credentialId),
     });
@@ -1044,46 +1153,80 @@ export class OAuthService {
       throw new Error('OAuth credential not found');
     }
 
-    if (credential.oauthProvider) {
-      try {
-        // Prefer the refresh token: revoking it invalidates the whole grant
-        // (Google revokes the paired access token with it); fall back to the
-        // access token when no refresh token was stored.
-        const encryptedToken =
-          credential.oauthRefreshToken ?? credential.oauthAccessToken;
-        if (encryptedToken) {
-          const token = await CredentialEncryption.decrypt(encryptedToken);
-          await this.revokeProviderToken(credential.oauthProvider, token);
-        }
-      } catch (error) {
-        console.error(
-          `[oauthService] Token revocation for provider '${credential.oauthProvider}' failed (continuing with deletion):`,
-          error
-        );
-      }
+    const provider = credential.oauthProvider ?? 'unknown';
+    let revocation: ProviderRevocationResult;
+    try {
+      const accessToken = credential.oauthAccessToken
+        ? await CredentialEncryption.decrypt(credential.oauthAccessToken)
+        : undefined;
+      const refreshToken = credential.oauthRefreshToken
+        ? await CredentialEncryption.decrypt(credential.oauthRefreshToken)
+        : undefined;
+      revocation = await this.revokeProviderToken(provider, {
+        accessToken,
+        refreshToken,
+      });
+    } catch (error) {
+      // Decrypt failure or an unexpected throw from the provider call — S9(a):
+      // never let this block the delete, but never swallow it silently either.
+      const detail = error instanceof Error ? error.message : String(error);
+      console.error(
+        `[oauthService] Token revocation for provider '${provider}' failed (continuing with deletion): ${detail}`
+      );
+      revocation = { provider, status: 'error', detail };
     }
+
+    this.emitOAuthStateEvent('oauth.revoke_attempted', {
+      credentialId,
+      provider,
+      status: revocation.status,
+      detail: revocation.detail,
+    });
 
     // Delete credential from database (derived_credentials rows cascade)
     await db
       .delete(userCredentials)
       .where(eq(userCredentials.id, credentialId));
+
+    const manageApps = PROVIDER_MANAGE_APPS[provider];
+    return manageApps ? { revocation, manageApps } : { revocation };
   }
 
   /**
-   * POST the token to the provider's documented revocation endpoint (see the
-   * "token revocation" References above). Best effort: a non-2xx response —
-   * e.g. Google's 400 for an already-invalid/expired token — is logged and
-   * swallowed. Providers with no documented endpoint (jira, followupboss) log
-   * and return; deleting the stored token is all we can do for them.
+   * Call the provider's documented revocation endpoint (see the "token
+   * revocation" References above). Best effort: the credential row is always
+   * deleted by the caller regardless of the result here. Distinguishes WHY a
+   * revoke didn't leave the grant revoked (S9a/c) instead of one blanket
+   * catch-and-log:
+   *  - 'revoked'          the provider confirmed the grant is gone
+   *  - 'already_invalid'  the provider says the token was already dead (e.g.
+   *                       an expired test-mode grant) — the call still ran,
+   *                       it just had nothing left to revoke
+   *  - 'unsupported'      the provider documents no programmatic revoke
+   *                       endpoint (S9c) — PROVIDER_MANAGE_APPS below carries
+   *                       the "remove it yourself" link for these
+   *  - 'error'            the call itself failed (missing config, network,
+   *                       unexpected status) — logged with detail, not hidden
    */
   private async revokeProviderToken(
     provider: string,
-    token: string
-  ): Promise<void> {
+    tokens: { accessToken?: string; refreshToken?: string }
+  ): Promise<ProviderRevocationResult> {
     const timeout = AbortSignal.timeout(OAuthService.REVOCATION_TIMEOUT_MS);
 
     switch (provider) {
       case 'google': {
+        // Prefer the refresh token: revoking it invalidates the whole grant
+        // (Google revokes the paired access token with it); fall back to the
+        // access token when no refresh token was stored.
+        const token = tokens.refreshToken ?? tokens.accessToken;
+        if (!token) {
+          return {
+            provider,
+            status: 'error',
+            detail: 'no stored token to revoke',
+          };
+        }
         const response = await fetch('https://oauth2.googleapis.com/revoke', {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -1092,20 +1235,39 @@ export class OAuthService {
         });
         if (response.ok) {
           console.info('[oauthService] Revoked google OAuth token');
-        } else {
-          const detail = await response.text().catch(() => '');
-          console.warn(
-            `[oauthService] Google token revocation returned ${response.status} (token likely already invalid): ${detail}`
-          );
+          return { provider, status: 'revoked' };
         }
-        return;
+        // Google returns 400 for a token that's already invalid/expired (S9a:
+        // this is the expected outcome for an expired test-mode grant) — log
+        // it plainly rather than assuming the earlier fetch always succeeds.
+        const detail = await response.text().catch(() => '');
+        console.warn(
+          `[oauthService] Google token revocation returned ${response.status} (token likely already invalid): ${detail}`
+        );
+        return {
+          provider,
+          status: 'already_invalid',
+          detail: `HTTP ${response.status}: ${detail}`,
+        };
       }
       case 'notion': {
         if (!env.NOTION_OAUTH_CLIENT_ID || !env.NOTION_OAUTH_CLIENT_SECRET) {
           console.warn(
             '[oauthService] Notion OAuth client not configured; skipping provider-side revocation'
           );
-          return;
+          return {
+            provider,
+            status: 'error',
+            detail: 'Notion OAuth client not configured',
+          };
+        }
+        const token = tokens.refreshToken ?? tokens.accessToken;
+        if (!token) {
+          return {
+            provider,
+            status: 'error',
+            detail: 'no stored token to revoke',
+          };
         }
         const basicAuth = Buffer.from(
           `${env.NOTION_OAUTH_CLIENT_ID}:${env.NOTION_OAUTH_CLIENT_SECRET}`
@@ -1122,18 +1284,90 @@ export class OAuthService {
         });
         if (response.ok) {
           console.info('[oauthService] Revoked notion OAuth token');
-        } else {
-          const detail = await response.text().catch(() => '');
-          console.warn(
-            `[oauthService] Notion token revocation returned ${response.status}: ${detail}`
-          );
+          return { provider, status: 'revoked' };
         }
-        return;
+        const detail = await response.text().catch(() => '');
+        console.warn(
+          `[oauthService] Notion token revocation returned ${response.status}: ${detail}`
+        );
+        return {
+          provider,
+          status: 'already_invalid',
+          detail: `HTTP ${response.status}: ${detail}`,
+        };
+      }
+      case 'followupboss': {
+        // FUB DOES document a revoke endpoint (verified 2026-08-01, see
+        // References above) — the access token (not refresh) goes in the
+        // Authorization header; X-System/X-System-Key are the same
+        // partner-identification headers every other FUB call already sends
+        // (packages/bubble-core/src/bubbles/service-bubble/followupboss.ts).
+        if (!env.FUB_SYSTEM_NAME || !env.FUB_SYSTEM_KEY) {
+          console.warn(
+            '[oauthService] FollowUpBoss system credentials not configured; skipping provider-side revocation'
+          );
+          return {
+            provider,
+            status: 'error',
+            detail: 'FUB_SYSTEM_NAME/FUB_SYSTEM_KEY not configured',
+          };
+        }
+        if (!tokens.accessToken) {
+          return {
+            provider,
+            status: 'error',
+            detail: 'no stored access token to revoke',
+          };
+        }
+        const response = await fetch(
+          'https://api.followupboss.com/v1/oauthApps/revokeAccess',
+          {
+            method: 'DELETE',
+            headers: {
+              Authorization: `Bearer ${tokens.accessToken}`,
+              'X-System': env.FUB_SYSTEM_NAME,
+              'X-System-Key': env.FUB_SYSTEM_KEY,
+            },
+            signal: timeout,
+          }
+        );
+        const body = (await response.json().catch(() => ({}))) as {
+          success?: boolean;
+          errorMessage?: string;
+        };
+        if (response.ok && body?.success !== false) {
+          console.info('[oauthService] Revoked followupboss OAuth access');
+          return { provider, status: 'revoked' };
+        }
+        const detail = JSON.stringify(body).slice(0, 300);
+        // FUB documents this exact error shape for a token that's already
+        // disconnected — treat it the same as an already-invalid grant.
+        const alreadyGone = /not found or not connected/i.test(
+          String(body?.errorMessage ?? '')
+        );
+        console.warn(
+          `[oauthService] FollowUpBoss token revocation returned ${response.status}: ${detail}`
+        );
+        return {
+          provider,
+          status: alreadyGone ? 'already_invalid' : 'error',
+          detail: `HTTP ${response.status}: ${detail}`,
+        };
+      }
+      case 'jira': {
+        // Atlassian OAuth 2.0 (3LO) documents no programmatic revocation
+        // endpoint (S9c, verified 2026-08-01) — the user must remove the app
+        // from their own account's connected-apps page (PROVIDER_MANAGE_APPS).
+        console.warn(
+          "[oauthService] Provider 'jira' documents no token-revocation endpoint; deleting stored tokens only"
+        );
+        return { provider, status: 'unsupported' };
       }
       default:
         console.warn(
           `[oauthService] Provider '${provider}' documents no token-revocation endpoint; deleting stored tokens only`
         );
+        return { provider, status: 'unsupported' };
     }
   }
 

@@ -9,9 +9,14 @@
  * turns must never clear the marker (builder.ts skips its 'building' write
  * when the thread is blocked).
  *
- * deferred_setup is kept intact throughout: while blocked it is never
- * touched, and on success it is annotated with resolvedAt + results rather
- * than deleted, so the gap's history stays auditable.
+ * deferred_setup is kept intact throughout: while blocked, the original
+ * script, credentialType and blocked status are never touched; failed
+ * attempts only annotate it with lastAttempt {at, reason, trigger} so the
+ * thread endpoint shows why the gap is still open (FE1 auditability). On
+ * success it is annotated with resolvedAt + resolvedBy + results rather than
+ * deleted, so the gap's history stays auditable. resolvedBy records which
+ * trigger closed the gap: 'turn-start' (a user message on the blocked
+ * thread) or 'credential-added' (the API's credentials-changed notify, FE1).
  */
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
@@ -78,11 +83,44 @@ function substituteArgs(
   return out;
 }
 
+/** Which path attempted the resolution (persisted for auditability, FE1). */
+export type DeferredTrigger = 'turn-start' | 'credential-added';
+
 export interface DeferredResolution {
   resolved: boolean;
   reason: string;
   credentialType: string | null;
   results: Array<{ action: string; storeAs: string; output: unknown }>;
+  trigger: DeferredTrigger;
+}
+
+/**
+ * Annotate a still-blocked thread's deferred_setup with the failed attempt so
+ * the thread endpoint surfaces WHY the gap is still open (e.g. a credential of
+ * a different type was added). Annotation only: script, credentialType and
+ * status stay untouched, per the sticky-blocked invariant above.
+ */
+async function recordFailedAttempt(
+  thread: BuildThread,
+  deferred: Record<string, unknown>,
+  reason: string,
+  trigger: DeferredTrigger
+): Promise<void> {
+  await db
+    .update(buildThreads)
+    .set({
+      deferredSetup: {
+        ...deferred,
+        lastAttempt: { at: new Date().toISOString(), reason, trigger },
+      },
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(buildThreads.subjectId, thread.subjectId),
+        eq(buildThreads.agentKind, thread.agentKind)
+      )
+    );
 }
 
 /**
@@ -94,28 +132,42 @@ export interface DeferredResolution {
  * lets the caller proceed as unblocked.
  */
 export async function tryResolveDeferredSetup(
-  thread: BuildThread
+  thread: BuildThread,
+  trigger: DeferredTrigger = 'turn-start'
 ): Promise<DeferredResolution> {
   const parsed = deferredSetupSchema.safeParse(thread.deferredSetup);
   if (!parsed.success) {
+    // No parseable record to annotate — return without persisting an attempt.
     return {
       resolved: false,
       reason: 'deferred_setup record is missing or malformed; staying blocked',
       credentialType: null,
       results: [],
+      trigger,
     };
   }
   const deferred = parsed.data;
   const client = new GluuClient(config.gluuApiUrl);
 
-  const credentials = await client.listCredentials();
-  if (!credentialAvailable(deferred.credentialType, credentials)) {
+  // Every resolved:false exit below goes through fail() so the attempt is
+  // persisted as a lastAttempt annotation on the thread's deferred_setup.
+  const fail = async (
+    reason: string,
+    results: DeferredResolution['results'] = []
+  ): Promise<DeferredResolution> => {
+    await recordFailedAttempt(thread, deferred, reason, trigger);
     return {
       resolved: false,
-      reason: `credential ${deferred.credentialType} is still not connected`,
+      reason,
       credentialType: deferred.credentialType,
-      results: [],
+      results,
+      trigger,
     };
+  };
+
+  const credentials = await client.listCredentials();
+  if (!credentialAvailable(deferred.credentialType, credentials)) {
+    return fail(`credential ${deferred.credentialType} is still not connected`);
   }
 
   const produced: Record<string, string> = {};
@@ -146,20 +198,16 @@ export async function tryResolveDeferredSetup(
           output: seeded,
         });
       } else {
-        return {
-          resolved: false,
-          reason: `unknown deferred action '${step.action}'; staying blocked`,
-          credentialType: deferred.credentialType,
-          results,
-        };
+        return fail(
+          `unknown deferred action '${step.action}'; staying blocked`,
+          results
+        );
       }
     } catch (error) {
-      return {
-        resolved: false,
-        reason: `deferred step ${step.action} failed: ${error instanceof Error ? error.message : String(error)}`,
-        credentialType: deferred.credentialType,
-        results,
-      };
+      return fail(
+        `deferred step ${step.action} failed: ${error instanceof Error ? error.message : String(error)}`,
+        results
+      );
     }
   }
 
@@ -182,12 +230,10 @@ export async function tryResolveDeferredSetup(
         activateCron: flow.cronActive,
       });
       if (!result.valid) {
-        return {
-          resolved: false,
-          reason: `deferred setup ran but default_inputs persistence failed: ${result.errors?.join('; ') ?? 'unknown'}`,
-          credentialType: deferred.credentialType,
-          results,
-        };
+        return fail(
+          `deferred setup ran but default_inputs persistence failed: ${result.errors?.join('; ') ?? 'unknown'}`,
+          results
+        );
       }
     }
   }
@@ -199,6 +245,7 @@ export async function tryResolveDeferredSetup(
       deferredSetup: {
         ...deferred,
         resolvedAt: new Date().toISOString(),
+        resolvedBy: trigger,
         results,
       },
       updatedAt: new Date(),
@@ -215,5 +262,6 @@ export async function tryResolveDeferredSetup(
     reason: `credential ${deferred.credentialType} connected; deferred setup completed (${deferred.deferredSetupScript.length} step(s))`,
     credentialType: deferred.credentialType,
     results,
+    trigger,
   };
 }

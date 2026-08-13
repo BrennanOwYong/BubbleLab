@@ -4,11 +4,11 @@
  */
 
 import {
-  SYSTEM_CREDENTIALS,
   generateCredentialsSummary,
   RECOMMENDED_MODELS,
   TRIGGER_EVENT_CONFIGS,
 } from '@bubblelab/shared-schemas';
+import { platformProvidedCredentialTypes } from '../services/platform-credentials.js';
 
 // Re-export RECOMMENDED_MODELS for convenience
 export { RECOMMENDED_MODELS };
@@ -178,7 +178,7 @@ Bubble Studio is the frontend dashboard for Bubble Lab. It is the main UI for us
   - Bubble Lab provides default system credentials that are automatically injected at runtime
   - These are NOT shown on the Credentials page - users cannot view or edit them there
   - System credentials work out-of-the-box for basic usage (e.g., sending emails via Resend with Bubble Lab's domain)
-  - Available system credentials: ${JSON.stringify(Array.from(SYSTEM_CREDENTIALS), null, 2)}
+  - Available system credentials: ${JSON.stringify(Array.from(platformProvidedCredentialTypes()), null, 2)}
   - ${generateCredentialsSummary()}
 
   TO OVERRIDE A SYSTEM CREDENTIAL WITH USER'S OWN:

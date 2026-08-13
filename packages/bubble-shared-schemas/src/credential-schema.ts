@@ -813,6 +813,9 @@ export const CREDENTIAL_ENV_MAP: Record<CredentialType, string> = {
   [CredentialType.OPENAI_CRED]: 'OPENAI_API_KEY',
   [CredentialType.GOOGLE_GEMINI_CRED]: 'GOOGLE_API_KEY',
   [CredentialType.ANTHROPIC_CRED]: 'ANTHROPIC_API_KEY',
+  // ENV-NAME TRAP: the env var is 'FIRE_CRAWL_API_KEY' (extra underscore),
+  // NOT 'FIRECRAWL_API_KEY'. Exporting the credential-type spelling used to be
+  // a silent no-op; getCredentialEnvValue() below accepts BOTH spellings.
   [CredentialType.FIRECRAWL_API_KEY]: 'FIRE_CRAWL_API_KEY',
   [CredentialType.DATABASE_CRED]: 'BUBBLE_CONNECTING_STRING_URL',
   [CredentialType.SLACK_CRED]: 'SLACK_TOKEN',
@@ -879,6 +882,42 @@ export const CREDENTIAL_ENV_MAP: Record<CredentialType, string> = {
   [CredentialType.ZOOM_CRED]: '', // OAuth credential, no env var
   [CredentialType.CREDENTIAL_WILDCARD]: '', // Wildcard marker, not a real credential
 };
+
+/**
+ * The env value backing a credential type, honoring the env-name trap: the
+ * mapped `CREDENTIAL_ENV_MAP` name is tried first, then the credential-type
+ * name itself (e.g. `FIRECRAWL_API_KEY` works even though the map says
+ * `FIRE_CRAWL_API_KEY`). Types with no env representation (empty map entry,
+ * OAuth/multi-field creds) return undefined.
+ */
+export function getCredentialEnvValue(
+  credentialType: CredentialType,
+  env: Record<string, string | undefined>
+): string | undefined {
+  const envName = CREDENTIAL_ENV_MAP[credentialType];
+  if (!envName) return undefined;
+  return env[envName] || env[credentialType] || undefined;
+}
+
+/**
+ * Effective classification (S1): the declared-SYSTEM credential types the
+ * platform can ACTUALLY provide — `SYSTEM_CREDENTIALS` ∩ types whose env var
+ * is set in `env`. A declared-SYSTEM type absent from this set behaves as a
+ * user credential on every binding surface (Setup card, dropdown default,
+ * auto-bind/heal, run-blocking validation); `SYSTEM_CREDENTIALS` itself stays
+ * the declared intent and the studio's conservative pre-load fallback.
+ */
+export function getPlatformProvidedCredentials(
+  env: Record<string, string | undefined>
+): Set<CredentialType> {
+  const provided = new Set<CredentialType>();
+  for (const credentialType of SYSTEM_CREDENTIALS) {
+    if (getCredentialEnvValue(credentialType, env)) {
+      provided.add(credentialType);
+    }
+  }
+  return provided;
+}
 
 /** Used by bubblelab studio */
 export const SYSTEM_CREDENTIALS = new Set<CredentialType>([

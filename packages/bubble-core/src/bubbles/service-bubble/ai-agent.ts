@@ -7,9 +7,12 @@ import {
   RECOMMENDED_MODELS,
   getCanonicalCredentialType,
   getSiblingCredentialTypes,
+  NATIVE_CAPABILITY_IDS,
+  NATIVE_WEB_SEARCH_TOOL,
+  getAiAgentProviderSupport,
 } from '@bubblelab/shared-schemas';
 import { StateGraph, MessagesAnnotation } from '@langchain/langgraph';
-import { ChatOpenAI } from '@langchain/openai';
+import { ChatOpenAI, type OpenAIClient } from '@langchain/openai';
 import { ChatAnthropic } from '@langchain/anthropic';
 import {
   HumanMessage,
@@ -334,7 +337,13 @@ const AIAgentParamsSchema = z.object({
     .array(ToolConfigSchema)
     .default([])
     .describe(
-      'Array of tool config objects: [{ name: "web-search-tool" }, { name: "web-scrape-tool" }]. Each object requires a "name" field. Available tool names: web-search-tool, web-scrape-tool, web-crawl-tool, web-extract-tool, instagram-tool. If using image models, set tools to []'
+      'Array of tool config objects: [{ name: "web-scrape-tool" }]. Each object requires a "name" field. Available tool names: web-search-tool, web-scrape-tool, web-crawl-tool, web-extract-tool, instagram-tool. Routing rule (FE4): for open-web research prefer nativeCapabilities: [\'web-search\'] over web-search-tool — bind the web-* tool bubbles only for structured scrape/crawl/extract of specific known URLs. If using image models, set tools to []'
+    ),
+  nativeCapabilities: z
+    .array(z.enum(NATIVE_CAPABILITY_IDS))
+    .default([])
+    .describe(
+      "Provider-native abilities to enable on the model itself, with NO tool bubble and no third-party credential. ['web-search'] turns on the provider's built-in web search — the preferred route for open-web research (implemented for openai/* models; other providers are declared in the manifest and warn until wired). Native capability > any tool bubble it replaces."
     ),
   customTools: z
     .array(CustomToolSchema)
@@ -506,7 +515,8 @@ export class AIAgentBubble extends ServiceBubble<
   static readonly longDescription = `
     An AI agent powered by LangGraph that can use any tool bubble to answer questions.
     Use cases:
-    - Add tools to enhance the AI agent's capabilities (web-search-tool, web-scrape-tool)
+    - Open-web research via nativeCapabilities: ['web-search'] — the provider's built-in web search, no tool bubble and no third-party credential (preferred over web-search-tool; FE4 routing rule: native capability > any tool bubble it replaces)
+    - Add tools for structured extraction of specific known URLs (web-scrape-tool, web-crawl-tool, web-extract-tool)
     - Multi-step reasoning with tool assistance
     - Tool-augmented conversations with any registered tool
     - JSON mode for structured output (strips markdown formatting)
@@ -527,6 +537,17 @@ export class AIAgentBubble extends ServiceBubble<
   /** Current graph messages — kept in sync by executeToolsWithHooks so that
    *  the use-capability tool can snapshot master state before delegation. */
   private _currentGraphMessages: BaseMessage[] = [];
+  /** FE4: provider-native tool executions collected this run (merged into the
+   *  result's toolCalls). Native calls run server-side at the provider, so
+   *  they never pass through executeToolsWithHooks. */
+  private _nativeToolCalls: Array<{
+    tool: string;
+    input: unknown;
+    output: unknown;
+  }> = [];
+  /** Dedupe guard: streaming chunk aggregation can carry the same
+   *  web_search_call output item more than once. */
+  private _nativeToolCallIds = new Set<string>();
 
   /** Emit a trace event via executionMeta._onTrace (if wired by the host). */
   private _trace(
@@ -621,6 +642,11 @@ export class AIAgentBubble extends ServiceBubble<
 
     // Initialize the language model
     const llm = this.initializeModel(modelConfig);
+
+    // FE4: fresh native-call sink per execution pass (backup-model retries
+    // must not carry the primary pass's native calls).
+    this._nativeToolCalls = [];
+    this._nativeToolCallIds = new Set<string>();
 
     // Initialize tools (both pre-registered and custom)
     const agentTools = await this.initializeTools(tools, customTools);
@@ -2313,11 +2339,150 @@ export class AIAgentBubble extends ServiceBubble<
     return { messages: toolMessages };
   }
 
+  /**
+   * FE4 routing — resolve requested nativeCapabilities into provider
+   * built-in tools. Native capability > any tool bubble it replaces: when
+   * this returns a built-in tool, the flow author binds NO replaced tool
+   * bubble (the discovery data and SOP enforce that side).
+   *
+   * openai/*: the Responses API built-in web search tool. openai@5.12.2
+   * types it 'web_search_preview'; binding it makes @langchain/openai
+   * auto-switch to the Responses API (chat_models.js _useResponsesApi).
+   * Unsupported provider + requested capability warns (Pillar 2: never
+   * silent) and continues without the capability.
+   */
+  private resolveNativeBuiltInTools(
+    llm: ChatOpenAI | SafeGeminiChat | ChatAnthropic
+  ): OpenAIClient.Responses.Tool[] {
+    const requested = this.params.nativeCapabilities ?? [];
+    if (requested.length === 0) return [];
+    const model = this.params.model.model;
+    const provider = model.substring(0, model.indexOf('/'));
+    const builtInTools: OpenAIClient.Responses.Tool[] = [];
+    for (const capabilityId of requested) {
+      const support = getAiAgentProviderSupport(capabilityId, provider);
+      if (
+        capabilityId === 'web-search' &&
+        support?.implemented === true &&
+        llm instanceof ChatOpenAI
+      ) {
+        builtInTools.push({ type: 'web_search_preview' });
+        continue;
+      }
+      const gap = `Native capability '${capabilityId}' requested but not implemented for provider '${provider}' (model ${model}); continuing without it.${
+        support ? ` Declared mechanism: ${support.mechanism}` : ''
+      }`;
+      this.context?.logger?.warn(gap, {
+        bubbleName: 'ai-agent',
+        variableId: this.context?.variableId,
+        additionalData: { capabilityId, provider, model },
+      });
+    }
+    return builtInTools;
+  }
+
+  /**
+   * FE4 Pillar-2 observability — surface provider-native tool executions.
+   * Native calls run server-side at the provider and never pass through
+   * executeToolsWithHooks, so without this they would be invisible to every
+   * event surface. Reads Responses API output items from the message's
+   * additional_kwargs.tool_outputs (type 'web_search_call'), then emits
+   * tool_call_start/complete (SSE StreamingLogEvents via the logger and
+   * StreamingEvents via the callback), records a serviceUsage entry, and
+   * collects the call for the result's toolCalls array.
+   */
+  private recordNativeToolCalls(message: BaseMessage): void {
+    if ((this.params.nativeCapabilities ?? []).length === 0) return;
+    const toolOutputs = (message as AIMessage | AIMessageChunk)
+      .additional_kwargs?.tool_outputs;
+    if (!Array.isArray(toolOutputs)) return;
+    for (const item of toolOutputs) {
+      if (item === null || typeof item !== 'object') continue;
+      const record = item as {
+        type?: unknown;
+        id?: unknown;
+        status?: unknown;
+        action?: unknown;
+      };
+      if (record.type !== 'web_search_call') continue;
+      const callId =
+        typeof record.id === 'string'
+          ? record.id
+          : `${NATIVE_WEB_SEARCH_TOOL}-${this._nativeToolCalls.length}`;
+      if (this._nativeToolCallIds.has(callId)) continue;
+      this._nativeToolCallIds.add(callId);
+      const input = record.action ?? {};
+      const output = {
+        status: typeof record.status === 'string' ? record.status : 'completed',
+      };
+      this._nativeToolCalls.push({
+        tool: NATIVE_WEB_SEARCH_TOOL,
+        input,
+        output,
+      });
+      // Flow-run SSE surface (StreamingBubbleLogger emits tool_call_start /
+      // tool_call_complete StreamingLogEvents with toolName).
+      this.context?.logger?.logToolCallStart(
+        callId,
+        NATIVE_WEB_SEARCH_TOOL,
+        input
+      );
+      this.context?.logger?.logToolCallComplete(
+        callId,
+        NATIVE_WEB_SEARCH_TOOL,
+        input,
+        output,
+        0
+      );
+      // Agent-stream surface (Pearl/Salad StreamingEvent callback).
+      void this.streamingCallback?.({
+        type: 'tool_call_start',
+        data: {
+          tool: NATIVE_WEB_SEARCH_TOOL,
+          input,
+          callId,
+          variableId: this.context?.variableId,
+          agentName: this.params.name,
+        },
+      });
+      void this.streamingCallback?.({
+        type: 'tool_call_complete',
+        data: {
+          tool: NATIVE_WEB_SEARCH_TOOL,
+          input,
+          output,
+          duration: 0,
+          callId,
+          variableId: this.context?.variableId,
+          agentName: this.params.name,
+        },
+      });
+      // Accounting: the native path bills the model provider's account, not
+      // Firecrawl credits — record it so /executions carries the proof.
+      this.context?.logger?.logTokenUsage(
+        {
+          usage: 1,
+          service: this.getCredentialTypeForModel(this.params.model.model),
+          unit: 'searches',
+          subService: NATIVE_WEB_SEARCH_TOOL,
+        },
+        `Native web search executed by the model provider (${callId})`,
+        {
+          bubbleName: 'ai-agent',
+          variableId: this.context?.variableId,
+          operationType: 'bubble_execution',
+        }
+      );
+    }
+  }
+
   private async createAgentGraph(
     llm: ChatOpenAI | SafeGeminiChat | ChatAnthropic,
     tools: DynamicStructuredTool[],
     systemPrompt: string
   ) {
+    // FE4: provider-native built-in tools requested via nativeCapabilities.
+    const nativeBuiltInTools = this.resolveNativeBuiltInTools(llm);
     // Define the agent node
     const agentNode = async ({ messages }: typeof MessagesAnnotation.State) => {
       this._trace('agentNode', `LLM CALL`, {
@@ -2424,16 +2589,24 @@ export class AIAgentBubble extends ServiceBubble<
 
       // If we have tools, bind them to the LLM, then add retry logic
       // IMPORTANT: Must bind tools FIRST, then add retry - not the other way around
+      // FE4: provider-native built-in tools (only ever non-empty for
+      // ChatOpenAI) ride the same bindTools call; @langchain/openai
+      // auto-switches to the Responses API when one is present.
       const modelWithTools =
-        tools.length > 0
-          ? llm.bindTools(tools).withRetry({
+        llm instanceof ChatOpenAI && nativeBuiltInTools.length > 0
+          ? llm.bindTools([...tools, ...nativeBuiltInTools]).withRetry({
               stopAfterAttempt: this.params.model.maxRetries,
               onFailedAttempt,
             })
-          : llm.withRetry({
-              stopAfterAttempt: this.params.model.maxRetries,
-              onFailedAttempt,
-            });
+          : tools.length > 0
+            ? llm.bindTools(tools).withRetry({
+                stopAfterAttempt: this.params.model.maxRetries,
+                onFailedAttempt,
+              })
+            : llm.withRetry({
+                stopAfterAttempt: this.params.model.maxRetries,
+                onFailedAttempt,
+              });
 
       try {
         // Use streaming if streamingCallback is provided
@@ -2573,10 +2746,14 @@ export class AIAgentBubble extends ServiceBubble<
                 }
               : undefined,
           });
+          // FE4: surface provider-native tool executions from this turn.
+          this.recordNativeToolCalls(response);
           return { messages: [response] };
         } else {
           // Non-streaming fallback
           const response = await modelWithTools.invoke(allMessages);
+          // FE4: surface provider-native tool executions from this turn.
+          this.recordNativeToolCalls(response);
           this._trace('agentNode', 'LLM RESPONSE', {
             content:
               typeof response.content === 'string'
@@ -3396,6 +3573,13 @@ export class AIAgentBubble extends ServiceBubble<
             });
           }
         }
+      }
+
+      // FE4: provider-native tool executions (collected live by
+      // recordNativeToolCalls) belong in the result's toolCalls so run
+      // history and the self-test reducer see the native path ran.
+      if (this._nativeToolCalls.length > 0) {
+        toolCalls.push(...this._nativeToolCalls);
       }
 
       // Get the final AI message response

@@ -48,22 +48,12 @@ export function fetchBuildThread(
   return api.get<BuildThreadResponse>(`${BASE_PATH[kind]}/${subjectId}/thread`);
 }
 
-/**
- * POST /build[-page]/:id/message and invoke `onFrame` for every SSE frame.
- * Resolves when the stream ends.
- */
-export async function streamBuildMessage(
-  kind: BuilderKind,
-  subjectId: number,
-  message: string,
-  onFrame: (frame: BuildStreamFrame) => void,
-  options?: { signal?: AbortSignal }
+/** Shared SSE-frame parser for both the POST /message and GET /subscribe
+ * streams, so the two never drift on how a frame is split/decoded. */
+async function pumpSseResponse(
+  response: Response,
+  onFrame: (frame: BuildStreamFrame) => void
 ): Promise<void> {
-  const response = await api.postStream(
-    `${BASE_PATH[kind]}/${subjectId}/message`,
-    { message },
-    options
-  );
   if (!response.body) throw new Error('Build stream has no body');
 
   const reader = response.body.getReader();
@@ -94,4 +84,44 @@ export async function streamBuildMessage(
   } finally {
     reader.releaseLock();
   }
+}
+
+/**
+ * POST /build[-page]/:id/message and invoke `onFrame` for every SSE frame.
+ * Resolves when the stream ends.
+ */
+export async function streamBuildMessage(
+  kind: BuilderKind,
+  subjectId: number,
+  message: string,
+  onFrame: (frame: BuildStreamFrame) => void,
+  options?: { signal?: AbortSignal }
+): Promise<void> {
+  const response = await api.postStream(
+    `${BASE_PATH[kind]}/${subjectId}/message`,
+    { message },
+    options
+  );
+  await pumpSseResponse(response, onFrame);
+}
+
+/**
+ * GET /build[-page]/:id/subscribe — rejoin a thread regardless of whether
+ * it's mid-turn. First frame is always `history` (the current snapshot);
+ * if the thread is still building, live frames follow in the exact same
+ * shape streamBuildMessage's frames use, until the turn ends. If it isn't
+ * building, the stream closes right after `history` — indistinguishable
+ * from a plain one-shot fetch from the caller's side.
+ */
+export async function streamBuildSubscribe(
+  kind: BuilderKind,
+  subjectId: number,
+  onFrame: (frame: BuildStreamFrame) => void,
+  options?: { signal?: AbortSignal }
+): Promise<void> {
+  const response = await api.getStream(
+    `${BASE_PATH[kind]}/${subjectId}/subscribe`,
+    options
+  );
+  await pumpSseResponse(response, onFrame);
 }

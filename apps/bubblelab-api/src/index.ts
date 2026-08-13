@@ -44,9 +44,11 @@ import browserbaseRoutes from './routes/browserbase.js';
 import toolsRoutes from './routes/tools.js';
 import buildRoutes from './routes/build.js';
 import buildPageRoutes from './routes/build-page.js';
+import buildRuntimeRoutes from './routes/build-runtime.js';
 import pageRoutes from './routes/pages.js';
 import telemetryRoutes from './routes/telemetry.js';
 import { getBubbleFactory } from './services/bubble-factory-instance.js';
+import { initBuilderRuntime } from './services/builder-runtime.js';
 
 const app = new OpenAPIHono({
   defaultHook: validationErrorHook,
@@ -77,6 +79,9 @@ app.use('/browserbase/*', authMiddleware);
 app.use('/user-profile/*', authMiddleware);
 app.use('/build/*', authMiddleware);
 app.use('/build-page/*', authMiddleware);
+// FE5 ops toggle: auth-gated like /build (ops control only, no studio UI).
+app.use('/build-runtime', authMiddleware);
+app.use('/build-runtime/*', authMiddleware);
 app.use('/page', authMiddleware);
 app.use('/page/*', authMiddleware);
 app.use('/telemetry', authMiddleware);
@@ -110,6 +115,7 @@ app.route('/browserbase', browserbaseRoutes);
 app.route('/tools', toolsRoutes);
 app.route('/build', buildRoutes);
 app.route('/build-page', buildPageRoutes);
+app.route('/build-runtime', buildRuntimeRoutes);
 app.route('/page', pageRoutes);
 app.route('/telemetry', telemetryRoutes);
 
@@ -170,6 +176,11 @@ posthog.init({
 
 // Start cron scheduler (in-process)
 startCronScheduler();
+
+// FE5: builder runtime manager — under env BUILDER_MODE=managed this spawns
+// the sidecar child; every mode registers the shutdown hooks that kill the
+// child by exact pid on API exit.
+await initBuilderRuntime();
 
 export default {
   port,

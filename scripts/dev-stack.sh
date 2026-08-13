@@ -12,7 +12,15 @@
 #   scripts/dev-stack.sh down    # stop the stack started from this checkout (kills by exact PID)
 #   scripts/dev-stack.sh status  # show this checkout's stack + ports
 #
-# Overridable via env: DATABASE_URL, BUILDER_CLAUDE_CONFIG_DIR, BUN, NODE, PORT_BASE
+# Overridable via env: DATABASE_URL, BUILDER_CLAUDE_CONFIG_DIR,
+#   BUILDER_CLAUDE_CREDENTIALS_SOURCE, BUN, NODE, PORT_BASE, BUILDER_MODE
+#
+# BUILDER_MODE (FE5, default external):
+#   external -> launch the sidecar as a stack process (today's behavior);
+#               the API routes builds to BUILDER_AGENT_URL.
+#   managed  -> skip the sidecar launch; the API spawns and supervises its own
+#               sidecar child (see apps/bubblelab-api/src/services/
+#               builder-runtime.ts). The stack becomes two processes.
 #
 # Assumes the workspace is already built (bun/node run the TS entrypoints directly).
 set -euo pipefail
@@ -29,7 +37,12 @@ BUN="${BUN:-$HOME/.bun/bin/bun}"
 NODE="${NODE:-node}"
 DATABASE_URL="${DATABASE_URL:-postgres://bubblelab:bubblelab@localhost:5432/bubblelab}"
 BUILDER_CLAUDE_CONFIG_DIR="${BUILDER_CLAUDE_CONFIG_DIR:-/home/unix/builder-agent-claude-config}"
+# Canonical Max-login credentials file the sidecar symlinks into its config dir
+# (S8, claude-auth.ts). Default matches the sidecar's own default; override is
+# for tests.
+BUILDER_CLAUDE_CREDENTIALS_SOURCE="${BUILDER_CLAUDE_CREDENTIALS_SOURCE:-$HOME/.claude/.credentials.json}"
 PORT_BASE="${PORT_BASE:-3100}"
+BUILDER_MODE="${BUILDER_MODE:-external}"
 
 port_free() { ! ss -ltnH "( sport = :$1 )" 2>/dev/null | grep -q .; }
 
@@ -67,16 +80,37 @@ cmd_up() {
   # real process). NEVER use  $( ... & echo $! )  here: the backgrounded process holds the
   # command-substitution pipe open and the assignment hangs forever.
   cd "$REPO_ROOT/apps/bubblelab-api"
+  # OAuth must target THIS stack's own ports (F0.3): NODEX_API_URL sets the
+  # redirect_uri Google receives (-> this API port's /oauth/:provider/callback,
+  # which must be a registered redirect URI in the Google Cloud OAuth client for
+  # the whole PORT_BASE range), and DASHBOARD_URL is where the callback returns
+  # the browser (this stack's studio). Without these, a parallel branch's OAuth
+  # silently targets the default :3001 / a dead port.
+  # FE5: the API always learns its BUILDER_MODE; in managed mode it spawns the
+  # sidecar itself (builder-runtime.ts), so it also needs the builder's Claude
+  # config envs and the node binary the child should run under.
   DATABASE_URL="$DATABASE_URL" PORT="$API_PORT" NODE_OPTIONS=--dns-result-order=ipv4first \
     BUILDER_AGENT_URL="http://localhost:$SIDE_PORT" \
+    BUILDER_MODE="$BUILDER_MODE" \
+    BUILDER_CLAUDE_CONFIG_DIR="$BUILDER_CLAUDE_CONFIG_DIR" \
+    BUILDER_CLAUDE_CREDENTIALS_SOURCE="$BUILDER_CLAUDE_CREDENTIALS_SOURCE" \
+    NODE="$NODE" \
+    NODEX_API_URL="http://localhost:$API_PORT" \
+    DASHBOARD_URL="http://localhost:$STUDIO_PORT" \
     nohup "$BUN" run src/index.ts >>"$api_log" 2>&1 &
   echo "$! api $API_PORT" >>"$PIDFILE"
 
-  cd "$REPO_ROOT/services/builder-agent"
-  GLUU_API_URL="http://localhost:$API_PORT" BUILDER_PORT="$SIDE_PORT" \
-    DATABASE_URL="$DATABASE_URL" BUILDER_CLAUDE_CONFIG_DIR="$BUILDER_CLAUDE_CONFIG_DIR" \
-    nohup "$NODE" src/index.ts >>"$side_log" 2>&1 &
-  echo "$! sidecar $SIDE_PORT" >>"$PIDFILE"
+  if [[ "$BUILDER_MODE" == "external" ]]; then
+    cd "$REPO_ROOT/services/builder-agent"
+    GLUU_API_URL="http://localhost:$API_PORT" BUILDER_PORT="$SIDE_PORT" \
+      DATABASE_URL="$DATABASE_URL" BUILDER_CLAUDE_CONFIG_DIR="$BUILDER_CLAUDE_CONFIG_DIR" \
+      BUILDER_CLAUDE_CREDENTIALS_SOURCE="$BUILDER_CLAUDE_CREDENTIALS_SOURCE" \
+      BUILDER_SERVE_MODE=external \
+      nohup "$NODE" src/index.ts >>"$side_log" 2>&1 &
+    echo "$! sidecar $SIDE_PORT" >>"$PIDFILE"
+  else
+    echo "BUILDER_MODE=$BUILDER_MODE: sidecar not launched here (API supervises its own child)"
+  fi
 
   local vite_bin="$REPO_ROOT/apps/bubble-studio/node_modules/.bin/vite"
   [[ -x "$vite_bin" ]] || vite_bin="$REPO_ROOT/node_modules/.bin/vite"
@@ -89,7 +123,10 @@ cmd_up() {
   echo -n "Waiting for services to come up ... "
   local ok=1
   wait_http "http://localhost:$API_PORT/" "200" 90    || { echo "API failed (see $api_log)"; ok=0; }
-  wait_http "http://localhost:$SIDE_PORT/" "200 404" 60 || { echo "sidecar failed (see $side_log)"; ok=0; }
+  # Managed mode: the API's own health implies the child; no sidecar to wait on.
+  if [[ "$BUILDER_MODE" == "external" ]]; then
+    wait_http "http://localhost:$SIDE_PORT/" "200 404" 60 || { echo "sidecar failed (see $side_log)"; ok=0; }
+  fi
   wait_http "http://localhost:$STUDIO_PORT/" "200" 90  || { echo "studio failed (see $studio_log)"; ok=0; }
   [[ "$ok" == 1 ]] && echo "ready."
 

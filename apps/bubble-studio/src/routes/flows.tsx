@@ -3,6 +3,7 @@ import { HomePage } from '@/pages/HomePage';
 import { useAuth } from '@/hooks/useAuth';
 import { useDeleteBubbleFlow } from '@/hooks/useDeleteBubbleFlow';
 import { useBubbleFlowList } from '@/hooks/useBubbleFlowList';
+import { useUIStore } from '@/stores/uiStore';
 import { toast } from 'react-toastify';
 
 export const Route = createFileRoute('/flows')({
@@ -17,8 +18,9 @@ function HomeRoute() {
 
   // Redirect to /home if not signed in
   if (!isSignedIn) {
-    // Open up sign in modal by passing showSignIn param
-    navigate({ to: '/home', search: { showSignIn: true }, replace: true });
+    // Flag /home to auto-open the sign-in modal (in-memory, not a URL param)
+    useUIStore.getState().requestShowSignIn();
+    navigate({ to: '/home', replace: true });
     return null;
   }
 

@@ -1,3 +1,8 @@
+/**
+ * Root route: pure redirect to /home. Forwards prompt/ref through unchanged
+ * — this is still an external arrival point (someone linking at the bare
+ * domain) — /home is what actually reads and strips them.
+ */
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect } from 'react';
 
@@ -26,7 +31,8 @@ function IndexRoute() {
       search: { prompt, ref },
       replace: true,
     });
-  }, [navigate, prompt, ref]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return null;
 }

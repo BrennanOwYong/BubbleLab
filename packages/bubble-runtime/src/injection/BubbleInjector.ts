@@ -12,6 +12,7 @@ import { getCapabilityMetadataById } from '@bubblelab/bubble-core';
 import { BubbleScript } from '../parse/BubbleScript';
 import { LoggerInjector } from './LoggerInjector';
 import { replaceBubbleInstantiation } from '../utils/parameter-formatter';
+import { resolveNameArrayFromSource } from './toolArrayAstResolver';
 
 const INVOCATION_GRAPH_START_MARKER =
   '// __BUBBLE_INVOCATION_DEPENDENCY_MAP_START__';
@@ -44,12 +45,38 @@ export interface CredentialInjectionResult {
   >; // For debugging/audit (values are masked)
 }
 
+/**
+ * A nested agent tool/capability array that could not be resolved statically
+ * (S1a) — e.g. built by a function call at runtime. Reported explicitly so a
+ * genuinely dynamic case is visible to callers instead of silently
+ * contributing zero credential requirements.
+ */
+export interface UnresolvedToolDetection {
+  bubbleVariableId: number | string;
+  bubbleName: string;
+  param: 'tools' | 'capabilities';
+  /** Machine-readable cause: 'dynamic-expression' | 'unparseable'. */
+  reason: string;
+  /** Truncated source text of the expression that could not be resolved. */
+  snippet: string;
+}
+
 export class BubbleInjector {
   private bubbleScript: BubbleScript;
   private loggerInjector: LoggerInjector;
+  private unresolvedToolDetections: UnresolvedToolDetection[] = [];
   constructor(bubbleScript: BubbleScript) {
     this.bubbleScript = bubbleScript;
     this.loggerInjector = new LoggerInjector(bubbleScript);
+  }
+
+  /**
+   * Nested agent tools/capabilities whose array could not be resolved
+   * statically by the most recent findCredentials()/injectCredentials() call
+   * (S1a). Populated instead of silently dropping the detection.
+   */
+  getUnresolvedToolDetections(): UnresolvedToolDetection[] {
+    return [...this.unresolvedToolDetections];
   }
 
   /**
@@ -61,6 +88,7 @@ export class BubbleInjector {
   findCredentials(): CredentialRequirements {
     const required: Record<string, CredentialType[]> = {};
     const optional: Record<string, CredentialType[]> = {};
+    this.unresolvedToolDetections = [];
 
     // Iterate through each bubble and check its credential requirements
     for (const [, bubble] of Object.entries(
@@ -301,53 +329,36 @@ export class BubbleInjector {
       return [];
     }
 
-    try {
-      // Parse the tools array from the parameter value
-      // The value can be either JSON or JavaScript array literal
-      let toolsArray: Array<{ name: string; [key: string]: unknown }>;
+    // AST-walk resolution (S1a): resolves literal arrays, const array
+    // bindings, spreads, ternary branches and const-string name indirection
+    // against the flow's full source. A genuinely dynamic expression (e.g. a
+    // function call building the array) is reported instead of dropped.
+    const resolution = resolveNameArrayFromSource(
+      toolsParam.value,
+      this.bubbleScript.currentBubbleScript,
+      'name'
+    );
 
-      // First try to safely evaluate as JavaScript (for cases like [{"name": "web-search-tool"}])
-      try {
-        // Use Function constructor to safely evaluate the expression in isolation
-        const safeEval = new Function('return ' + toolsParam.value);
-        const evaluated = safeEval();
+    if (resolution.unresolved) {
+      this.unresolvedToolDetections.push({
+        bubbleVariableId: bubble.variableId,
+        bubbleName: bubble.bubbleName,
+        param: 'tools',
+        reason: resolution.reason,
+        snippet: resolution.snippet,
+      });
+      return [];
+    }
 
-        if (Array.isArray(evaluated)) {
-          toolsArray = evaluated;
-        } else {
-          // Single object, wrap in array
-          toolsArray = [evaluated];
-        }
-      } catch {
-        // Fallback to JSON.parse for cases where it's valid JSON
-        if (toolsParam.value.startsWith('[')) {
-          toolsArray = JSON.parse(toolsParam.value);
-        } else {
-          toolsArray = [JSON.parse(toolsParam.value)];
-        }
-      }
+    for (const toolName of resolution.names) {
+      const toolBubbleName = toolName as BubbleName;
+      const toolCredentialOptions = BUBBLE_CREDENTIAL_OPTIONS[toolBubbleName];
 
-      // For each tool, get its credential requirements
-      for (const tool of toolsArray) {
-        if (!tool.name || typeof tool.name !== 'string') {
-          continue;
-        }
-
-        const toolBubbleName = tool.name as BubbleName;
-        const toolCredentialOptions = BUBBLE_CREDENTIAL_OPTIONS[toolBubbleName];
-
-        if (toolCredentialOptions && Array.isArray(toolCredentialOptions)) {
-          for (const credType of toolCredentialOptions) {
-            toolCredentials.add(credType);
-          }
+      if (toolCredentialOptions && Array.isArray(toolCredentialOptions)) {
+        for (const credType of toolCredentialOptions) {
+          toolCredentials.add(credType);
         }
       }
-    } catch (error) {
-      // If we can't parse the tools parameter, silently ignore
-      // This handles cases where the tools parameter contains complex TypeScript expressions
-      console.debug(
-        `Failed to parse tools parameter for credential extraction: ${error}`
-      );
     }
 
     return Array.from(toolCredentials);
@@ -380,51 +391,38 @@ export class BubbleInjector {
       return empty;
     }
 
-    try {
-      // Parse the capabilities array from the parameter value
-      let capsArray: Array<{ id: string; [key: string]: unknown }>;
+    // AST-walk resolution (S1a) — same approach as extractToolCredentials,
+    // keyed by the capability's `id` property instead of `name`.
+    const resolution = resolveNameArrayFromSource(
+      capParam.value,
+      this.bubbleScript.currentBubbleScript,
+      'id'
+    );
 
-      try {
-        // Use Function constructor to safely evaluate the expression in isolation
-        const safeEval = new Function('return ' + capParam.value);
-        const evaluated = safeEval();
+    if (resolution.unresolved) {
+      this.unresolvedToolDetections.push({
+        bubbleVariableId: bubble.variableId,
+        bubbleName: bubble.bubbleName,
+        param: 'capabilities',
+        reason: resolution.reason,
+        snippet: resolution.snippet,
+      });
+      return empty;
+    }
 
-        if (Array.isArray(evaluated)) {
-          capsArray = evaluated;
-        } else {
-          capsArray = [evaluated];
+    // For each capability, get its credential requirements from registry
+    for (const capabilityId of resolution.names) {
+      const meta = getCapabilityMetadataById(capabilityId);
+      if (meta) {
+        for (const cred of meta.requiredCredentials) {
+          requiredSet.add(cred);
         }
-      } catch {
-        // Fallback to JSON.parse
-        if (capParam.value.startsWith('[')) {
-          capsArray = JSON.parse(capParam.value);
-        } else {
-          capsArray = [JSON.parse(capParam.value)];
-        }
-      }
-
-      // For each capability, get its credential requirements from registry
-      for (const cap of capsArray) {
-        if (!cap.id || typeof cap.id !== 'string') {
-          continue;
-        }
-
-        const meta = getCapabilityMetadataById(cap.id);
-        if (meta) {
-          for (const cred of meta.requiredCredentials) {
-            requiredSet.add(cred);
-          }
-          if (meta.optionalCredentials) {
-            for (const cred of meta.optionalCredentials) {
-              optionalSet.add(cred);
-            }
+        if (meta.optionalCredentials) {
+          for (const cred of meta.optionalCredentials) {
+            optionalSet.add(cred);
           }
         }
       }
-    } catch (error) {
-      console.debug(
-        `Failed to parse capabilities parameter for credential extraction: ${error}`
-      );
     }
 
     // Dedup: if a credential is in both required and optional, required wins

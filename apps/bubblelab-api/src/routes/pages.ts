@@ -19,9 +19,10 @@ import { and, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { db, pages } from '../db/index.js';
 import { getUserId } from '../middleware/auth.js';
-
-const BUILDER_AGENT_URL =
-  process.env.BUILDER_AGENT_URL ?? 'http://localhost:3010';
+import {
+  builderDisabledResponse,
+  getBuilderTarget,
+} from '../services/builder-runtime.js';
 
 const app = new Hono();
 
@@ -94,10 +95,14 @@ async function proxyToSidecar(
   if ((await ownedPage(getUserId(c), pageId)) === undefined) {
     return Response.json({ error: 'Page not found' }, { status: 404 });
   }
-  const upstream = await fetch(
-    `${BUILDER_AGENT_URL}/page/${pageId}/${path}`,
-    init
-  );
+  // FE5: per-request target from the builder runtime manager. Off also darkens
+  // the page data plane (one switch, one meaning — brief clarifying Q2; the
+  // lookup is per-route, so splitting the gate later is a two-line change).
+  const target = getBuilderTarget();
+  if (target === null) {
+    return builderDisabledResponse(`/page/${pageId}/${path}`, pageId);
+  }
+  const upstream = await fetch(`${target}/page/${pageId}/${path}`, init);
   return new Response(upstream.body, {
     status: upstream.status,
     headers: {

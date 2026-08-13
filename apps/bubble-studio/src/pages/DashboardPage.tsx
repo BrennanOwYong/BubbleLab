@@ -305,7 +305,14 @@ export class UntitledFlow extends BubbleFlow<'webhook/http'> {
                     return;
                   }
 
-                  if (e.key === 'Enter' && e.ctrlKey && !isStreaming) {
+                  if (
+                    e.key === 'Enter' &&
+                    !e.ctrlKey &&
+                    !e.shiftKey &&
+                    !e.nativeEvent.isComposing &&
+                    !isStreaming
+                  ) {
+                    e.preventDefault();
                     if (!isSignedIn) {
                       if (generationPrompt.trim()) {
                         setSavedPrompt(generationPrompt);
@@ -315,6 +322,30 @@ export class UntitledFlow extends BubbleFlow<'webhook/http'> {
                       return;
                     }
                     onGenerateCode();
+                    return;
+                  }
+
+                  // Ctrl+Enter: insert a newline explicitly. Chrome's default
+                  // textarea behavior does NOT insert one when Ctrl is held
+                  // (only plain Enter / Shift+Enter do) — confirmed live
+                  // against a bare textarea with no app JS involved.
+                  if (
+                    e.key === 'Enter' &&
+                    e.ctrlKey &&
+                    !e.nativeEvent.isComposing
+                  ) {
+                    e.preventDefault();
+                    const textarea = e.currentTarget;
+                    const { selectionStart, selectionEnd } = textarea;
+                    const next =
+                      generationPrompt.slice(0, selectionStart) +
+                      '\n' +
+                      generationPrompt.slice(selectionEnd);
+                    setGenerationPrompt(next);
+                    const cursor = selectionStart + 1;
+                    requestAnimationFrame(() => {
+                      textarea.selectionStart = textarea.selectionEnd = cursor;
+                    });
                   }
                 }}
               />

@@ -18,6 +18,7 @@ import {
   autoBindMissingCredentials,
   unionTwinCredentials,
 } from './credential-auto-bind.js';
+import { resetPlatformProvidedCredentialTypes } from './platform-credentials.js';
 
 const OTHER_USER_ID = 'other-user';
 
@@ -289,13 +290,77 @@ describe('autoBindMissingCredentials', () => {
     expect(telegramId).toBeGreaterThan(0);
   });
 
-  it('skips system credential slots (ai-agent model credentials)', async () => {
-    await seedCredential('OPENAI_CRED');
-    const params = { '3': bubble(3, 'ai-agent') };
+  it('skips PLATFORM-PROVIDED credential slots (env-backed ai-agent model creds)', async () => {
+    const previous = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = 'sk-test-platform';
+    resetPlatformProvidedCredentialTypes();
+    try {
+      await seedCredential('OPENAI_CRED');
+      const params = { '3': bubble(3, 'ai-agent') };
 
-    const result = await autoBindMissingCredentials(TEST_USER_ID, params);
+      const result = await autoBindMissingCredentials(TEST_USER_ID, params);
 
-    expect(result.bound).toEqual([]);
+      expect(result.bound).toEqual([]);
+    } finally {
+      if (previous === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = previous;
+      resetPlatformProvidedCredentialTypes();
+    }
+  });
+
+  it('binds a user credential for a declared-SYSTEM type the platform env does NOT back (S1)', async () => {
+    const previousMapped = process.env.FIRE_CRAWL_API_KEY;
+    const previousTyped = process.env.FIRECRAWL_API_KEY;
+    delete process.env.FIRE_CRAWL_API_KEY;
+    delete process.env.FIRECRAWL_API_KEY;
+    resetPlatformProvidedCredentialTypes();
+    try {
+      const firecrawlId = await seedCredential('FIRECRAWL_API_KEY');
+      const params = { '5': bubble(5, 'web-search-tool') };
+
+      const result = await autoBindMissingCredentials(TEST_USER_ID, params);
+
+      expect(result.bound).toEqual([
+        {
+          bubbleKey: '5',
+          credentialType: 'FIRECRAWL_API_KEY',
+          credentialId: firecrawlId,
+          match: 'exact_type',
+        },
+      ]);
+      expect(result.unbound).toEqual([]);
+    } finally {
+      if (previousMapped !== undefined)
+        process.env.FIRE_CRAWL_API_KEY = previousMapped;
+      if (previousTyped !== undefined)
+        process.env.FIRECRAWL_API_KEY = previousTyped;
+      resetPlatformProvidedCredentialTypes();
+    }
+  });
+
+  it('reports still-unbound non-platform slots for the pre-flight check (S1)', async () => {
+    const previousMapped = process.env.FIRE_CRAWL_API_KEY;
+    const previousTyped = process.env.FIRECRAWL_API_KEY;
+    delete process.env.FIRE_CRAWL_API_KEY;
+    delete process.env.FIRECRAWL_API_KEY;
+    resetPlatformProvidedCredentialTypes();
+    try {
+      // No FIRECRAWL credential seeded -> nothing bindable.
+      const params = { '5': bubble(5, 'web-search-tool') };
+
+      const result = await autoBindMissingCredentials(TEST_USER_ID, params);
+
+      expect(result.bound).toEqual([]);
+      expect(result.unbound).toEqual([
+        { bubbleKey: '5', credentialType: 'FIRECRAWL_API_KEY' },
+      ]);
+    } finally {
+      if (previousMapped !== undefined)
+        process.env.FIRE_CRAWL_API_KEY = previousMapped;
+      if (previousTyped !== undefined)
+        process.env.FIRECRAWL_API_KEY = previousTyped;
+      resetPlatformProvidedCredentialTypes();
+    }
   });
 
   it("never binds another user's credential", async () => {

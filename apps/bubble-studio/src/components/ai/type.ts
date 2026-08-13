@@ -3,6 +3,7 @@ import type {
   CredentialType,
 } from '@bubblelab/shared-schemas';
 import type { ClarificationQuestion } from '../../types/conversation';
+import type { PrimaryOutput } from '../flow_visualizer/resultNodeValue';
 
 // The Coffee event shapes below were removed from @bubblelab/shared-schemas
 // with the old generation pipeline; the panel keeps local copies so the
@@ -118,6 +119,30 @@ export interface ToolResultChatMessage extends BaseChatMessage {
   success: boolean;
 }
 
+/**
+ * Credential request - the builder agent reported a missing credential
+ * (report_missing_credential). Rendered as an inline "Connect" button that
+ * opens the OAuth popup for the named credential, so the user never leaves the
+ * conversation to add it.
+ */
+export interface CredentialRequestMessage extends BaseChatMessage {
+  type: 'credential_request';
+  credentialType: string;
+  userAction?: string;
+}
+
+/**
+ * Result ready (U2) — the builder agent registered the flow's headline output
+ * (set_primary_output) after a successful self-test run. Rendered as the
+ * ResultRevealWidget: the artefact link (Open action) and/or the stated
+ * outcomes of the run, derived by the same pure selector the canvas
+ * ResultNode uses (flow_visualizer/resultNodeValue.ts).
+ */
+export interface ResultReadyMessage extends BaseChatMessage {
+  type: 'result_ready';
+  primaryOutput: PrimaryOutput;
+}
+
 /** Union of all chat message types */
 export type ChatMessage =
   | UserChatMessage
@@ -129,7 +154,9 @@ export type ChatMessage =
   | PlanChatMessage
   | PlanApprovalMessage
   | SystemChatMessage
-  | ToolResultChatMessage;
+  | ToolResultChatMessage
+  | CredentialRequestMessage
+  | ResultReadyMessage;
 
 // ============================================================================
 // Helper Functions to Derive Pending State from Messages

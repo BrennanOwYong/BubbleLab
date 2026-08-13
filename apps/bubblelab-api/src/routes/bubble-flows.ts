@@ -6,21 +6,31 @@ import {
   webhooks,
   bubbleFlowExecutions,
   users,
+  userCredentials,
 } from '../db/schema.js';
 import { validateBubbleFlow } from '../services/validation.js';
 import { processUserCode } from '../services/code-processor.js';
 import { getWebhookUrl, generateWebhookPath } from '../utils/webhook.js';
 import {
   extractRequiredCredentials,
+  extractUnresolvedToolDetections,
   generateDisplayedBubbleParameters,
   mergeCredentialsByBubbleName,
+  isSystemCredential,
 } from '../services/bubble-flow-parser.js';
 import { injectCredentialsIntoBubbleParameters } from '../utils/bubble-parameters.js';
 import {
+  isInvocationClone,
+  type CredentialType,
   type FlowScopeAudit,
   type ParsedBubbleWithInfo,
   type ParsedWorkflow,
 } from '@bubblelab/shared-schemas';
+import { platformProvidedCredentialTypes } from '../services/platform-credentials.js';
+import {
+  computeOauthStatus,
+  type OauthStatus,
+} from '../services/oauth-status.js';
 import {
   auditFlowScopes,
   discoverFlowScopeRequirements,
@@ -37,6 +47,7 @@ import {
   getBubbleFlowRoute,
   updateBubbleFlowRoute,
   updateBubbleFlowNameRoute,
+  updatePrimaryOutputRoute,
   listBubbleFlowsRoute,
   activateBubbleFlowRoute,
   deactivateBubbleFlowRoute,
@@ -230,7 +241,8 @@ app.openapi(createBubbleFlowRoute, async (c) => {
 
   // Extract required credentials from bubble parameters
   const requiredCredentials = extractRequiredCredentials(
-    autoBind.bubbleParameters
+    autoBind.bubbleParameters,
+    data.code
   );
 
   const response: z.infer<typeof createBubbleFlowResponseSchema> = {
@@ -602,8 +614,20 @@ app.get('/bubble-details/:bubbleName', async (c) => {
       config: { includeLongDescription: true, includeInputSchema: true },
     }).action();
     if (!result.success || !result.data) {
+      // S3 miss path: forward the owning-bubble suggestions the tool now
+      // computes, and record the miss as a queryable server event.
+      const suggestions = result.data?.suggestions ?? [];
+      const { recordServerTelemetryEvent } = await import('./telemetry.js');
+      recordServerTelemetryEvent({
+        event: 'bubble_discovery.details_miss',
+        bubbleName,
+        suggestions: suggestions.map((s) => s.name),
+      });
       return c.json(
-        { error: result.error || `Bubble '${bubbleName}' not found` },
+        {
+          error: result.error || `Bubble '${bubbleName}' not found`,
+          suggestions,
+        },
         404
       );
     }
@@ -619,6 +643,241 @@ app.get('/bubble-details/:bubbleName', async (c) => {
       500
     );
   }
+});
+
+// GET /bubble-flow/bubble-search?q=... — capability -> owning-bubble search
+// (BACKLOG S3). Ranks the WHOLE registry (60+ bubbles, not the sidecar's
+// 9-bubble prompt excerpt) by registry metadata: name, alias, descriptions,
+// and operation literals. Backs the sidecar's search_bubbles tool.
+app.get('/bubble-search', async (c) => {
+  const query = c.req.query('q') ?? '';
+  if (query.trim() === '') {
+    return c.json({ error: 'q (search query) is required' }, 400);
+  }
+  const limitRaw = c.req.query('limit');
+  let limit = limitRaw !== undefined ? Number(limitRaw) : 5;
+  if (Number.isNaN(limit) || limit < 1) limit = 5;
+  limit = Math.min(limit, 10);
+  try {
+    const { BubbleFactory, searchBubbleMetadata } = await import(
+      '@bubblelab/bubble-core'
+    );
+    const factory = new BubbleFactory();
+    await factory.registerDefaults();
+    const entries = factory
+      .getAllMetadata()
+      .filter(
+        (entry): entry is NonNullable<typeof entry> => entry !== undefined
+      );
+    const items = searchBubbleMetadata(entries, query, limit);
+    const { recordServerTelemetryEvent } = await import('./telemetry.js');
+    recordServerTelemetryEvent({
+      event: 'bubble_discovery.search',
+      query,
+      registrySize: entries.length,
+      results: items.map((item) => item.name),
+    });
+    return c.json({ query, registrySize: entries.length, items });
+  } catch (error) {
+    return c.json(
+      {
+        error: error instanceof Error ? error.message : 'Bubble search failed',
+      },
+      500
+    );
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /bubble-flow/:id/credential-state — grounded per-slot credential state
+// (BACKLOG S6). Backs the sidecar's inspect_flow_credentials tool: the fixer
+// must classify credential-shaped run errors from the ACTUAL failure layer
+// (missing / dead grant / dangling id / platform-provided / resolution), not
+// from error text. SYSTEM-ness, platform-env presence, and the clone predicate
+// live only in this process (the sidecar has no shared-schemas dependency), so
+// the API serves the composed state.
+// ---------------------------------------------------------------------------
+
+/** One required-credential slot with its live binding + health state. */
+interface CredentialSlotState {
+  /** bubbleParameters key (the bubble's variable name). */
+  bubbleKey: string;
+  variableName: string;
+  bubbleName: string;
+  credentialType: CredentialType;
+  /** Declared in SYSTEM_CREDENTIALS (shared-schemas). */
+  system: boolean;
+  /** system && the platform env actually backs it (S1 effective
+   * classification) — the platform injects it; the user has NOTHING to
+   * connect or reconnect and the Setup tab does not list it. */
+  platformProvided: boolean;
+  /** For declared-SYSTEM slots only: whether the platform env is set. */
+  systemEnvPresent?: boolean;
+  /** Credential id bound on the bubble's credentials parameter, if any. */
+  boundCredentialId: number | null;
+  /** False when a bound id points at a deleted credential row (dangling). */
+  boundRowExists: boolean;
+  boundCredential?: {
+    id: number;
+    name: string | null;
+    isOauth: boolean;
+    oauthProvider: string | null;
+    /** Access-token health. 'expired' alone never proves a dead grant — a
+     * live refresh token recovers it; only combined with a runtime auth
+     * failure does it imply reconnect (services/oauth-status.ts). */
+    oauthStatus?: OauthStatus;
+    oauthExpiresAt?: string;
+    createdAt: string;
+  };
+  /** Connectable rows of this type the user has (0 = nothing to bind). */
+  userCredentialsOfType: number;
+}
+
+/** The bound id under a type on a bubble's credentials parameter value. */
+function boundCredentialIdFor(
+  bubble: ParsedBubbleWithInfo,
+  credentialType: CredentialType
+): number | null {
+  const credentialsParam = bubble.parameters.find(
+    (p) => p.name === 'credentials'
+  );
+  if (
+    !credentialsParam ||
+    typeof credentialsParam.value !== 'object' ||
+    credentialsParam.value === null ||
+    Array.isArray(credentialsParam.value)
+  ) {
+    return null;
+  }
+  const raw = (credentialsParam.value as Record<string, unknown>)[
+    credentialType
+  ];
+  if (typeof raw === 'number') return raw;
+  if (Array.isArray(raw) && typeof raw[0] === 'number') return raw[0];
+  return null;
+}
+
+app.get('/:id/credential-state', async (c) => {
+  const userId = getUserId(c);
+  const id = parseInt(c.req.param('id'));
+  if (isNaN(id)) {
+    return c.json({ error: 'Invalid ID format' }, 400);
+  }
+
+  const flow = await db.query.bubbleFlows.findFirst({
+    where: and(eq(bubbleFlows.id, id), eq(bubbleFlows.userId, userId)),
+  });
+  if (!flow) {
+    return c.json({ error: 'BubbleFlow not found' }, 404);
+  }
+
+  let bubbleParameters = flow.bubbleParameters as Record<
+    string,
+    ParsedBubbleWithInfo
+  >;
+  if (!bubbleParameters || Object.keys(bubbleParameters).length === 0) {
+    const bubbleFactory = await getBubbleFactory();
+    const script = new BubbleScript(flow.originalCode!, bubbleFactory);
+    bubbleParameters = script.getParsedBubbles();
+  }
+
+  // Same auto-bind/heal discipline as GET /:id, so the state reported here is
+  // exactly the state a run resolves against (never a stale pre-heal view).
+  const autoBind = await autoBindMissingCredentials(userId, bubbleParameters);
+  if (autoBind.bound.length > 0 || autoBind.healed) {
+    bubbleParameters = autoBind.bubbleParameters;
+    await db
+      .update(bubbleFlows)
+      .set({ bubbleParameters })
+      .where(eq(bubbleFlows.id, flow.id));
+  }
+
+  // Clone slots are already excluded here via the shared isInvocationClone
+  // predicate inside extractRequiredCredentials — one slot per real bubble.
+  const requiredCredentials = extractRequiredCredentials(
+    bubbleParameters,
+    flow.originalCode ?? undefined
+  );
+
+  const rows = await db.query.userCredentials.findMany({
+    where: eq(userCredentials.userId, userId),
+    columns: {
+      id: true,
+      credentialType: true,
+      name: true,
+      isOauth: true,
+      oauthProvider: true,
+      oauthExpiresAt: true,
+      createdAt: true,
+    },
+  });
+  const platformTypes = platformProvidedCredentialTypes();
+
+  const slots: CredentialSlotState[] = [];
+  for (const [bubbleKey, credentialTypes] of Object.entries(
+    requiredCredentials
+  )) {
+    const bubble = bubbleParameters[bubbleKey];
+    if (!bubble || isInvocationClone(bubble)) continue;
+    for (const credentialType of credentialTypes) {
+      const boundCredentialId = boundCredentialIdFor(bubble, credentialType);
+      const ofType = rows.filter((r) => r.credentialType === credentialType);
+      const boundRow =
+        boundCredentialId !== null
+          ? rows.find((r) => r.id === boundCredentialId)
+          : undefined;
+      const system = isSystemCredential(credentialType);
+      const platformProvided = system && platformTypes.has(credentialType);
+      const oauthStatus = boundRow
+        ? computeOauthStatus(boundRow.isOauth, boundRow.oauthExpiresAt)
+        : undefined;
+      slots.push({
+        bubbleKey,
+        variableName: bubble.variableName,
+        bubbleName: bubble.bubbleName,
+        credentialType,
+        system,
+        platformProvided,
+        ...(system ? { systemEnvPresent: platformProvided } : {}),
+        boundCredentialId,
+        boundRowExists: boundCredentialId !== null && boundRow !== undefined,
+        ...(boundRow !== undefined
+          ? {
+              boundCredential: {
+                id: boundRow.id,
+                name: boundRow.name ?? null,
+                isOauth: boundRow.isOauth === true,
+                oauthProvider: boundRow.oauthProvider ?? null,
+                ...(oauthStatus !== undefined ? { oauthStatus } : {}),
+                ...(boundRow.oauthExpiresAt
+                  ? { oauthExpiresAt: boundRow.oauthExpiresAt.toISOString() }
+                  : {}),
+                createdAt: boundRow.createdAt.toISOString(),
+              },
+            }
+          : {}),
+        userCredentialsOfType: ofType.length,
+      });
+    }
+  }
+
+  // Pillar-2 event: every grounding read is queryable from the telemetry ring
+  // buffer (GET /telemetry?type=flow.credential_state.read&flowId=N).
+  const { recordServerTelemetryEvent } = await import('./telemetry.js');
+  recordServerTelemetryEvent({
+    event: 'flow.credential_state.read',
+    flowId: id,
+    slotCount: slots.length,
+    unboundSlots: slots.filter(
+      (s) => s.boundCredentialId === null && !s.platformProvided
+    ).length,
+    danglingSlots: slots.filter(
+      (s) => s.boundCredentialId !== null && !s.boundRowExists
+    ).length,
+    platformProvidedSlots: slots.filter((s) => s.platformProvided).length,
+  });
+
+  return c.json({ flowId: id, slots }, 200);
 });
 
 app.openapi(getBubbleFlowRoute, async (c) => {
@@ -692,7 +951,16 @@ app.openapi(getBubbleFlowRoute, async (c) => {
   const scopeRequirements =
     await discoverFlowScopeRequirements(bubbleParameters);
 
-  const requiredCredentials = extractRequiredCredentials(bubbleParameters);
+  const requiredCredentials = extractRequiredCredentials(
+    bubbleParameters,
+    flow.originalCode ?? undefined
+  );
+
+  // S1a: nested agent tools whose array couldn't be resolved statically
+  // (e.g. built by a function call) — surfaced instead of silently dropped.
+  const unresolvedToolDetections = flow.originalCode
+    ? extractUnresolvedToolDetections(bubbleParameters, flow.originalCode)
+    : [];
 
   // Account-email defaults (gmailAccountEmail 0/1/many rule): per required
   // credential type, the email a setup field defaults to when the user has
@@ -716,6 +984,7 @@ app.openapi(getBubbleFlowRoute, async (c) => {
     prompt: flow.prompt || undefined,
     eventType: flow.eventType,
     requiredCredentials,
+    unresolvedToolDetections,
     scopeRequirements,
     accountEmailDefaults,
     userProfileDefaults,
@@ -853,6 +1122,64 @@ app.openapi(updateBubbleFlowNameRoute, async (c) => {
   return c.json(
     {
       message: 'BubbleFlow name updated successfully',
+    },
+    200
+  );
+});
+
+/** Cast-free narrowing for the untyped metadata jsonb column. */
+function isMetadataRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+// U2: register the flow's headline output. MERGES primaryOutput into the
+// metadata jsonb (never replaces it — metadata also carries generation
+// conversation data). Mirrors updateBubbleFlowNameRoute above.
+app.openapi(updatePrimaryOutputRoute, async (c) => {
+  const userId = getUserId(c);
+  const id = parseInt(c.req.param('id'));
+  const primaryOutput = c.req.valid('json');
+
+  if (isNaN(id)) {
+    return c.json(
+      {
+        error: 'Invalid ID format',
+      },
+      400
+    );
+  }
+
+  // Get existing flow (only if it belongs to the user)
+  const existingFlow = await db.query.bubbleFlows.findFirst({
+    where: and(eq(bubbleFlows.id, id), eq(bubbleFlows.userId, userId)),
+  });
+
+  if (!existingFlow) {
+    return c.json(
+      {
+        error: 'BubbleFlow not found',
+      },
+      404
+    );
+  }
+
+  const existingMetadata: Record<string, unknown> = isMetadataRecord(
+    existingFlow.metadata
+  )
+    ? existingFlow.metadata
+    : {};
+
+  await db
+    .update(bubbleFlows)
+    .set({
+      metadata: { ...existingMetadata, primaryOutput },
+      updatedAt: new Date(),
+    })
+    .where(eq(bubbleFlows.id, id));
+
+  return c.json(
+    {
+      message: 'Primary output updated successfully',
     },
     200
   );
@@ -1442,7 +1769,8 @@ app.openapi(validateBubbleFlowCodeRoute, async (c) => {
           lintErrors: result.lintErrors,
           scopeAudit,
           requiredCredentials: extractRequiredCredentials(
-            finalBubbleParametersForResponse
+            finalBubbleParametersForResponse,
+            code
           ),
           metadata: {
             validatedAt: new Date().toISOString(),

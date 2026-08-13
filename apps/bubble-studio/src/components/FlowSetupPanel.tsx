@@ -19,7 +19,6 @@ import { CheckCircleIcon, KeyIcon } from '@heroicons/react/24/outline';
 import {
   CredentialType,
   CREDENTIAL_TYPE_CONFIG,
-  SYSTEM_CREDENTIALS,
   getOAuthProvider,
 } from '@bubblelab/shared-schemas';
 import type {
@@ -41,6 +40,8 @@ import {
   getBubbleKeysRequiringType,
   getCredentialsOfType,
 } from '../lib/credentialBinding';
+import { deriveSetupRequirements } from '../lib/setupManifest';
+import { usePlatformCredentialTypes } from '../hooks/usePlatformCredentialTypes';
 import { describeMissingScope } from '../hooks/useSuiteBindings';
 import { runIncrementalConsent } from '../lib/incrementalConsent';
 import {
@@ -49,16 +50,7 @@ import {
 } from '../pages/CredentialsPage';
 import { resolveLogoByName } from '../lib/integrations';
 import { getAppCredentialTypes } from '../lib/authMethods';
-import { emitTelemetry } from '../lib/telemetry';
-
-/** 'slack-notification' / 'gmailSender' -> 'slack notification' / 'gmail sender' */
-function humanizeStepName(key: string): string {
-  return key
-    .replace(/[-_]+/g, ' ')
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .toLowerCase()
-    .trim();
-}
+import { emitTelemetry, track } from '../lib/telemetry';
 
 /** 'https://www.googleapis.com/auth/gmail.send' -> 'gmail.send' (display only). */
 function shortScopeLabel(scope: string): string {
@@ -118,6 +110,8 @@ function isRequirementGranted(
 
 interface ManifestEntry {
   credentialType: CredentialType;
+  /** Human product name (U5/F0.5: the rendered label, never the constant). */
+  label: string;
   steps: string[];
   connected: boolean;
   connectedName?: string;
@@ -142,6 +136,7 @@ export function FlowSetupPanel() {
   const flowId = useUIStore((state) => state.selectedFlowId);
   const { data: flow } = useBubbleFlow(flowId);
   const { data: credentials = [] } = useCredentials(API_BASE_URL);
+  const platformCredentialTypes = usePlatformCredentialTypes();
   const createCredentialMutation = useCreateCredential();
   const [connectType, setConnectType] = useState<CredentialType | null>(null);
   const [grantingType, setGrantingType] = useState<string | null>(null);
@@ -185,16 +180,16 @@ export function FlowSetupPanel() {
 
   const entries = useMemo<ManifestEntry[]>(() => {
     const required = flow?.requiredCredentials ?? {};
-    const byType = new Map<CredentialType, Set<string>>();
-    for (const [stepKey, types] of Object.entries(required)) {
-      for (const type of types ?? []) {
-        if (type === CredentialType.CREDENTIAL_WILDCARD) continue;
-        if (SYSTEM_CREDENTIALS.has(type)) continue;
-        if (!byType.has(type)) byType.set(type, new Set());
-        byType.get(type)!.add(humanizeStepName(stepKey));
-      }
-    }
-    return [...byType.entries()].map(([credentialType, steps]) => {
+    // U5: complete list of needed connections — one requirement per credential
+    // type the parser reported (nested agent tools included), platform-provided
+    // types excluded by S1's effective classification. Pure + unit-tested in
+    // lib/setupManifest.ts.
+    const requirements = deriveSetupRequirements(
+      required,
+      platformCredentialTypes,
+      flow?.bubbleParameters
+    );
+    return requirements.map(({ credentialType, label, steps }) => {
       // App-level satisfaction: any method of the same app counts (a Slack
       // bot token satisfies a step that lists Slack OAuth, and vice versa).
       const appTypes = getAppCredentialTypes(credentialType);
@@ -227,7 +222,8 @@ export function FlowSetupPanel() {
       const suite = match ? undefined : suiteBindings[credentialType];
       return {
         credentialType,
-        steps: [...steps],
+        label,
+        steps,
         connected: !!match,
         connectedName: match?.name,
         scopeRequirements: scopeEntry?.requirements ?? [],
@@ -245,7 +241,35 @@ export function FlowSetupPanel() {
     flowScopeRequirements,
     pendingCredentials,
     suiteBindings,
+    platformCredentialTypes,
   ]);
+
+  // U5 (Pillar 2): the Setup panel's render-feeding manifest as a logged
+  // event — every credential the flow needs (nested tools included, platform
+  // types excluded) with its human label and step list. Re-emitted whenever
+  // the manifest changes (flow load, credential connect), deduped by
+  // signature, so the LAST event per flow is the current panel truth.
+  const manifestSignatureRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!flowId || !flow) return;
+    const manifest = entries.map((entry) => ({
+      credentialType: entry.credentialType,
+      label: entry.label,
+      steps: entry.steps,
+      connected: entry.connected,
+    }));
+    const missing = entries.filter(
+      (entry) => !entry.connected && entry.suite?.status !== 'verified'
+    ).length;
+    const signature = `${flowId}:${JSON.stringify(manifest)}:${missing}`;
+    if (manifestSignatureRef.current === signature) return;
+    manifestSignatureRef.current = signature;
+    track('setup.manifest_rendered', {
+      flowId,
+      entries: manifest,
+      missingCount: missing,
+    });
+  }, [flowId, flow, entries]);
 
   // Emit setup.suite_provenance_shown when a verified cross-type suite binding
   // renders its provenance label ("Google Sheets via the Google Drive
@@ -414,7 +438,6 @@ export function FlowSetupPanel() {
 
       <div className="space-y-3">
         {entries.map((entry) => {
-          const config = CREDENTIAL_TYPE_CONFIG[entry.credentialType];
           const serviceName = getServiceNameForCredentialType(
             entry.credentialType
           );
@@ -436,9 +459,7 @@ export function FlowSetupPanel() {
                 )}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm text-gray-100">
-                      {config?.label ?? entry.credentialType}
-                    </span>
+                    <span className="text-sm text-gray-100">{entry.label}</span>
                     {entry.connected ? (
                       <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 bg-green-500/20 text-green-300 rounded-full border border-green-500/30">
                         <CheckCircleIcon className="h-3 w-3" />
@@ -481,7 +502,7 @@ export function FlowSetupPanel() {
                     <p
                       className="text-xs text-gray-400 mt-1"
                       data-testid="suite-provenance"
-                      title={`${config?.label ?? entry.credentialType} steps run through this ${suiteSourceLabel(entry.suite)} credential — same Google sign-in, and its granted permissions were verified to cover what these steps need.`}
+                      title={`${entry.label} steps run through this ${suiteSourceLabel(entry.suite)} credential — same Google sign-in, and its granted permissions were verified to cover what these steps need.`}
                     >
                       via your {suiteSourceLabel(entry.suite)} credential (
                       {suiteAccountLabel(entry.suite, credentials)})

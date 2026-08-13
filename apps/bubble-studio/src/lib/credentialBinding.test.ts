@@ -699,3 +699,48 @@ describe('bindingKeyForBubble', () => {
     expect(bindingKeyForBubble(bubble(42), 'fallback')).toBe('42');
   });
 });
+
+describe('effective platform classification (S1)', () => {
+  const firecrawlCred = credential({
+    id: 91,
+    credentialType: CredentialType.FIRECRAWL_API_KEY,
+    name: 'My Firecrawl key',
+  });
+  const agent = bubble(466, 'ai-agent');
+  const input = {
+    bubbleParameters: { '466': agent },
+    requiredCredentials: { '466': [CredentialType.FIRECRAWL_API_KEY] },
+    pendingCredentials: {},
+    credentials: [firecrawlCred],
+  };
+
+  it('binds a user credential for a declared-SYSTEM type the platform does not provide', () => {
+    const bindings = computeAutoBindings({
+      ...input,
+      platformCredentialTypes: new Set<string>([CredentialType.OPENAI_CRED]),
+    });
+    expect(bindings).toHaveLength(1);
+    expect(bindings[0]).toMatchObject({
+      bubbleKey: '466',
+      credentialType: CredentialType.FIRECRAWL_API_KEY,
+      credentialId: 91,
+      reason: 'only_credential',
+    });
+  });
+
+  it('skips a platform-provided type even when a user credential exists', () => {
+    const bindings = computeAutoBindings({
+      ...input,
+      platformCredentialTypes: new Set<string>([
+        CredentialType.FIRECRAWL_API_KEY,
+      ]),
+    });
+    expect(bindings).toHaveLength(0);
+  });
+
+  it('falls back to the declared SYSTEM set when no platform set is threaded', () => {
+    // FIRECRAWL_API_KEY ∈ SYSTEM_CREDENTIALS -> conservative pre-load skip.
+    const bindings = computeAutoBindings(input);
+    expect(bindings).toHaveLength(0);
+  });
+});

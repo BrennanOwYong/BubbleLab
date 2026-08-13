@@ -101,6 +101,13 @@ interface UIStore {
    */
   expandedFlowNodeId: string | null;
 
+  /**
+   * Set right before navigating an unauthenticated user to /home so it
+   * auto-opens the sign-in modal, then cleared once read there. In-memory,
+   * not a URL param — the app never carries navigation intent in the URL.
+   */
+  pendingShowSignIn: boolean;
+
   // ============= Visual Indicators =============
 
   // ============= Actions =============
@@ -216,6 +223,16 @@ interface UIStore {
    * Close the consolidated side panel
    */
   closeConsolidatedPanel: () => void;
+
+  /**
+   * Flag that /home should auto-open the sign-in modal on this mount
+   */
+  requestShowSignIn: () => void;
+
+  /**
+   * Clear the pending sign-in flag once /home has read it
+   */
+  consumeShowSignIn: () => void;
 }
 
 /**
@@ -242,6 +259,7 @@ export const useUIStore = create<UIStore>((set) => ({
   isConsolidatedPanelOpen: true,
   consolidatedPanelTab: 'pearl',
   expandedFlowNodeId: null,
+  pendingShowSignIn: false,
 
   // Actions
   selectFlow: (flowId) =>
@@ -331,6 +349,9 @@ export const useUIStore = create<UIStore>((set) => ({
     })),
 
   closeConsolidatedPanel: () => set({ isConsolidatedPanelOpen: false }),
+
+  requestShowSignIn: () => set({ pendingShowSignIn: true }),
+  consumeShowSignIn: () => set({ pendingShowSignIn: false }),
 }));
 
 // ============= Derived Selectors =============

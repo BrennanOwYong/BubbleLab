@@ -8,6 +8,14 @@ export interface LintError {
   line: number;
   column?: number;
   message: string;
+  /**
+   * Blocking lint errors force valid:false in validateBubbleFlow even when
+   * the caller passes requireLintErrors=false (the save/run gates). Reserved
+   * for defects the runtime cannot survive - e.g. a bubble call site the
+   * parser cannot extract, which would execute credential-less and fail
+   * silently in the user's run. Absent/false = advisory (today's behavior).
+   */
+  blocking?: boolean;
 }
 
 /**
@@ -2497,6 +2505,105 @@ export const noCreateIfMissingRule: LintRule = {
 };
 
 /**
+ * Binary operators that short-circuit: their right side may never run, so a
+ * bubble on either side is conditionally executed inside one expression.
+ */
+const SHORT_CIRCUIT_OPERATOR_KINDS = new Set<ts.SyntaxKind>([
+  ts.SyntaxKind.AmpersandAmpersandToken,
+  ts.SyntaxKind.BarBarToken,
+  ts.SyntaxKind.QuestionQuestionToken,
+]);
+
+/**
+ * Lint rule that rejects a direct bubble call (`new XBubble({...}).action()`)
+ * inside a ternary (`cond ? ... : ...`) or short-circuit (`&&`, `||`, `??`)
+ * expression. BLOCKING: forces valid:false even at the save/run gates that
+ * pass requireLintErrors=false.
+ *
+ * Root cause (S2): BubbleParser extracts bubbles only at four anchor shapes
+ * (const-initializer, bare expression statement, arrow concise body, return).
+ * A bubble inside a ternary/short-circuit matches none of them, so it is
+ * never registered in bubbleParameters - BubbleInjector then injects no
+ * credentials and no telemetry rewrite, and the bubble executes
+ * credential-less, failing silently in the user's run (flow 80).
+ *
+ * The prescribed fix shape is if/else with a `const` initializer in EACH
+ * branch - a const initializer inside an if-block IS one of the parser's
+ * anchors. Assignment into an outer `let` is itself an unrecognized call
+ * site, so the message must never suggest it.
+ *
+ * The rejected set stays a strict subset of the parser's blind spots: the
+ * upward walk stops at every anchor boundary (variable declaration,
+ * expression statement, return, block) and at function boundaries (an arrow
+ * concise body is an anchor wherever the arrow sits).
+ */
+export const noBubbleInTernaryOrShortCircuitRule: LintRule = {
+  name: 'no-bubble-in-ternary-or-short-circuit',
+  validate(context: LintRuleContext): LintError[] {
+    const errors: LintError[] = [];
+
+    const visit = (node: ts.Node): void => {
+      if (ts.isNewExpression(node)) {
+        const className = getClassNameFromExpression(node.expression);
+        if (
+          className &&
+          isBubbleClass(className, context.importedBubbleClasses)
+        ) {
+          // Walk the parent chain up to the enclosing statement/function
+          // boundary, looking for a ternary or short-circuit ancestor.
+          let current: ts.Node | undefined = node.parent;
+          while (current !== undefined) {
+            if (
+              ts.isVariableDeclaration(current) ||
+              ts.isExpressionStatement(current) ||
+              ts.isReturnStatement(current) ||
+              ts.isBlock(current) ||
+              ts.isArrowFunction(current) ||
+              ts.isFunctionExpression(current) ||
+              ts.isFunctionDeclaration(current) ||
+              ts.isMethodDeclaration(current) ||
+              ts.isSourceFile(current)
+            ) {
+              break; // Statement/function boundary - safe context
+            }
+
+            let constructName: string | null = null;
+            if (ts.isConditionalExpression(current)) {
+              constructName = 'ternary operator';
+            } else if (
+              ts.isBinaryExpression(current) &&
+              SHORT_CIRCUIT_OPERATOR_KINDS.has(current.operatorToken.kind)
+            ) {
+              constructName = 'short-circuit expression';
+            }
+
+            if (constructName) {
+              const { line, character } =
+                context.sourceFile.getLineAndCharacterOfPosition(
+                  node.getStart(context.sourceFile)
+                );
+              errors.push({
+                line: line + 1,
+                column: character + 1,
+                blocking: true,
+                message: `Bubble call 'new ${className}(...)' inside a ${constructName} is invisible to the runtime: it saves and compiles but executes with NO credentials. Rewrite as if/else with a direct const initializer in EACH branch: if (cond) { const result = await new ${className}({...}).action(); ... } else { ... }. Do NOT assign into an outer 'let' and do NOT rename anything.`,
+              });
+              break; // One report per bubble call is enough
+            }
+
+            current = current.parent;
+          }
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+
+    visit(context.sourceFile);
+    return errors;
+  },
+};
+
+/**
  * Default registry instance with all rules registered
  */
 export const defaultLintRuleRegistry = new LintRuleRegistry();
@@ -2520,3 +2627,4 @@ defaultLintRuleRegistry.register(noNestedThrowInHandleRule);
 defaultLintRuleRegistry.register(noWideningCastRule);
 defaultLintRuleRegistry.register(noPlaceholderValuesRule);
 defaultLintRuleRegistry.register(noCreateIfMissingRule);
+defaultLintRuleRegistry.register(noBubbleInTernaryOrShortCircuitRule);

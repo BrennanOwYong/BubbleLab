@@ -293,3 +293,103 @@ export class TestFlow extends BubbleFlow<'webhook/http'> {
     });
   });
 });
+
+describe('Blocking lint errors under requireLintErrors=false (S2)', () => {
+  const TERNARY_CODE = `
+import { BubbleFlow, GoogleDriveBubble } from '@bubblelab/bubble-core';
+import type { WebhookEvent } from '@bubblelab/bubble-core';
+
+export class TernaryBubbleFlow extends BubbleFlow<'webhook/http'> {
+  async handle(payload: WebhookEvent): Promise<{ ok: boolean }> {
+    const ok = await this.listFiles(true);
+    return { ok };
+  }
+
+  private async listFiles(flag: boolean): Promise<boolean> {
+    const result = flag
+      ? await new GoogleDriveBubble({ operation: 'list_files' }).action()
+      : null;
+    return result !== null;
+  }
+}
+`;
+
+  const IF_ELSE_CODE = `
+import { BubbleFlow, GoogleDriveBubble } from '@bubblelab/bubble-core';
+import type { WebhookEvent } from '@bubblelab/bubble-core';
+
+export class IfElseBubbleFlow extends BubbleFlow<'webhook/http'> {
+  async handle(payload: WebhookEvent): Promise<{ ok: boolean }> {
+    const ok = await this.listFiles(true);
+    return { ok };
+  }
+
+  private async listFiles(flag: boolean): Promise<boolean> {
+    if (flag) {
+      const result = await new GoogleDriveBubble({ operation: 'list_files' }).action();
+      return result.success;
+    } else {
+      return false;
+    }
+  }
+}
+`;
+
+  it('a ternary bubble call is invalid even with requireLintErrors=false, in both errors and lintErrors', async () => {
+    const result = await validateBubbleFlow(TERNARY_CODE, false);
+    expect(result.valid).toBe(false);
+    expect(result.errors?.some((e) => e.includes('ternary operator'))).toBe(
+      true
+    );
+    expect(result.lintErrors?.some((e) => e.includes('ternary operator'))).toBe(
+      true
+    );
+  });
+
+  it('the if/else equivalent is valid with requireLintErrors=false', async () => {
+    const result = await validateBubbleFlow(IF_ELSE_CODE, false);
+    expect(result.valid).toBe(true);
+    expect(
+      result.lintErrors?.some(
+        (e) => e.includes('ternary operator') || e.includes('short-circuit')
+      ) ?? false
+    ).toBe(false);
+  });
+
+  it('a short-circuit bubble call is invalid with requireLintErrors=false', async () => {
+    const code = TERNARY_CODE.replace(
+      /const result = flag[\s\S]*?: null;/,
+      "const result = flag && (await new GoogleDriveBubble({ operation: 'list_files' }).action());"
+    );
+    const result = await validateBubbleFlow(code, false);
+    expect(result.valid).toBe(false);
+    expect(
+      result.errors?.some((e) => e.includes('short-circuit expression'))
+    ).toBe(true);
+  });
+
+  it('advisory lint rules stay advisory under requireLintErrors=false', async () => {
+    // Direct bubble instantiation in handle() is an advisory lint error;
+    // with requireLintErrors=false it must NOT block validity.
+    const code = `
+import { BubbleFlow, GoogleDriveBubble } from '@bubblelab/bubble-core';
+import type { WebhookEvent } from '@bubblelab/bubble-core';
+
+export class AdvisoryOnlyFlow extends BubbleFlow<'webhook/http'> {
+  async handle(payload: WebhookEvent): Promise<{ ok: boolean }> {
+    const result = await new GoogleDriveBubble({ operation: 'list_files' }).action();
+    return { ok: result.success };
+  }
+}
+`;
+    const result = await validateBubbleFlow(code, false);
+    expect(
+      result.lintErrors?.some((e) =>
+        e.includes(
+          'Direct bubble instantiation is not allowed in handle method'
+        )
+      )
+    ).toBe(true);
+    expect(result.valid).toBe(true);
+  });
+});

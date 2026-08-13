@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { useAuth } from '@/hooks/useAuth';
+import { useUIStore } from '@/stores/uiStore';
 
 export const Route = createFileRoute('/settings')({
   component: SettingsRoute,
@@ -12,7 +13,9 @@ function SettingsRoute() {
 
   // Redirect if not signed in
   if (!isSignedIn) {
-    navigate({ to: '/home', search: { showSignIn: true }, replace: true });
+    // Flag /home to auto-open the sign-in modal (in-memory, not a URL param)
+    useUIStore.getState().requestShowSignIn();
+    navigate({ to: '/home', replace: true });
     return null;
   }
 

@@ -179,12 +179,32 @@ describe('GetBubbleDetailsTool', () => {
       expect(usageExample).toContain('accessRole');
     });
 
-    test('should throw error for non-existent bubble', async () => {
+    test('should return success:false for non-existent bubble (S3 miss path)', async () => {
       const tool = new GetBubbleDetailsTool({
-        bubbleName: 'non-existent-bubble',
+        bubbleName: 'zz-no-such-bubble-zz',
       });
-      //Expect error to be thrown
-      await expect(tool.action()).rejects.toThrow();
+      const result = await tool.action();
+      expect(result.success).toBe(false);
+      expect(result.data?.error).toContain('not found in registry');
+    });
+
+    test('miss on a capability name suggests the owning bubble (S3)', async () => {
+      const tool = new GetBubbleDetailsTool({ bubbleName: 'google-docs' });
+      const result = await tool.action();
+      expect(result.success).toBe(false);
+      expect(result.data?.suggestions?.[0]?.name).toBe('google-drive');
+      expect(result.data?.error).toContain('google-drive');
+      const ops = result.data?.suggestions?.[0]?.matchedOperations ?? [];
+      expect(
+        ops.some((op) => /update_doc|upload_file|get_doc|copy_doc/.test(op))
+      ).toBe(true);
+    });
+
+    test('declared alias resolves to the owning bubble (S3)', async () => {
+      const tool = new GetBubbleDetailsTool({ bubbleName: 'gdrive' });
+      const result = await tool.action();
+      expect(result.success).toBe(true);
+      expect(result.data?.name).toBe('google-drive');
     });
   });
 
@@ -208,12 +228,13 @@ describe('GetBubbleDetailsTool', () => {
       expect(result?.data?.usageExample).toBeDefined();
     });
 
-    test('should handle errors in agent tool execution', async () => {
-      // const tool = new GetBubbleDetailsTool({ bubbleName: 'invalid' }); // Not used in this test
+    test('should handle misses in agent tool execution (S3: structured, not thrown)', async () => {
       const agentTool = GetBubbleDetailsTool.toolAgent();
-      await expect(agentTool.func({ bubbleName: 'invalid' })).rejects.toThrow(
-        'not found in registry'
-      );
+      const result = await agentTool.func<
+        z.infer<typeof GetBubbleDetailsTool.resultSchema>
+      >({ bubbleName: 'invalid' });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('not found in registry');
     });
   });
 

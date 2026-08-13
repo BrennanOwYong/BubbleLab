@@ -20,7 +20,6 @@
  * applies the result to the store and emits telemetry.
  */
 import {
-  SYSTEM_CREDENTIALS,
   OPTIONAL_CREDENTIALS,
   CredentialType,
   CREDENTIAL_TYPE_CONFIG,
@@ -31,6 +30,7 @@ import type {
   CredentialResponse,
   ParsedBubbleWithInfo,
 } from '@bubblelab/shared-schemas';
+import { isPlatformProvided } from './platformCredentials';
 
 export type AutoBindReason =
   | 'only_credential'
@@ -57,6 +57,11 @@ export interface ComputeAutoBindingsInput {
   pendingCredentials: Record<string, Record<string, number>>;
   /** The user's connected credentials (GET /credentials). */
   credentials: CredentialResponse[];
+  /**
+   * Effective platform-provided classification (GET /credentials/platform-types,
+   * S1). Undefined -> the shared predicate's cached/declared fallback.
+   */
+  platformCredentialTypes?: ReadonlySet<string>;
 }
 
 /**
@@ -152,7 +157,8 @@ export function computeAutoBindings(
       bubble,
       entryKey
     )) {
-      if (SYSTEM_CREDENTIALS.has(credentialType as CredentialType)) continue;
+      if (isPlatformProvided(credentialType, input.platformCredentialTypes))
+        continue;
       if (OPTIONAL_CREDENTIALS.has(credentialType as CredentialType)) continue;
       const existing = selected[credentialType];
       if (existing !== undefined && existing !== null) continue;
@@ -294,7 +300,8 @@ export function computeSuiteBindingProposals(
       bubble,
       entryKey
     )) {
-      if (SYSTEM_CREDENTIALS.has(credentialType as CredentialType)) continue;
+      if (isPlatformProvided(credentialType, input.platformCredentialTypes))
+        continue;
       if (OPTIONAL_CREDENTIALS.has(credentialType as CredentialType)) continue;
       const provider = getOAuthProvider(credentialType as CredentialType);
       if (!provider) continue;

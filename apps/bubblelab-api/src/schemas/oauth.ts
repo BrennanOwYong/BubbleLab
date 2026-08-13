@@ -9,6 +9,20 @@ import {
   createCredentialResponseSchema,
 } from './index.js';
 
+// S9: local extension of oauthRevokeResponseSchema — kept out of
+// @bubblelab/shared-schemas so this API-only shape doesn't need a package
+// rebuild to take effect. Mirrors deleteCredentialResponseSchema's
+// providerRevocation shape (schemas/credentials.ts) for consistency.
+export const oauthRevokeResponseSchemaExtended = oauthRevokeResponseSchema.and(
+  z.object({
+    providerRevocation: z.object({
+      status: z.enum(['revoked', 'already_invalid', 'unsupported', 'error']),
+      manageAppsUrl: z.string().url().optional(),
+      manageAppsInstructions: z.string().optional(),
+    }),
+  })
+);
+
 // OAuth initiate route - POST /oauth/:provider/initiate
 export const oauthInitiateRoute = createRoute({
   method: 'post',
@@ -184,7 +198,7 @@ export const oauthRevokeRoute = createRoute({
       description: 'Credential revoked successfully',
       content: {
         'application/json': {
-          schema: oauthRevokeResponseSchema,
+          schema: oauthRevokeResponseSchemaExtended,
         },
       },
     },

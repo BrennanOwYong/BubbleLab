@@ -125,7 +125,6 @@ import {
   GoogleSheetsBubble,
   AIAgentBubble,
   TelegramBubble,
-  WebSearchTool,
   safeParseJson,
 } from '@bubblelab/bubble-core';
 import { z } from 'zod';
@@ -212,6 +211,24 @@ export interface ReportPayload extends CronEvent {
 
 ## 4. Bubble reference (demo-relevant set)
 
+### 4.0 Capability index (capability -> owning bubble + operation)
+
+Some capabilities live INSIDE an owning bubble under a different product name. Map by this table, then confirm with `get_bubble_details`; for ANY product/capability not listed here or in §4.1-4.9, call `search_bubbles` — the registry holds 60+ bubbles (slack, github, discord, airtable, stripe, ...) and this doc excerpts only 9. Never map a capability to a bubble from memory.
+
+| capability (as the user says it)                                       | owning bubble   | operation(s)                                                    |
+| ---------------------------------------------------------------------- | --------------- | --------------------------------------------------------------- |
+| Google Doc — create one                                                | `google-drive`  | `upload_file` with `convert_to_google_docs: true`               |
+| Google Doc — read / write / template                                   | `google-drive`  | `get_doc` / `update_doc` / `copy_doc` / `replace_text`          |
+| Google Drive file/folder                                               | `google-drive`  | `upload_file`, `list_files`, `create_folder`, `share_file`      |
+| Spreadsheet rows/cells                                                 | `google-sheets` | `read_values`, `append_values`, `write_values`                  |
+| Email (read/send/draft)                                                | `gmail`         | `list_emails`, `create_draft`, `send_email`                     |
+| Notion database query                                                  | `notion`        | `query_data_source`                                             |
+| Chat/DM alert to the user                                              | `telegram`      | `send_message`                                                  |
+| Summarize / classify / generate text                                   | `ai-agent`      | (prompt param)                                                  |
+| Any other product name (Discord, Slack, GitHub, Stripe, Airtable, ...) | —               | `search_bubbles` first, then `get_bubble_details` on the result |
+
+_Drift note:_ this table is hand-authored for the demo set; the durable, always-current index is `search_bubbles`, which scores live registry metadata.
+
 All service-bubble params are snake_case (`spreadsheet_id`, `chat_id`, `file_id`, `body_text`). Never camelCase. Every operation result carries `operation`, `success: boolean`, `error: string` (empty on success). Omit the `credentials` param entirely; it is injected at runtime (section 5).
 
 ### 4.1 GoogleSheetsBubble — `google-sheets`
@@ -296,19 +313,20 @@ Results carry both `ok` (Telegram API) and `success`.
 - `message: string` (required). The prompt. Include all context explicitly; do not expect the agent to infer.
 - `systemPrompt?: string` (default 'You are a helpful AI assistant').
 - `model: { model, maxTokens?=64000, maxRetries?=3, jsonMode?=false }`. Always include. `model.model` is `'provider/model-name'` from a fixed enum (`packages/bubble-shared-schemas/src/ai-models.ts:4-41`). The enum lists `anthropic/*`, `google/*`, `openrouter/*` too, but **the deployed runtime only has an OpenAI key — use `openai/gpt-5-mini` (or `openai/gpt-5`); other providers fail at execution (golden rule 1.3).** Do NOT pass `temperature` for gpt-5 models. Example: `model: { model: 'openai/gpt-5-mini', maxTokens: 10000 }`.
-- `tools?: [{ name: 'web-search-tool' } , { name: 'web-scrape-tool' }]` — available names include web-search-tool, web-scrape-tool, web-crawl-tool, web-extract-tool (ai-agent.ts:333-338).
+- `nativeCapabilities?: ('web-search')[]` (default `[]`) — provider-native abilities enabled on the model itself, no tool bubble and no third-party credential. **Capability-routing rule (FE4, native > any tool source): for open-web research set `nativeCapabilities: ['web-search']` and bind NO web-search-tool.** Implemented for `openai/*` models (the deployed provider); an unsupported provider warns at run time and continues. `get_bubble_details ai-agent` returns the authoritative `nativeCapabilities` manifest (what each capability replaces and per-provider support).
+- `tools?: [{ name: 'web-scrape-tool' }]` — available names include web-search-tool, web-scrape-tool, web-crawl-tool, web-extract-tool (ai-agent.ts:333-338). Per the routing rule above, bind the web-\* tools ONLY for structured extraction of specific known URLs — never web-search-tool when `nativeCapabilities: ['web-search']` covers the research.
 - `expectedOutputSchema?: ZodSchema` — pass the Zod value directly; forces JSON mode (see golden rule 1.3).
 - `maxIterations?=80`, `conversationHistory?`, `images?`.
 
 Result (`result.data`): `response: string` (ALWAYS a string; JSON string under JSON mode), `toolCalls: {tool, input, output}[]`, `iterations: number`, `success`, `error` (ai-agent.ts:408-445). Model credentials (OPENAI_CRED / ANTHROPIC_CRED / GOOGLE_GEMINI_CRED) resolve by provider prefix (:781-830) and are system-injected; never ask the user for an LLM key.
 
-### 4.6 WebSearchTool — `web-search-tool`
+### 4.6 WebSearchTool — `web-search-tool` (scope: superseded for research by native web search)
 
-`packages/bubble-core/src/bubbles/tool-bubble/web-search-tool.ts:63-72`. Params (:12-37): `query` (required), `limit=10`, `location?`, `categories?: ('research'\|'pdf'\|'github')[]`. Result data (:40-56): `results: {title, url, content}[]`, `totalResults`, `success`, `error`. Credential: FIRECRAWL_API_KEY (system-injected). Usable directly (`new WebSearchTool({query}).action()`) or as an ai-agent tool.
+**Routing (FE4): do NOT bind this for open-web research — use the ai-agent's `nativeCapabilities: ['web-search']` (§4.5) instead.** This Firecrawl-backed tool remains only for the rare case where a flow needs raw search-result rows OUTSIDE an ai-agent. `packages/bubble-core/src/bubbles/tool-bubble/web-search-tool.ts:63-72`. Params (:12-37): `query` (required), `limit=10`, `location?`, `categories?: ('research'\|'pdf'\|'github')[]`. Result data (:40-56): `results: {title, url, content}[]`, `totalResults`, `success`, `error`. Credential: FIRECRAWL_API_KEY (system-injected).
 
-### 4.7 WebScrapeTool — `web-scrape-tool`
+### 4.7 WebScrapeTool — `web-scrape-tool` (scope: structured extraction of specific known URLs only)
 
-`packages/bubble-core/src/bubbles/tool-bubble/web-scrape-tool.ts:81-88`. Params (:37-56): `url` (required, valid URL), `format='markdown'|'html'`, `onlyMainContent=true`. Result data (:59-74): `content: string`, `title`, `url`, `success`, `error`. Credential: FIRECRAWL_API_KEY (system-injected).
+Legitimate when the flow must read the full content of a SPECIFIC known URL (native web search finds and summarizes but does not return a page's raw content). Never bind it as a stand-in for open-web research. `packages/bubble-core/src/bubbles/tool-bubble/web-scrape-tool.ts:81-88`. Params (:37-56): `url` (required, valid URL), `format='markdown'|'html'`, `onlyMainContent=true`. Result data (:59-74): `content: string`, `title`, `url`, `success`, `error`. Credential: FIRECRAWL_API_KEY (system-injected).
 
 ### 4.8 NotionBubble — `notion`
 
@@ -344,7 +362,7 @@ Notion API version 2025-09-03: databases contain `data_sources`; "database query
 
 ## 6. Worked example: cron research digest (obeys every golden rule)
 
-Daily flow: searches the web for a topic, has an AI agent distill the findings into a fixed shape, appends one row to an existing spreadsheet, and pings the user on Telegram. The spreadsheet is fixed infrastructure, so its ID arrives as an input; nothing is created in-flow.
+Daily flow: an AI agent researches a topic with its NATIVE web search (`nativeCapabilities: ['web-search']` — the FE4 routing rule; no web-search-tool, no Firecrawl credential) and distills the findings into a fixed shape, then the flow appends one row to an existing spreadsheet and pings the user on Telegram. The spreadsheet is fixed infrastructure, so its ID arrives as an input; nothing is created in-flow.
 
 ```typescript
 import type { BubbleTriggerEventRegistry } from '@bubblelab/shared-schemas';
@@ -353,7 +371,6 @@ import {
   AIAgentBubble,
   GoogleSheetsBubble,
   TelegramBubble,
-  WebSearchTool,
   safeParseJson,
 } from '@bubblelab/bubble-core';
 import { z } from 'zod';
@@ -402,14 +419,9 @@ export class DailyResearchDigestFlow extends BubbleFlow<'schedule/cron'> {
       telegram_chat_id = '123456789',
     } = payload;
 
-    const findings = await this.searchTopic(topic);
-    if (findings.length === 0) {
-      return { appended: false, reason: 'No search results found' };
-    }
-
-    const digest = await this.distillFindings(topic, findings);
+    const digest = await this.researchTopic(topic);
     if (digest === null) {
-      return { appended: false, reason: 'Could not distill the findings' };
+      return { appended: false, reason: 'Could not research the topic' };
     }
 
     const rowAdded = await this.appendDigestRow(spreadsheet_id, digest);
@@ -422,28 +434,13 @@ export class DailyResearchDigestFlow extends BubbleFlow<'schedule/cron'> {
     };
   }
 
-  // Searches the web for fresh coverage of the chosen topic
-  private async searchTopic(
+  // Researches the topic with the agent's native web search and distills the findings
+  private async researchTopic(
     topic: string
-  ): Promise<{ title: string; url: string; content: string }[]> {
-    const searchResult = await new WebSearchTool({
-      query: `${topic} latest news`,
-      limit: 10,
-    }).action();
-    if (!searchResult.success || !searchResult.data) return [];
-    return searchResult.data.results;
-  }
-
-  // Condenses the search results into one headline, summary, and source link
-  private async distillFindings(
-    topic: string,
-    findings: { title: string; url: string; content: string }[]
   ): Promise<z.infer<typeof digestSchema> | null> {
-    const findingsText = findings
-      .map((f) => `${f.title} (${f.url}): ${f.content}`)
-      .join('\n');
     const result = await new AIAgentBubble({
-      message: `From these search results about "${topic}", pick the single most significant development. Reply with a headline, a two-sentence summary, and the source link.\n\n${findingsText}`,
+      message: `Research the latest news about "${topic}" on the web and pick the single most significant development. Reply with a headline, a two-sentence summary, and the source link.`,
+      nativeCapabilities: ['web-search'], // FE4 routing rule: native web search, NOT web-search-tool
       expectedOutputSchema: digestSchema,
       model: { model: 'openai/gpt-5-mini', maxTokens: 10000 }, // openai-only runtime; see 1.3
     }).action();
@@ -487,7 +484,7 @@ export class DailyResearchDigestFlow extends BubbleFlow<'schedule/cron'> {
 }
 ```
 
-Why this satisfies the rules: the spreadsheet ID is a payload input (no in-flow creation); reads (search, AI) precede writes (append, send); the Telegram message goes to the user's own profile-backed chat, so send safety allows a direct send; the AI output crosses into typed data only through `safeParseJson` with the same schema passed as `expectedOutputSchema`; every bubble sits at an anchor position inside its own private method; handle() contains only orchestration, an if guard, and a return; no casts, no credentials, no placeholders (defaults are realistic examples).
+Why this satisfies the rules: research routes to the agent's NATIVE web search (`nativeCapabilities: ['web-search']`, capability-routing rule — no web-search-tool, no Firecrawl dependency); the spreadsheet ID is a payload input (no in-flow creation); reads (research) precede writes (append, send); the Telegram message goes to the user's own profile-backed chat, so send safety allows a direct send; the AI output crosses into typed data only through `safeParseJson` with the same schema passed as `expectedOutputSchema`; every bubble sits at an anchor position inside its own private method; handle() contains only orchestration, an if guard, and a return; no casts, no credentials, no placeholders (defaults are realistic examples).
 
 ---
 
@@ -507,3 +504,4 @@ A raw Claude Code instance writing against this doc has no access to the in-proj
 - `packages/bubble-shared-schemas/src/types.ts`, `credential-schema.ts` (CredentialType, SYSTEM_CREDENTIALS)
 - `apps/bubblelab-api/src/config/bubbleflow-generation-prompts.ts` (execution contract and rules 1-31)
 - `packages/bubble-shared-schemas/src/mock-data-generator.ts` (BubbleResult envelope)
+- `packages/bubble-shared-schemas/src/native-capabilities.ts` (FE4 native-capability manifest + routing rule; vendor doc deep links in its Sources block: OpenAI Responses web search https://platform.openai.com/docs/guides/tools-web-search, LangChain ChatOpenAI built-in tools https://js.langchain.com/docs/integrations/chat/openai)

@@ -44,6 +44,11 @@ export async function validateBubbleFlow(
 ): Promise<ValidationResult> {
   const syntaxErrors: string[] = [];
   const lintErrors: string[] = [];
+  // Blocking lint errors (LintError.blocking) force valid:false even when
+  // requireLintErrors=false - the save/run gates all pass false, and a
+  // blocking defect (e.g. a bubble call site the parser cannot extract)
+  // must never save/run silently.
+  const blockingLintErrors: string[] = [];
 
   try {
     // Step 1: Basic syntax and structure validation
@@ -74,19 +79,38 @@ export async function validateBubbleFlow(
         true
       );
       const lintRuleErrors = defaultLintRuleRegistry.validateAll(sourceFile);
-      const lintErrorMessages = lintRuleErrors.map(
-        (err) => `line ${err.line}: ${err.message}`
-      );
-      lintErrors.push(...lintErrorMessages);
+      for (const err of lintRuleErrors) {
+        const message = `line ${err.line}: ${err.message}`;
+        lintErrors.push(message);
+        if (err.blocking === true) {
+          blockingLintErrors.push(message);
+        }
+      }
     } catch (error) {
       // If lint rule execution fails, log but don't fail validation
       console.error('Error running lint rules:', error);
     }
 
-    // Combine all errors for backward compatibility
+    // Combine all errors for backward compatibility. Blocking lint errors
+    // are duplicated into the combined errors even under
+    // requireLintErrors=false, so every valid-gate call site rejects them
+    // with zero changes. lintErrors keeps ALL lint messages (advisory rules
+    // stay advisory).
     const allErrors = requireLintErrors
       ? [...syntaxErrors, ...lintErrors]
-      : syntaxErrors;
+      : [...syntaxErrors, ...blockingLintErrors];
+
+    if (blockingLintErrors.length > 0) {
+      // Pillar 2 (DISPATCH-CONTRACT): the rejection is itself a logged,
+      // assertable event on the server log.
+      console.warn(
+        `[event] lint.blocking_rejection ${JSON.stringify({
+          count: blockingLintErrors.length,
+          requireLintErrors,
+          messages: blockingLintErrors,
+        })}`
+      );
+    }
 
     return {
       valid: allErrors.length === 0,

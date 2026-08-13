@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { PricingPage } from '@/pages/PricingPage';
 import { useAuth } from '@/hooks/useAuth';
+import { useUIStore } from '@/stores/uiStore';
 
 export const Route = createFileRoute('/pricing')({
   component: PricingRoute,
@@ -12,8 +13,9 @@ function PricingRoute() {
 
   // Redirect if not signed in
   if (!isSignedIn) {
-    // Open up sign in modal
-    navigate({ to: '/home', search: { showSignIn: true }, replace: true });
+    // Flag /home to auto-open the sign-in modal (in-memory, not a URL param)
+    useUIStore.getState().requestShowSignIn();
+    navigate({ to: '/home', replace: true });
     return null;
   }
 

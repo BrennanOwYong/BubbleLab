@@ -9,6 +9,7 @@ import {
 } from 'drizzle-orm/sqlite-core';
 import { relations, isNotNull } from 'drizzle-orm';
 import type { CredentialMetadata } from '@bubblelab/shared-schemas';
+import type { BuildThreadServedBy } from './schema-postgres';
 
 export const users = sqliteTable('users', {
   clerkId: text('clerk_id').primaryKey(),
@@ -312,6 +313,8 @@ export const buildThreads = sqliteTable(
     agentKind: text('agent_kind').notNull().default('flow'),
     status: text('status').notNull().default('idle'),
     deferredSetup: text('deferred_setup', { mode: 'json' }),
+    // FE5 serve-identity stamp (see schema-postgres.ts BuildThreadServedBy).
+    servedBy: text('served_by', { mode: 'json' }).$type<BuildThreadServedBy>(),
     createdAt: int('created_at', { mode: 'timestamp' })
       .notNull()
       .$defaultFn(() => new Date()),

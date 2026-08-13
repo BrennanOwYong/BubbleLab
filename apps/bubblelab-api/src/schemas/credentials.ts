@@ -6,11 +6,41 @@ import {
   createCredentialResponseSchema,
   updateCredentialSchema,
   updateCredentialResponseSchema,
-  successMessageResponseSchema,
   databaseMetadataSchema,
   credentialScopeCheckRequestSchema,
   credentialScopeCheckResponseSchema,
 } from './index.js';
+
+// S9: provider-side outcome of a credential delete. Kept local (not in
+// @bubblelab/shared-schemas) so this API-only response shape doesn't require
+// rebuilding the shared package's dist for the change to take effect.
+export const deleteCredentialResponseSchema = z
+  .object({
+    message: z.string().openapi({ description: 'Success message' }),
+    providerRevocation: z
+      .object({
+        status: z
+          .enum(['revoked', 'already_invalid', 'unsupported', 'error'])
+          .openapi({
+            description:
+              "Outcome of the provider-side revoke call: 'revoked' (grant confirmed gone), " +
+              "'already_invalid' (provider had nothing left to revoke, e.g. an expired token), " +
+              "'unsupported' (provider has no programmatic revoke endpoint — see manageAppsUrl), " +
+              "'error' (the revoke call itself failed).",
+          }),
+        manageAppsUrl: z.string().url().optional().openapi({
+          description:
+            "Present when status is 'unsupported': the provider's own connected-apps page where the user must remove BubbleLab to fully disconnect it.",
+        }),
+        manageAppsInstructions: z.string().optional(),
+      })
+      .optional()
+      .openapi({
+        description:
+          'Present only when the deleted credential was an OAuth credential.',
+      }),
+  })
+  .openapi('DeleteCredentialResponse');
 
 // POST /credentials/:id/scope-check - Verify granted scopes against requirements
 // (suite-aware binding: a Google credential of one type can serve a step of a sibling
@@ -54,6 +84,40 @@ export const credentialScopeCheckRoute = createRoute({
       },
       description:
         'Credential not found, not owned, or not an OAuth credential',
+    },
+    500: {
+      content: {
+        'application/json': {
+          schema: errorResponseSchema,
+        },
+      },
+      description: 'Internal server error',
+    },
+  },
+  tags: ['Credentials'],
+});
+
+// GET /credentials/platform-types — the effective platform-provided credential
+// classification (S1): declared-SYSTEM types the API's env actually backs.
+// Every studio binding surface consults this set; a declared-SYSTEM type absent
+// here behaves as a user credential (Setup card, dropdown default, auto-bind,
+// run gate).
+export const platformCredentialTypesResponseSchema = z.object({
+  platformCredentialTypes: z.array(z.string()),
+});
+
+export const platformCredentialTypesRoute = createRoute({
+  method: 'get',
+  path: '/platform-types',
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: platformCredentialTypesResponseSchema,
+        },
+      },
+      description:
+        'Credential types the platform provides from its own environment',
     },
     500: {
       content: {
@@ -153,7 +217,7 @@ export const deleteCredentialRoute = createRoute({
     200: {
       content: {
         'application/json': {
-          schema: successMessageResponseSchema,
+          schema: deleteCredentialResponseSchema,
         },
       },
       description: 'Credential deleted successfully',

@@ -191,3 +191,13 @@ export function getAccountOptions(
   }
   return options;
 }
+
+/** "GOOGLE_DRIVE_CRED" -> "Google Drive", "FIRECRAWL_API_KEY" -> "Firecrawl" */
+export function prettyCredentialName(type: string): string {
+  return type
+    .replace(/_CRED$/, '')
+    .replace(/_API_KEY$|_API$|_TOKEN$/, '')
+    .replace(/_/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}

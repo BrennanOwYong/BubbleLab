@@ -9,7 +9,8 @@ import type {
   CredentialResponse,
 } from '@bubblelab/shared-schemas';
 import type { CoffeeRequestExternalContextEvent } from './type';
-import { SYSTEM_CREDENTIALS } from '@bubblelab/shared-schemas';
+import { isPlatformProvided } from '../../lib/platformCredentials';
+import { usePlatformCredentialTypes } from '../../hooks/usePlatformCredentialTypes';
 import { useCredentials, useCreateCredential } from '@/hooks/useCredentials';
 import { CreateCredentialModal } from '@/pages/CredentialsPage';
 
@@ -38,13 +39,14 @@ export function ContextRequestWidget({
 
   // Fetch available credentials
   const { data: availableCredentials = [] } = useCredentials(apiBaseUrl);
+  const platformCredentialTypes = usePlatformCredentialTypes();
   const createCredentialMutation = useCreateCredential();
 
   const { required: requiredCreds = [] } = request.credentialRequirements;
 
   // Check if all required credentials are provided
   const allCredentialsProvided = requiredCreds.every((credType) => {
-    const isSystem = SYSTEM_CREDENTIALS.has(credType);
+    const isSystem = isPlatformProvided(credType, platformCredentialTypes);
     // System credentials don't need explicit selection
     if (isSystem) return true;
     return (
@@ -56,7 +58,10 @@ export function ContextRequestWidget({
     const availableForType = availableCredentials.filter(
       (cred: CredentialResponse) => cred.credentialType === credType
     );
-    const isSystemCredential = SYSTEM_CREDENTIALS.has(credType);
+    const isSystemCredential = isPlatformProvided(
+      credType,
+      platformCredentialTypes
+    );
     const selectedValue = credentials[credType];
 
     return (

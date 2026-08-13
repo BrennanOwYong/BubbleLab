@@ -457,6 +457,106 @@ export const updateBubbleFlowNameRoute = createRoute({
   tags: ['BubbleFlow'],
 });
 
+// U2: the flow's registered headline output, persisted at
+// bubble_flows.metadata.primaryOutput. Every registered key is a top-level
+// property of the handle() return object, so finalResult[key] is always
+// defined on a successful run (the builder SOP enforces the invariant).
+export const primaryOutputSchema = z
+  .object({
+    kind: z.enum(['artefact', 'process', 'both']).openapi({
+      description:
+        "What the flow's headline result is: 'artefact' = a produced thing with a link (doc/sheet/file URL); 'process' = something that happened with no artefact (stated outcomes); 'both' = an artefact plus stated outcomes",
+    }),
+    label: z.string().min(1).max(80).openapi({
+      description:
+        'User-facing plain-language label for the result, in the user\'s own vocabulary (e.g. "Your weekly digest")',
+    }),
+    artefactKey: z.string().min(1).optional().openapi({
+      description:
+        "Top-level handle() return key whose value is the artefact link; required when kind is 'artefact' or 'both'",
+    }),
+    outcomeKeys: z.array(z.string().min(1)).optional().openapi({
+      description:
+        "Top-level handle() return keys whose values state what happened; required (non-empty) when kind is 'process' or 'both'",
+    }),
+  })
+  .refine(
+    (value) => value.kind === 'process' || value.artefactKey !== undefined,
+    {
+      message: "artefactKey is required when kind is 'artefact' or 'both'",
+    }
+  )
+  .refine(
+    (value) =>
+      value.kind === 'artefact' || (value.outcomeKeys?.length ?? 0) > 0,
+    {
+      message: "outcomeKeys must be non-empty when kind is 'process' or 'both'",
+    }
+  )
+  .openapi('PrimaryOutput');
+
+export type PrimaryOutput = z.infer<typeof primaryOutputSchema>;
+
+// PATCH /bubble-flow/:id/primary-output - Register the flow's headline output
+// (mirrors updateBubbleFlowNameRoute; the handler MERGES into metadata jsonb)
+export const updatePrimaryOutputRoute = createRoute({
+  method: 'patch',
+  path: '/{id}/primary-output',
+  request: {
+    params: z.object({
+      id: z
+        .string()
+        .regex(/^[0-9]+$/)
+        .openapi({
+          description: 'BubbleFlow ID',
+          example: '123',
+        }),
+    }),
+    body: {
+      content: {
+        'application/json': {
+          schema: primaryOutputSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: successMessageResponseSchema,
+        },
+      },
+      description: 'Primary output updated successfully',
+    },
+    400: {
+      content: {
+        'application/json': {
+          schema: errorResponseSchema,
+        },
+      },
+      description: 'Invalid ID format or primary output validation failed',
+    },
+    404: {
+      content: {
+        'application/json': {
+          schema: errorResponseSchema,
+        },
+      },
+      description: 'BubbleFlow not found',
+    },
+    500: {
+      content: {
+        'application/json': {
+          schema: errorResponseSchema,
+        },
+      },
+      description: 'Internal server error',
+    },
+  },
+  tags: ['BubbleFlow'],
+});
+
 // GET /bubble-flow - List all bubble flows for the user
 export const listBubbleFlowsRoute = createRoute({
   method: 'get',

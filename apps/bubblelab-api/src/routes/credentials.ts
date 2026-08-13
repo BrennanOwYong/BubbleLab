@@ -18,13 +18,17 @@ import {
   deleteCredentialRoute,
   getCredentialMetadataRoute,
   credentialScopeCheckRoute,
+  platformCredentialTypesRoute,
 } from '../schemas/credentials.js';
+import { platformProvidedCredentialTypes } from '../services/platform-credentials.js';
+import { computeOauthStatus } from '../services/oauth-status.js';
 import type { CredentialScopeCheckResponse } from '../schemas/index.js';
 import {
   oauthService,
   extractMetadataEmail,
 } from '../services/oauth-service.js';
 import { syncDerivedCredentialsForSource } from '../services/derived-credential-service.js';
+import { notifyBuilderCredentialsChanged } from '../services/builder-notify.js';
 import type { DerivedCredentialRecord } from '@bubblelab/shared-schemas';
 import {
   getOAuthProviderGroupTypes,
@@ -50,6 +54,16 @@ function normalizeScope(scope: string): string {
   const trimmed = scope.trim();
   return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
 }
+
+// GET /credentials/platform-types — effective platform-provided classification
+// (S1). Registered before the parameterized routes so '/platform-types' never
+// matches an '/{id}' pattern.
+app.openapi(platformCredentialTypesRoute, async (c) => {
+  return c.json(
+    { platformCredentialTypes: [...platformProvidedCredentialTypes()].sort() },
+    200
+  );
+});
 
 // POST /credentials/:id/scope-check — verify a credential's GRANTED scopes (live Google
 // tokeninfo probe when possible, stored grants otherwise) against the flow's requirements.
@@ -147,22 +161,9 @@ app.openapi(listCredentialsRoute, async (c) => {
   );
 
   const response: CredentialResponse[] = enriched.map((cred) => {
-    const now = new Date();
-    let oauthStatus: 'active' | 'expired' | 'needs_refresh' | undefined;
-
-    // Calculate OAuth status if this is an OAuth credential
-    if (cred.isOauth && cred.oauthExpiresAt) {
-      const expiresAt = new Date(cred.oauthExpiresAt);
-      const fiveMinutesFromNow = new Date(now.getTime() + 5 * 60 * 1000);
-
-      if (expiresAt < now) {
-        oauthStatus = 'expired';
-      } else if (expiresAt < fiveMinutesFromNow) {
-        oauthStatus = 'needs_refresh';
-      } else {
-        oauthStatus = 'active';
-      }
-    }
+    // OAuth access-token health — shared with the S6 credential-state
+    // endpoint so triage and the studio read the same classification.
+    const oauthStatus = computeOauthStatus(cred.isOauth, cred.oauthExpiresAt);
 
     return {
       id: cred.id,
@@ -238,6 +239,10 @@ app.openapi(createCredentialRoute, async (c) => {
       metadata,
     })
     .returning({ id: userCredentials.id });
+
+  // FE1: a new credential may close a blocked build's gap — fire-and-forget
+  // notify to the sidecar; never awaited by this response path.
+  notifyBuilderCredentialsChanged(userId, credentialType);
 
   const response: CreateCredentialResponse = {
     id: inserted.id,
@@ -361,12 +366,29 @@ app.openapi(deleteCredentialRoute, async (c) => {
   if (credential.isOauth) {
     // Revoke the token at the provider (best effort — an already-invalid token
     // or unreachable provider never blocks the delete), then drop the row.
-    await oauthService.revokeCredential(credentialId);
-  } else {
-    await db
-      .delete(userCredentials)
-      .where(eq(userCredentials.id, credentialId));
+    // S9(c): a provider with no revoke endpoint (e.g. jira/Atlassian) comes
+    // back with a manageApps link — surfaced here so the user knows the
+    // provider-side grant is still live and where to remove it themselves.
+    const { revocation, manageApps } =
+      await oauthService.revokeCredential(credentialId);
+    return c.json(
+      {
+        message: 'Credential deleted successfully',
+        providerRevocation: {
+          status: revocation.status,
+          ...(manageApps
+            ? {
+                manageAppsUrl: manageApps.url,
+                manageAppsInstructions: manageApps.instructions,
+              }
+            : {}),
+        },
+      },
+      200
+    );
   }
+
+  await db.delete(userCredentials).where(eq(userCredentials.id, credentialId));
 
   return c.json({ message: 'Credential deleted successfully' }, 200);
 });

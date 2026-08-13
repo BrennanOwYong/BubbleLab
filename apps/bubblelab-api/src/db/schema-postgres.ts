@@ -307,6 +307,21 @@ export const bubbleFlowEvaluationsRelations = relations(
 // pages.id when agent_kind='page'; the two id sequences overlap, so the
 // primary key is (subject_id, agent_kind). The column keeps its original
 // name flow_id for migration continuity.
+
+/**
+ * FE5: identity of the sidecar process that served this thread's most recent
+ * build turn (last-writer-wins, stamped by the sidecar's upsertThread at turn
+ * start). `mode` is the sidecar's BUILDER_SERVE_MODE: 'managed' when the API
+ * spawned it, 'external' when dev-stack/hand launched it.
+ */
+export interface BuildThreadServedBy {
+  pid: number;
+  port: number;
+  mode: 'external' | 'managed';
+  hostname: string;
+  startedAt: string;
+}
+
 export const buildThreads = pgTable(
   'build_threads',
   {
@@ -315,6 +330,7 @@ export const buildThreads = pgTable(
     agentKind: text('agent_kind').notNull().default('flow'),
     status: text('status').notNull().default('idle'),
     deferredSetup: jsonb('deferred_setup'),
+    servedBy: jsonb('served_by').$type<BuildThreadServedBy>(),
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -323,6 +339,32 @@ export const buildThreads = pgTable(
       .$defaultFn(() => new Date()),
   },
   (table) => [primaryKey({ columns: [table.subjectId, table.agentKind] })]
+);
+
+// FE2 — cross-flow user memory. Canonical per-user standing defaults (email,
+// telegram handle/chat id, free-form slugs) the builder agent captures
+// silently through its hidden remember_user_default tool and re-injects into
+// every build turn's system prompt. Written by services/builder-agent (which
+// re-declares this shape in its src/db.ts; keep the two in sync); this API
+// owns only the canonical DDL. Values stay text for MVP — every motivating
+// datapoint is a string; a structured need later migrates to jsonb behind the
+// sidecar's memory module without touching callers.
+export const userDefaults = pgTable(
+  'user_defaults',
+  {
+    userId: text('user_id').notNull(),
+    key: text('key').notNull(),
+    value: text('value').notNull(),
+    description: text('description'),
+    sourceFlowId: integer('source_flow_id'),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.key] })]
 );
 
 // Page-builder agent (agentKind 'page'): a page is a persisted, structured

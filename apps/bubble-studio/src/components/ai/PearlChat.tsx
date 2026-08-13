@@ -3,7 +3,7 @@
  * Can read entire code and replace entire editor content
  *
  */
-import { useState, useEffect, useRef, useCallback, memo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback, memo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEditor } from '../../hooks/useEditor';
 import { useUIStore } from '../../stores/uiStore';
@@ -39,12 +39,19 @@ import { MarkdownWithBubbles } from './MarkdownWithBubbles';
 import { ClarificationWidget } from './ClarificationWidget';
 import { PlanApprovalWidget } from './PlanApprovalWidget';
 import { ContextRequestWidget } from './ContextRequestWidget';
+import { CredentialRequestWidget } from './CredentialRequestWidget';
+import { useCredentials } from '../../hooks/useCredentials';
+import {
+  getAppCredentialTypes,
+  prettyCredentialName,
+} from '../../lib/authMethods';
+import type { CredentialType } from '@bubblelab/shared-schemas';
+import { ResultRevealWidget } from './ResultRevealWidget';
 import { hasBubbleTags } from '../../utils/bubbleTagParser';
 import { useEditorStore } from '../../stores/editorStore';
 import { API_BASE_URL } from '../../env';
 import {
-  useGenerateInitialFlow,
-  useRehydrateBuildThread,
+  useFlowConversation,
   startBuildingPhase,
   submitClarificationAndContinue,
 } from '../../hooks/usePearlStream';
@@ -113,22 +120,29 @@ export function PearlChat() {
   const appliedMessageIds =
     pearlStore?.((s) => s.appliedMessageIds) ?? new Set<string>();
 
-  // Check if this is an initial generation (flow has prompt but no code)
+  // Display-only: which handler variant a plan/clarification widget uses
+  // (the initial-generation Coffee-era path vs. the normal Pearl chat path)
+  // and whether to show the empty-state welcome. NOT used to decide
+  // send-vs-hydrate anymore — that decision is fully self-contained inside
+  // useFlowConversation now, keyed off the thread's own existence rather
+  // than this client-side approximation.
   const isGenerating =
     (!flowData?.code || flowData.code.trim() === '') &&
     !flowData?.generationError &&
     !!flowData?.prompt;
 
-  // Only enable query if we have all required data and are in generating state
-  const shouldEnableGeneration = Boolean(
-    selectedFlowId && flowData?.prompt && isGenerating
-  );
-
-  // Generation flow - uses pearlChatStore for events, callback handles editor update and refetch
-  useGenerateInitialFlow({
-    prompt: flowData?.prompt || '',
-    flowId: selectedFlowId ?? undefined,
-    enabled: shouldEnableGeneration,
+  // The single entry point for this flow's conversation (Vasley design,
+  // 2026-08-07): query the thread unconditionally on every mount, regardless
+  // of how the page was reached. No thread yet -> send the flow's own
+  // stored prompt. A thread already exists -> always rejoin via subscribe,
+  // which itself transparently decides whether that rejoin continues live.
+  useFlowConversation(selectedFlowId, {
+    prompt: flowData?.prompt || undefined,
+    // Wait for the flow record itself to load before deciding anything —
+    // the send branch needs flowData.prompt, and firing before it's ready
+    // would run once with an empty prompt and never retry (the query key
+    // doesn't depend on flowData, so nothing would trigger a second run).
+    enabled: Boolean(selectedFlowId && flowData && !flowData.generationError),
     onGenerationComplete: useCallback(
       (data: {
         generatedCode: string;
@@ -178,58 +192,83 @@ export function PearlChat() {
     ),
   });
 
-  // For flows that already have code, show the stored build conversation
-  useRehydrateBuildThread(selectedFlowId, !isGenerating);
-
-  // Track if we've initialized the generation conversation
-  const hasInitializedGenerationRef = useRef(false);
-
-  // Auto-open Pearl panel and add user prompt message when generation starts
-  useEffect(() => {
-    if (
-      isGenerating &&
-      flowData?.prompt &&
-      selectedFlowId &&
-      !hasInitializedGenerationRef.current
-    ) {
-      useUIStore.getState().openConsolidatedPanelWith('pearl');
-
-      // Add user's prompt as the first message
-      const pearlStore = getPearlChatStore(selectedFlowId);
-      const storeState = pearlStore.getState();
-
-      // Only add if there are no messages yet
-      if (storeState.messages.length === 0) {
-        const userMessage: ChatMessage = {
-          id: `gen-user-${Date.now()}`,
-          type: 'user',
-          content: flowData.prompt,
-          timestamp: new Date(),
-        };
-
-        storeState.addMessage(userMessage);
-        hasInitializedGenerationRef.current = true;
-      }
-    }
-  }, [isGenerating, flowData?.prompt, selectedFlowId]);
-
-  // Reset the initialization ref when flow changes
-  useEffect(() => {
-    hasInitializedGenerationRef.current = false;
-  }, [selectedFlowId]);
-
   // Auto-scroll to bottom when conversation changes
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [pearl.timeline, pearl.isPending, pearl.isGenerating]);
+
+  // Which inline credential_request types this conversation has asked for,
+  // and which of those are still unconnected, read from the live credentials
+  // list (not each widget's own local state) so it's correct even across
+  // remounts/reloads.
+  const { data: liveCredentials = [] } = useCredentials(API_BASE_URL);
+  const { requestedCredentialTypes, unconnectedCredentialTypes } =
+    useMemo(() => {
+      const requested = Array.from(
+        new Set(
+          pearl.messages
+            .filter(
+              (m): m is ChatMessage & { type: 'credential_request' } =>
+                m.type === 'credential_request'
+            )
+            .map((m) => m.credentialType)
+        )
+      );
+      const unconnected = requested.filter(
+        (type) =>
+          !getAppCredentialTypes(type as CredentialType).some((appType) =>
+            liveCredentials.some((cred) => cred.credentialType === appType)
+          )
+      );
+      return {
+        requestedCredentialTypes: requested,
+        unconnectedCredentialTypes: unconnected,
+      };
+    }, [pearl.messages, liveCredentials]);
+
+  // Auto-continue once every inline credential_request in this conversation
+  // is connected: mirrors FE1's server-side auto-unblock, but fires from the
+  // chat UI itself so the user sees the conversation resume the moment the
+  // last "Connect" button in view is satisfied, instead of depending only on
+  // the backend's own credentials-changed notify making it there.
+  const autoContinuedSignatureRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!selectedFlowId) return;
+    if (requestedCredentialTypes.length === 0) return;
+    if (unconnectedCredentialTypes.length > 0) return;
+
+    const signature = `${selectedFlowId}:${requestedCredentialTypes.slice().sort().join(',')}`;
+    if (autoContinuedSignatureRef.current === signature) return;
+    if (pearl.isPending || pearl.isGenerating || pearl.isCoffeeLoading) return;
+
+    autoContinuedSignatureRef.current = signature;
+    pearl.startGeneration(
+      'All requested credentials are connected now — continue.'
+    );
+  }, [
+    selectedFlowId,
+    requestedCredentialTypes,
+    unconnectedCredentialTypes,
+    pearl,
+  ]);
 
   const handleGenerate = () => {
     if (!pearl.prompt.trim()) {
       return;
     }
 
+    // Sending manually before every requested credential is connected is
+    // allowed — the agent just needs to know what's still missing, so it
+    // isn't surprised mid-turn by a step it can't run yet.
+    const message =
+      unconnectedCredentialTypes.length > 0
+        ? `${pearl.prompt}\n\n(${unconnectedCredentialTypes
+            .map(prettyCredentialName)
+            .join(', ')} not connected yet)`
+        : pearl.prompt;
+
     // Send through the builder-harness session for this flow
-    pearl.startGeneration(pearl.prompt);
+    pearl.startGeneration(message);
   };
 
   // Handlers for initial generation Coffee flow (different from Pearl chat)
@@ -759,6 +798,26 @@ export function PearlChat() {
                 </div>
               )}
 
+              {/* Credential Request - inline "Connect" button (no tab-hunting) */}
+              {message.type === 'credential_request' && (
+                <div className="p-3">
+                  <CredentialRequestWidget
+                    credentialType={message.credentialType}
+                  />
+                </div>
+              )}
+
+              {/* Result Ready (U2) - the flow's headline result, shown when the
+                  agent registers it after a successful first self-test run */}
+              {message.type === 'result_ready' && (
+                <div className="p-3">
+                  <ResultRevealWidget
+                    flowId={selectedFlowId}
+                    primaryOutput={message.primaryOutput}
+                  />
+                </div>
+              )}
+
               {/* Clarification Response - display user's answers */}
               {message.type === 'clarification_response' && (
                 <div className="p-3 flex justify-end">
@@ -948,7 +1007,7 @@ export function PearlChat() {
             rows={2}
             placeholder="Ask Pearl to modify, debug, or understand your workflow..."
             className="bg-transparent text-gray-100 text-sm w-full placeholder-gray-400 resize-none focus:outline-none focus:ring-0 p-0"
-            disabled={pearl.isPending || isGenerating}
+            disabled={pearl.isPending}
           />
 
           {/* Bottom action bar - buttons grouped on the right */}
@@ -957,9 +1016,9 @@ export function PearlChat() {
             <button
               type="button"
               onClick={handleGenerate}
-              disabled={!pearl.prompt.trim() || pearl.isPending || isGenerating}
+              disabled={!pearl.prompt.trim() || pearl.isPending}
               className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 ${
-                !pearl.prompt.trim() || pearl.isPending || isGenerating
+                !pearl.prompt.trim() || pearl.isPending
                   ? 'bg-gray-700/40 border border-gray-700/60 cursor-not-allowed text-gray-500'
                   : 'bg-white text-gray-900 border border-white/80 hover:bg-gray-100 hover:border-gray-300 shadow-lg hover:scale-105'
               }`}

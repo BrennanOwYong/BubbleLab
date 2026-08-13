@@ -13,6 +13,7 @@ import { AppType } from '../config/clerk-apps.js';
 import {
   CredentialType,
   CREDENTIAL_ENV_MAP,
+  getCredentialEnvValue,
   ParsedBubbleWithInfo,
 } from '@bubblelab/shared-schemas';
 import { trackServiceUsages } from './service-usage-tracking.js';
@@ -95,12 +96,15 @@ async function runBubbleFlowCommon(
     }
   }
 
-  // System credentials from env
+  // System credentials from env. getCredentialEnvValue honors the env-name
+  // trap fallback (FIRECRAWL_API_KEY works despite the FIRE_CRAWL_API_KEY
+  // map spelling), keeping injection coherent with the platform-provided
+  // classification in services/platform-credentials.ts.
   const systemCredentials: Partial<Record<CredentialType, string>> = {};
-  for (const [credType, envName] of Object.entries(CREDENTIAL_ENV_MAP)) {
-    const envValue = process.env[envName];
+  for (const credType of Object.keys(CREDENTIAL_ENV_MAP) as CredentialType[]) {
+    const envValue = getCredentialEnvValue(credType, process.env);
     if (envValue) {
-      systemCredentials[credType as CredentialType] = envValue;
+      systemCredentials[credType] = envValue;
     }
   }
 

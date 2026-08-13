@@ -27,6 +27,21 @@ import { config } from './config.ts';
 // subject_id (column name flow_id, kept for migration continuity) holds a
 // bubble_flows.id when agent_kind='flow' and a pages.id when
 // agent_kind='page'; the two id sequences overlap, hence the composite key.
+
+/**
+ * FE5: identity of the sidecar process that served this thread's most recent
+ * build turn (last-writer-wins, stamped by builder.ts upsertThread at turn
+ * start). Mirror of BuildThreadServedBy in the API's schema-postgres.ts —
+ * keep the two in sync (canonical DDL: drizzle-postgres/0023).
+ */
+export interface BuildThreadServedBy {
+  pid: number;
+  port: number;
+  mode: 'external' | 'managed';
+  hostname: string;
+  startedAt: string;
+}
+
 export const buildThreads = pgTable(
   'build_threads',
   {
@@ -35,6 +50,7 @@ export const buildThreads = pgTable(
     agentKind: text('agent_kind').notNull().default('flow'),
     status: text('status').notNull().default('idle'),
     deferredSetup: jsonb('deferred_setup'),
+    servedBy: jsonb('served_by').$type<BuildThreadServedBy>(),
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -63,6 +79,28 @@ export const pages = pgTable('pages', {
     .$defaultFn(() => new Date()),
 });
 
+// FE2 — cross-flow user memory: canonical per-user standing defaults captured
+// silently by the hidden remember_user_default tool and re-injected into every
+// build turn's system prompt (memory.ts owns the access; keep the columns in
+// sync with the canonical DDL in schema-postgres.ts / drizzle-postgres/0022).
+export const userDefaults = pgTable(
+  'user_defaults',
+  {
+    userId: text('user_id').notNull(),
+    key: text('key').notNull(),
+    value: text('value').notNull(),
+    description: text('description'),
+    sourceFlowId: integer('source_flow_id'),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.key] })]
+);
+
 export const sessionEntries = pgTable(
   'session_entries',
   {
@@ -88,8 +126,9 @@ export const sessionEntries = pgTable(
 const pool = new pg.Pool({ connectionString: config.databaseUrl });
 
 export const db = drizzle(pool, {
-  schema: { buildThreads, sessionEntries, pages },
+  schema: { buildThreads, sessionEntries, pages, userDefaults },
 });
 
 export type BuildThread = typeof buildThreads.$inferSelect;
 export type PageRow = typeof pages.$inferSelect;
+export type UserDefaultRow = typeof userDefaults.$inferSelect;

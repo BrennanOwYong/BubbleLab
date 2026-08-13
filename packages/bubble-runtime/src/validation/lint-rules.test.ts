@@ -15,6 +15,7 @@ import {
   noMethodCallingMethodRule,
   noMethodInvocationInComplexExpressionRule,
   noCreateIfMissingRule,
+  noBubbleInTernaryOrShortCircuitRule,
   LintRuleRegistry,
 } from './lint-rules.js';
 
@@ -1360,5 +1361,146 @@ export class MyFlow extends BubbleFlow<'webhook/http'> {
 `;
     const errors = lint(code, noCreateIfMissingRule);
     expect(errors.length).toBe(1);
+  });
+});
+
+describe('no-bubble-in-ternary-or-short-circuit lint rule', () => {
+  const wrap = (stepBody: string) => `
+import { BubbleFlow, GoogleDriveBubble } from '@bubblelab/bubble-core';
+
+export class MyFlow extends BubbleFlow<'webhook/http'> {
+  async handle(payload: WebhookEvent): Promise<{ ok: boolean }> {
+    const ok = await this.step(true);
+    return { ok };
+  }
+
+  private async step(flag: boolean): Promise<boolean> {
+    ${stepBody}
+  }
+}
+`;
+
+  it('rejects a bubble call in a ternary consequent as blocking', () => {
+    const code = wrap(`
+    const result = flag
+      ? await new GoogleDriveBubble({ operation: 'list_files' }).action()
+      : null;
+    return result !== null;`);
+    const errors = lint(code, noBubbleInTernaryOrShortCircuitRule);
+    expect(errors.length).toBe(1);
+    expect(errors[0].blocking).toBe(true);
+    expect(errors[0].message).toContain('ternary operator');
+    expect(errors[0].message).toContain('GoogleDriveBubble');
+    expect(errors[0].message).toContain('if/else');
+    expect(errors[0].message).toContain('const');
+  });
+
+  it('rejects a bubble call in a ternary alternate', () => {
+    const code = wrap(`
+    const result = flag
+      ? null
+      : await new GoogleDriveBubble({ operation: 'list_files' }).action();
+    return result !== null;`);
+    const errors = lint(code, noBubbleInTernaryOrShortCircuitRule);
+    expect(errors.length).toBe(1);
+    expect(errors[0].message).toContain('ternary operator');
+  });
+
+  it('rejects a bubble call in a ternary test position', () => {
+    const code = wrap(`
+    const result = (await new GoogleDriveBubble({ operation: 'list_files' }).action())
+      ? 'yes'
+      : 'no';
+    return result === 'yes';`);
+    const errors = lint(code, noBubbleInTernaryOrShortCircuitRule);
+    expect(errors.length).toBe(1);
+    expect(errors[0].message).toContain('ternary operator');
+  });
+
+  it('rejects a bubble call behind && as blocking short-circuit', () => {
+    const code = wrap(`
+    const result = flag && (await new GoogleDriveBubble({ operation: 'list_files' }).action());
+    return Boolean(result);`);
+    const errors = lint(code, noBubbleInTernaryOrShortCircuitRule);
+    expect(errors.length).toBe(1);
+    expect(errors[0].blocking).toBe(true);
+    expect(errors[0].message).toContain('short-circuit expression');
+  });
+
+  it('rejects a bubble call behind ||', () => {
+    const code = wrap(`
+    const result = flag || (await new GoogleDriveBubble({ operation: 'list_files' }).action());
+    return Boolean(result);`);
+    const errors = lint(code, noBubbleInTernaryOrShortCircuitRule);
+    expect(errors.length).toBe(1);
+    expect(errors[0].message).toContain('short-circuit expression');
+  });
+
+  it('rejects a bubble call behind ??', () => {
+    const code = wrap(`
+    const cached: string | null = null;
+    const result = cached ?? (await new GoogleDriveBubble({ operation: 'list_files' }).action());
+    return Boolean(result);`);
+    const errors = lint(code, noBubbleInTernaryOrShortCircuitRule);
+    expect(errors.length).toBe(1);
+    expect(errors[0].message).toContain('short-circuit expression');
+  });
+
+  it('allows the if/else equivalent with a const initializer per branch', () => {
+    const code = wrap(`
+    if (flag) {
+      const result = await new GoogleDriveBubble({ operation: 'list_files' }).action();
+      return result.success;
+    } else {
+      return false;
+    }`);
+    const errors = lint(code, noBubbleInTernaryOrShortCircuitRule);
+    expect(errors).toEqual([]);
+  });
+
+  it('allows a plain const-initializer bubble call', () => {
+    const code = wrap(`
+    const result = await new GoogleDriveBubble({ operation: 'list_files' }).action();
+    return result.success;`);
+    const errors = lint(code, noBubbleInTernaryOrShortCircuitRule);
+    expect(errors).toEqual([]);
+  });
+
+  it('allows bubble calls inside Promise.all array elements', () => {
+    const code = wrap(`
+    const [a, b] = await Promise.all([
+      new GoogleDriveBubble({ operation: 'list_files' }).action(),
+      new GoogleDriveBubble({ operation: 'list_files' }).action(),
+    ]);
+    return Boolean(a) && Boolean(b);`);
+    const errors = lint(code, noBubbleInTernaryOrShortCircuitRule);
+    expect(errors).toEqual([]);
+  });
+
+  it('allows an arrow concise-body bubble call even when the arrow sits in a ternary', () => {
+    const code = wrap(`
+    const runner = flag
+      ? () => new GoogleDriveBubble({ operation: 'list_files' }).action()
+      : null;
+    return runner !== null;`);
+    const errors = lint(code, noBubbleInTernaryOrShortCircuitRule);
+    expect(errors).toEqual([]);
+  });
+
+  it('ignores non-bubble classes in ternaries', () => {
+    const code = wrap(`
+    const stamp = flag ? new Date() : null;
+    return stamp !== null;`);
+    const errors = lint(code, noBubbleInTernaryOrShortCircuitRule);
+    expect(errors).toEqual([]);
+  });
+
+  it('ternary comparing a PREVIOUS bubble result is allowed', () => {
+    const code = wrap(`
+    const listing = await new GoogleDriveBubble({ operation: 'list_files' }).action();
+    const label = listing.success ? 'found' : 'missing';
+    return label === 'found';`);
+    const errors = lint(code, noBubbleInTernaryOrShortCircuitRule);
+    expect(errors).toEqual([]);
   });
 });

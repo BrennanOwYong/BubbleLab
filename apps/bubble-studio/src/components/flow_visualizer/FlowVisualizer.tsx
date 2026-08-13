@@ -14,7 +14,9 @@ import '@xyflow/react/dist/style.css';
 import { RefreshCw } from 'lucide-react';
 import BubbleNode from './nodes/BubbleNode';
 import InputSchemaNode from './nodes/InputSchemaNode';
+import ResultNode from './nodes/ResultNode';
 import StepContainerNode from './nodes/StepContainerNode';
+import { getPrimaryOutput } from './resultNodeValue';
 import {
   calculateBubblePosition,
   calculateStepContainerHeight,
@@ -23,7 +25,7 @@ import {
   STEP_CONTAINER_LAYOUT,
 } from './stepContainerUtils';
 import { calculateSubbubblePositionWithContext } from './nodePositioning';
-import { FLOW_LAYOUT } from './flowLayoutConstants';
+import { FLOW_LAYOUT, transformationNodeHeight } from './flowLayoutConstants';
 import TransformationNode from './nodes/TransformationNode';
 import type { BubbleNodeData } from './nodes/BubbleNode';
 import type {
@@ -48,9 +50,50 @@ import {
   applyProfileDefaults,
   getUserProfileDefaults,
 } from '@/utils/fieldDescriptor';
+import { track } from '@/lib/telemetry';
 
 // Keep backward compatibility - use the shared schema type
 type ParsedBubble = ParsedBubbleWithInfo;
+
+// U-3: dragged node positions must survive a real reload/reopen, not just
+// an in-place recompute of the same mounted FlowVisualizer instance (a plain
+// useRef resets on remount). localStorage keyed per-flow is the lowest-risk
+// durable store here — a client-local UI preference, not synced data, so no
+// backend route/migration is warranted.
+const NODE_POSITIONS_STORAGE_PREFIX = 'bubblelab:node-positions:';
+
+function nodePositionsStorageKey(flowId: number): string {
+  return `${NODE_POSITIONS_STORAGE_PREFIX}${flowId}`;
+}
+
+function loadPersistedNodePositions(
+  flowId: number
+): Map<string, { x: number; y: number }> {
+  if (typeof window === 'undefined') return new Map();
+  try {
+    const raw = window.localStorage.getItem(nodePositionsStorageKey(flowId));
+    if (!raw) return new Map();
+    const parsed = JSON.parse(raw) as Record<string, { x: number; y: number }>;
+    return new Map(Object.entries(parsed));
+  } catch {
+    return new Map();
+  }
+}
+
+function savePersistedNodePositions(
+  flowId: number,
+  positions: Map<string, { x: number; y: number }>
+): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(
+      nodePositionsStorageKey(flowId),
+      JSON.stringify(Object.fromEntries(positions))
+    );
+  } catch {
+    // Swallow: quota exceeded / storage disabled must never break the canvas.
+  }
+}
 
 interface FlowVisualizerProps {
   flowId: number;
@@ -67,7 +110,11 @@ const nodeTypes = {
   serviceTriggerNode: ServiceTriggerNode,
   stepContainerNode: StepContainerNode,
   transformationNode: TransformationNode,
+  resultNode: ResultNode,
 };
+
+/** U2 terminal result node: one per flow, stable id for persisted positions. */
+const RESULT_NODE_ID = 'result-node';
 
 const proOptions = { hideAttribution: true };
 
@@ -157,6 +204,9 @@ function FlowVisualizerInner({
   const bubbleParameters = currentFlow?.bubbleParameters || {};
   const requiredCredentials = currentFlow?.requiredCredentials || {};
   const flowName = currentFlow?.name;
+  // U2: the flow's registered headline output (null for pre-U2 flows — no
+  // result node renders). Arrives via the same refetch that carries metadata.
+  const primaryOutput = getPrimaryOutput(currentFlow?.metadata);
   const inputsSchema = currentFlow?.inputSchema
     ? JSON.stringify(currentFlow.inputSchema)
     : undefined;
@@ -168,10 +218,33 @@ function FlowVisualizerInner({
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
 
-  // Store persisted positions for all nodes (both main and sub-bubbles)
+  // Store persisted positions for all nodes (both main and sub-bubbles).
+  // Seeded from localStorage synchronously (not in an effect) so the very
+  // first initialNodesAndEdges() call for this flow already sees dragged
+  // positions from a prior session (U-3: survives reload/reopen).
   const persistedPositions = useRef<Map<string, { x: number; y: number }>>(
     new Map()
   );
+  const positionsLoadedForFlowIdRef = useRef<number | null>(null);
+  const pendingPositionRestoreTelemetryRef = useRef(false);
+  if (positionsLoadedForFlowIdRef.current !== flowId) {
+    const loaded = loadPersistedNodePositions(flowId);
+    persistedPositions.current = loaded;
+    positionsLoadedForFlowIdRef.current = flowId;
+    pendingPositionRestoreTelemetryRef.current = loaded.size > 0;
+  }
+
+  // Fire the restore telemetry once per flow mount, after commit (not during
+  // the render-phase load above, to avoid a side effect mid-render).
+  useEffect(() => {
+    if (!pendingPositionRestoreTelemetryRef.current) return;
+    pendingPositionRestoreTelemetryRef.current = false;
+    track('canvas.node_position_persisted', {
+      flowId,
+      action: 'restored',
+      nodeCount: persistedPositions.current.size,
+    });
+  }, [flowId]);
 
   const eventType = currentFlow?.eventType;
   // Determine entry node ID based on event type
@@ -507,7 +580,7 @@ function FlowVisualizerInner({
         id: nodeId,
         type: 'bubbleNode',
         position,
-        draggable: false,
+        draggable: true,
         zIndex: FLOW_LAYOUT.Z_INDEX.SUBBUBBLE_BASE + level, // Sub-bubbles appear above other nodes, deeper levels on top
         data: {
           flowId: currentFlow?.id || flowId,
@@ -1018,7 +1091,7 @@ function FlowVisualizerInner({
             y: baseY,
           },
           origin: [0, 0.5] as [number, number],
-          draggable: false,
+          draggable: true,
           data: {
             flowId: currentFlow?.id || flowId,
             flowName: flowName,
@@ -1045,7 +1118,7 @@ function FlowVisualizerInner({
             y: baseY,
           },
           origin: [0, 0.5] as [number, number],
-          draggable: false,
+          draggable: true,
           data: {
             flowId: currentFlow?.id || flowId,
             flowName: flowName,
@@ -1068,7 +1141,7 @@ function FlowVisualizerInner({
             y: baseY,
           },
           origin: [0, 0.5] as [number, number],
-          draggable: false,
+          draggable: true,
           data: {
             flowId: currentFlow?.id || flowId,
             flowName: flowName,
@@ -1163,6 +1236,12 @@ function FlowVisualizerInner({
         markHandleUsed(targetNodeId, 'left'); // target
       }
 
+      // U2: last main bubble feeds the terminal result node
+      if (primaryOutput !== null && mainBubbles.length > 0) {
+        markHandleUsed(mainBubbles[mainBubbles.length - 1].nodeId, 'right');
+        markHandleUsed(RESULT_NODE_ID, 'left');
+      }
+
       // Create nodes for each bubble (sequential horizontal layout)
       bubbleEntries.forEach(([key, bubbleData], index) => {
         const bubble = bubbleData;
@@ -1189,7 +1268,7 @@ function FlowVisualizerInner({
           type: 'bubbleNode',
           position: persistedPosition || initialPosition,
           origin: [0, 0.5] as [number, number],
-          draggable: false,
+          draggable: true,
           data: {
             flowId: currentFlow?.id || flowId,
             bubble,
@@ -1314,6 +1393,45 @@ function FlowVisualizerInner({
         }
       }
 
+      // U2: terminal result node after the last main bubble (sequential
+      // layout branch — the step-graph branch appends its own below, so the
+      // node exists in BOTH layouts).
+      if (primaryOutput !== null && mainBubbles.length > 0) {
+        const lastBubbleId = mainBubbles[mainBubbles.length - 1].nodeId;
+        if (nodes.some((n) => n.id === lastBubbleId)) {
+          const persistedResultPos =
+            persistedPositions.current.get(RESULT_NODE_ID);
+          nodes.push({
+            id: RESULT_NODE_ID,
+            type: 'resultNode',
+            position: persistedResultPos || {
+              x: startX + mainBubbles.length * horizontalSpacing,
+              y: baseY,
+            },
+            origin: [0, 0.5] as [number, number],
+            draggable: true,
+            data: {
+              flowId: currentFlow?.id || flowId,
+              primaryOutput,
+            },
+          });
+          edges.push({
+            id: `${lastBubbleId}-to-${RESULT_NODE_ID}`,
+            source: lastBubbleId,
+            target: RESULT_NODE_ID,
+            sourceHandle: 'right',
+            targetHandle: 'left',
+            type: 'straight',
+            animated: true,
+            style: {
+              stroke: '#9ca3af',
+              strokeWidth: 2,
+              strokeDasharray: '5,5',
+            },
+          });
+        }
+      }
+
       return { initialNodes: nodes, initialEdges: edges };
     }
 
@@ -1323,8 +1441,9 @@ function FlowVisualizerInner({
      */
     function calculateStepHeight(step: StepData): number {
       if (step.isTransformation && step.transformationData) {
-        // Transformation nodes only show header (no code), so use fixed height
-        return FLOW_LAYOUT.TRANSFORMATION.FIXED_HEIGHT;
+        // Same function TransformationNode uses for its explicit DOM height,
+        // so the reservation always matches what renders (U3 invariant)
+        return transformationNodeHeight(Boolean(step.description));
       } else {
         // Step container height calculation (matching StepContainerNode.tsx)
         const stepHeaderHeight = calculateHeaderHeight(
@@ -1545,6 +1664,26 @@ function FlowVisualizerInner({
       markHandleUsed(stepEdge.targetStepId, 'left'); // target
     }
 
+    // U2: the terminal step (no outgoing step edge; right-most when several
+    // branches terminate) feeds the result node. Selected before step-node
+    // creation so the source handle renders.
+    const stepSourceIds = new Set(stepEdges.map((e) => e.sourceStepId));
+    const terminalStep =
+      primaryOutput !== null
+        ? steps
+            .filter((step) => !stepSourceIds.has(step.id))
+            .reduce<StepData | null>((best, step) => {
+              if (best === null) return step;
+              const bestX = stepPositions.get(best.id)?.x ?? 0;
+              const stepX = stepPositions.get(step.id)?.x ?? 0;
+              return stepX > bestX ? step : best;
+            }, null)
+        : null;
+    if (terminalStep !== null) {
+      markHandleUsed(terminalStep.id, 'right');
+      markHandleUsed(RESULT_NODE_ID, 'left');
+    }
+
     // Within-step bubble connections (vertical flow inside step containers)
     for (const step of steps) {
       if (step.isTransformation) continue; // Skip transformation steps
@@ -1638,7 +1777,7 @@ function FlowVisualizerInner({
           id: stepNodeId,
           type: 'transformationNode',
           position: stepPosition,
-          draggable: false,
+          draggable: true,
           data: {
             flowId: currentFlow?.id || flowId,
             transformationId: stepNodeId,
@@ -1664,7 +1803,7 @@ function FlowVisualizerInner({
           id: stepNodeId,
           type: 'stepContainerNode',
           position: stepPosition,
-          draggable: false,
+          draggable: true,
           data: {
             flowId: currentFlow?.id || flowId,
             stepId: stepNodeId,
@@ -1746,7 +1885,7 @@ function FlowVisualizerInner({
           type: 'bubbleNode',
           position: initialPosition,
           origin: [0, 0] as [number, number], // Position by top-left for consistent spacing
-          draggable: false,
+          draggable: true,
           parentId: step.id, // Set parent relationship to the step
           data: {
             flowId: currentFlow?.id || flowId,
@@ -1875,7 +2014,7 @@ function FlowVisualizerInner({
               id: stepNodeId,
               type: 'stepContainerNode',
               position: stepPosition,
-              draggable: false,
+              draggable: true,
               data: {
                 flowId: currentFlow?.id || flowId,
                 stepId: stepNodeId,
@@ -2010,11 +2149,16 @@ function FlowVisualizerInner({
       }
 
       // Conditional branches carry the WHY as a plain-language label
-      // ("if from math department", "otherwise"); sequential edges stay bare
-      const edgeLabel = stepEdge.label
+      // ("if from math department"). A bare "otherwise" fall-through (a guard
+      // clause's implicit else, e.g. `if (!x) return`) and the generic
+      // "condition" placeholder carry no information on an otherwise-linear
+      // flow, so suppress them and keep only informative labels.
+      const humanizedLabel = stepEdge.label
         ? humanizeConditionLabel(stepEdge.label)
-        : isConditional
-          ? 'condition'
+        : undefined;
+      const edgeLabel =
+        humanizedLabel && humanizedLabel !== 'otherwise'
+          ? humanizedLabel
           : undefined;
 
       const edge: Edge = {
@@ -2061,6 +2205,50 @@ function FlowVisualizerInner({
       runningBubbles
     );
     edges.push(...internalEdges);
+
+    // U2: terminal result node after the terminal step (step-graph layout
+    // branch — the sequential branch appended its own above).
+    if (primaryOutput !== null && terminalStep !== null) {
+      const persistedResultPos = persistedPositions.current.get(RESULT_NODE_ID);
+      const terminalPos =
+        stepPositions.get(terminalStep.id) ||
+        FLOW_LAYOUT.HIERARCHICAL.DEFAULT_POSITION;
+      const terminalHeight = calculateStepHeight(terminalStep);
+      nodes.push({
+        id: RESULT_NODE_ID,
+        type: 'resultNode',
+        // Node anchors at its vertical center (origin [0, 0.5]); align it with
+        // the terminal step's vertical center, one column to the right.
+        position: persistedResultPos || {
+          x:
+            terminalPos.x +
+            STEP_CONTAINER_LAYOUT.WIDTH +
+            FLOW_LAYOUT.HIERARCHICAL.COLUMN_SPACING,
+          y: terminalPos.y + terminalHeight / 2,
+        },
+        origin: [0, 0.5] as [number, number],
+        draggable: true,
+        data: {
+          flowId: currentFlow?.id || flowId,
+          primaryOutput,
+        },
+      });
+      edges.push({
+        id: `${terminalStep.id}-to-${RESULT_NODE_ID}`,
+        source: terminalStep.id,
+        target: RESULT_NODE_ID,
+        sourceHandle: 'right',
+        targetHandle: 'left',
+        type: 'simplebezier',
+        animated: true,
+        style: {
+          stroke: '#6b7280',
+          strokeWidth: 1.5,
+          strokeDasharray: '8,4',
+          strokeOpacity: 0.4,
+        },
+      });
+    }
 
     return { initialNodes: nodes, initialEdges: edges };
   };
@@ -2448,15 +2636,33 @@ function FlowVisualizerInner({
   // }, [flowId, bubbleParameters, executionState.isRunning, executionState.isValidating, executionState.highlightedBubble, currentFlow.data, flowNodes]);
 
   // Handle node changes (position updates, etc.)
-  const onNodesChange = useCallback((changes: NodeChange[]) => {
-    // Persist positions when nodes are dragged or moved
-    changes.forEach((change) => {
-      if (change.type === 'position' && change.position && change.id) {
-        persistedPositions.current.set(change.id, change.position);
+  const onNodesChange = useCallback(
+    (changes: NodeChange[]) => {
+      // Persist positions when nodes are dragged or moved
+      let dragEnded = false;
+      changes.forEach((change) => {
+        if (change.type === 'position' && change.position && change.id) {
+          persistedPositions.current.set(change.id, change.position);
+          // dragging === false marks the final position of a drag gesture;
+          // writing only there (not on every intermediate move) keeps
+          // localStorage writes from flooding during the drag.
+          if (change.dragging === false) {
+            dragEnded = true;
+          }
+        }
+      });
+      if (dragEnded) {
+        savePersistedNodePositions(flowId, persistedPositions.current);
+        track('canvas.node_position_persisted', {
+          flowId,
+          action: 'persisted',
+          nodeCount: persistedPositions.current.size,
+        });
       }
-    });
-    setNodes((nds) => applyNodeChanges(changes, nds));
-  }, []);
+      setNodes((nds) => applyNodeChanges(changes, nds));
+    },
+    [flowId]
+  );
 
   // Handle edge changes
   const onEdgesChange = useCallback(
@@ -2630,7 +2836,7 @@ function FlowVisualizerInner({
             y: 0,
             zoom: FLOW_LAYOUT.VIEWPORT.INITIAL_ZOOM,
           }}
-          nodesDraggable={false}
+          nodesDraggable={true}
           nodesConnectable={false}
           elementsSelectable={true}
           panOnDrag={true}

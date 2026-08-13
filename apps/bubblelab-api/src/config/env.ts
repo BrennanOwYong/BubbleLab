@@ -77,6 +77,8 @@ export const env = {
   SLACK_BOT_TOKEN: process.env.SLACK_BOT_TOKEN,
   GOOGLE_OAUTH_CLIENT_ID: process.env.GOOGLE_OAUTH_CLIENT_ID,
   GOOGLE_OAUTH_CLIENT_SECRET: process.env.GOOGLE_OAUTH_CLIENT_SECRET,
+  /** OAuth CSRF state TTL in ms (S7); default 10 minutes, override for tests. */
+  OAUTH_STATE_TTL_MS: process.env.OAUTH_STATE_TTL_MS,
   FUB_OAUTH_CLIENT_ID: process.env.FUB_OAUTH_CLIENT_ID,
   FUB_OAUTH_CLIENT_SECRET: process.env.FUB_OAUTH_CLIENT_SECRET,
   NOTION_OAUTH_CLIENT_ID: process.env.NOTION_OAUTH_CLIENT_ID,

@@ -257,6 +257,17 @@ class ApiClient {
       signal: options?.signal,
     });
   }
+
+  // Streaming GET (e.g. /subscribe: rejoin an in-flight or finished thread)
+  async getStream(
+    endpoint: string,
+    options?: { signal?: AbortSignal }
+  ): Promise<Response> {
+    return this.makeStreamingRequest(endpoint, {
+      method: 'GET',
+      signal: options?.signal,
+    });
+  }
 }
 
 // Create API client instance

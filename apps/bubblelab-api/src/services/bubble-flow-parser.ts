@@ -1,6 +1,7 @@
 import * as ts from 'typescript';
 import { getBubbleFactory } from './bubble-factory-instance.js';
 import { BUBBLE_CREDENTIAL_OPTIONS } from '@bubblelab/shared-schemas';
+import { resolveNameArrayFromSource } from '@bubblelab/bubble-runtime';
 import {
   CredentialType,
   BubbleParameter,
@@ -656,6 +657,52 @@ export async function getBubbleParameterSchema(
 }
 
 /**
+ * BUBBLE_CREDENTIAL_OPTIONS['ai-agent'] lists every model-provider credential
+ * the bubble class could ever use (it's a "pick one" menu for the SDK
+ * reference), not what a specific bubble instance actually configured.
+ * These are the entries from that list resolveAiAgentModelCredential can
+ * narrow down to the one the bubble's own `model` param names; anything else
+ * in the menu (e.g. FIRECRAWL_API_KEY, a tool-adjacent credential, not a
+ * model provider) is left untouched, unioned as before.
+ */
+const AI_AGENT_MODEL_PROVIDER_CREDENTIALS: ReadonlySet<CredentialType> =
+  new Set([
+    CredentialType.OPENAI_CRED,
+    CredentialType.GOOGLE_GEMINI_CRED,
+    CredentialType.ANTHROPIC_CRED,
+    CredentialType.OPENROUTER_CRED,
+    CredentialType.FIREWORKS_CRED,
+  ]);
+
+const AI_AGENT_MODEL_PROVIDER_PREFIX_TO_CREDENTIAL: Readonly<
+  Record<string, CredentialType>
+> = {
+  openai: CredentialType.OPENAI_CRED,
+  google: CredentialType.GOOGLE_GEMINI_CRED,
+  anthropic: CredentialType.ANTHROPIC_CRED,
+  openrouter: CredentialType.OPENROUTER_CRED,
+  fireworks: CredentialType.FIREWORKS_CRED,
+};
+
+/**
+ * Reads an ai-agent bubble's own `model` parameter (source text like
+ * `{ model: 'openai/gpt-5-mini', maxTokens: 10000 }`) and resolves the ONE
+ * provider credential it actually configures. Returns null whenever the
+ * value can't be confidently read as a literal (a variable reference, a
+ * computed expression, an unrecognized provider prefix) — callers must fall
+ * back to the full static menu in that case, never silently drop options.
+ */
+function resolveAiAgentModelCredential(
+  bubble: ParsedBubble
+): CredentialType | null {
+  const modelParam = bubble.parameters.find((p) => p.name === 'model');
+  if (!modelParam || typeof modelParam.value !== 'string') return null;
+  const match = modelParam.value.match(/model\s*:\s*['"]([a-zA-Z0-9_-]+)\//);
+  if (!match) return null;
+  return AI_AGENT_MODEL_PROVIDER_PREFIX_TO_CREDENTIAL[match[1]] ?? null;
+}
+
+/**
  * Extracts required credential types from parsed bubble parameters.
  * Per-invocation clone entries (invocationCallSiteKey set) are skipped: the
  * original entry owns the credential slot, so the result carries exactly one
@@ -668,7 +715,8 @@ export function extractRequiredCredentials(
   bubbleParameters: Record<
     string,
     ParsedBubble & Partial<Pick<ParsedBubbleWithInfo, 'invocationCallSiteKey'>>
-  >
+  >,
+  fullScriptSource?: string
 ): Record<string, CredentialType[]> {
   const requiredCredentials: Record<string, CredentialType[]> = {};
 
@@ -686,14 +734,28 @@ export function extractRequiredCredentials(
         bubble.bubbleName as keyof typeof BUBBLE_CREDENTIAL_OPTIONS
       ];
     if (credentialOptions && Array.isArray(credentialOptions)) {
+      // ai-agent's menu lists every provider the bubble CLASS could use;
+      // narrow it to the one provider THIS bubble's own `model` param
+      // configures. Unresolvable falls back to the full menu untouched.
+      const modelCredential =
+        bubble.bubbleName === 'ai-agent'
+          ? resolveAiAgentModelCredential(bubble)
+          : null;
       for (const credType of credentialOptions) {
+        if (
+          modelCredential !== null &&
+          AI_AGENT_MODEL_PROVIDER_CREDENTIALS.has(credType) &&
+          credType !== modelCredential
+        ) {
+          continue;
+        }
         allCredentialTypes.add(credType);
       }
     }
 
     // For AI agent bubbles, also collect tool-level credential requirements
     if (bubble.bubbleName === 'ai-agent') {
-      const toolCredentials = extractToolCredentials(bubble);
+      const toolCredentials = extractToolCredentials(bubble, fullScriptSource);
       for (const credType of toolCredentials) {
         allCredentialTypes.add(credType);
       }
@@ -720,7 +782,10 @@ export function extractRequiredCredentials(
  * @param bubble - The parsed bubble to extract tool requirements from
  * @returns Array of credential types required by the bubble's tools
  */
-export function extractToolCredentials(bubble: ParsedBubble): CredentialType[] {
+export function extractToolCredentials(
+  bubble: ParsedBubble,
+  fullScriptSource?: string
+): CredentialType[] {
   if (bubble.bubbleName !== 'ai-agent') {
     return [];
   }
@@ -733,39 +798,23 @@ export function extractToolCredentials(bubble: ParsedBubble): CredentialType[] {
     return [];
   }
 
-  try {
-    // Parse the tools array from the parameter value
-    // The value can be either JSON or JavaScript array literal
-    let toolsArray: Array<{ name: string; [key: string]: unknown }>;
+  // AST-walk resolution (S1a), shared with @bubblelab/bubble-runtime's
+  // BubbleInjector: resolves literal arrays, const array bindings, spreads,
+  // ternary branches and const-string name indirection against the flow's
+  // full source (when available). Without fullScriptSource (back-compat for
+  // callers that don't pass it) it still resolves anything self-contained in
+  // the parameter text itself (a literal array/ternary/spread of literals);
+  // an identifier pointing outside the parameter text is reported as
+  // unresolved rather than silently dropped.
+  const resolution = resolveNameArrayFromSource(
+    toolsParam.value,
+    fullScriptSource ?? toolsParam.value,
+    'name'
+  );
 
-    // First try to safely evaluate as JavaScript (for cases like [{"name": "web-search-tool"}])
-    try {
-      // Use Function constructor to safely evaluate the expression in isolation
-      const safeEval = new Function('return ' + toolsParam.value);
-      const evaluated = safeEval();
-
-      if (Array.isArray(evaluated)) {
-        toolsArray = evaluated;
-      } else {
-        // Single object, wrap in array
-        toolsArray = [evaluated];
-      }
-    } catch {
-      // Fallback to JSON.parse for cases where it's valid JSON
-      if (toolsParam.value.startsWith('[')) {
-        toolsArray = JSON.parse(toolsParam.value);
-      } else {
-        toolsArray = [JSON.parse(toolsParam.value)];
-      }
-    }
-
-    // For each tool, get its credential requirements
-    for (const tool of toolsArray) {
-      if (!tool.name || typeof tool.name !== 'string') {
-        continue;
-      }
-
-      const toolBubbleName = tool.name as BubbleName;
+  if (!resolution.unresolved) {
+    for (const toolName of resolution.names) {
+      const toolBubbleName = toolName as BubbleName;
       const toolCredentialOptions = BUBBLE_CREDENTIAL_OPTIONS[toolBubbleName];
 
       if (toolCredentialOptions && Array.isArray(toolCredentialOptions)) {
@@ -774,15 +823,65 @@ export function extractToolCredentials(bubble: ParsedBubble): CredentialType[] {
         }
       }
     }
-  } catch (error) {
-    // If we can't parse the tools parameter, silently ignore
-    // This handles cases where the tools parameter contains complex TypeScript expressions
-    console.debug(
-      `Failed to parse tools parameter for credential extraction: ${error}`
-    );
   }
 
   return Array.from(toolCredentials);
+}
+
+/**
+ * An agent's `tools` array that could not be resolved statically (S1a) —
+ * e.g. built by a function call at runtime. Reported explicitly (BACKLOG S1a
+ * accept clause: "the dynamic case is reported as unresolved not dropped")
+ * instead of silently contributing zero credential requirements.
+ */
+export interface UnresolvedToolDetection {
+  bubbleName: string;
+  bubbleType: string;
+  param: 'tools';
+  /** Machine-readable cause: 'dynamic-expression' | 'unparseable'. */
+  reason: string;
+  /** Truncated source text of the expression that could not be resolved. */
+  snippet: string;
+}
+
+/**
+ * Scans every ai-agent bubble's `tools` parameter and reports the ones the
+ * AST walk cannot resolve statically against the flow's full source.
+ * @param bubbleParameters - Parsed bubble parameters
+ * @param fullScriptSource - the flow's full source, used to resolve const
+ *   bindings referenced by a tools parameter value
+ */
+export function extractUnresolvedToolDetections(
+  bubbleParameters: Record<string, ParsedBubble>,
+  fullScriptSource: string
+): UnresolvedToolDetection[] {
+  const detections: UnresolvedToolDetection[] = [];
+
+  for (const [bubbleName, bubble] of Object.entries(bubbleParameters)) {
+    if (bubble.bubbleName !== 'ai-agent') continue;
+
+    const toolsParam = bubble.parameters.find(
+      (param) => param.name === 'tools'
+    );
+    if (!toolsParam || typeof toolsParam.value !== 'string') continue;
+
+    const resolution = resolveNameArrayFromSource(
+      toolsParam.value,
+      fullScriptSource,
+      'name'
+    );
+    if (resolution.unresolved) {
+      detections.push({
+        bubbleName,
+        bubbleType: bubble.bubbleName,
+        param: 'tools',
+        reason: resolution.reason,
+        snippet: resolution.snippet,
+      });
+    }
+  }
+
+  return detections;
 }
 
 /**

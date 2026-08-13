@@ -26,13 +26,13 @@ import { and, desc, eq, inArray } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { derivedCredentials, userCredentials } from '../db/schema.js';
 import {
-  SYSTEM_CREDENTIALS,
   OPTIONAL_CREDENTIALS,
   BubbleParameterType,
   type CredentialType,
   type ParsedBubbleWithInfo,
 } from '@bubblelab/shared-schemas';
 import { extractRequiredCredentials } from './bubble-flow-parser.js';
+import { platformProvidedCredentialTypes } from './platform-credentials.js';
 
 export interface AutoBoundSlot {
   /** bubbleParameters record key of the bound bubble. */
@@ -54,6 +54,13 @@ export interface AutoBindResult {
    * for flows written before twin credentials were kept in lockstep.
    */
   healed: boolean;
+  /**
+   * Pre-flight check (S1): required non-platform, non-optional slots that
+   * remain unbound AFTER auto-bind — the user has no matching credential
+   * connected. Callers surface these before running (the run would fail at
+   * the bubble with a deeper error otherwise).
+   */
+  unbound: Array<{ bubbleKey: string; credentialType: CredentialType }>;
 }
 
 /** The credential types already bound (numeric id or id array) on a bubble. */
@@ -221,14 +228,17 @@ export async function autoBindMissingCredentials(
     if (!bubble) continue;
     const alreadyBound = boundTypesForBubble(bubble);
     for (const credentialType of types) {
-      if (SYSTEM_CREDENTIALS.has(credentialType)) continue;
+      // Effective classification (S1): skip only credential types the
+      // platform ACTUALLY provides via env; declared-SYSTEM types with no env
+      // backing auto-bind from user credentials like any other type.
+      if (platformProvidedCredentialTypes().has(credentialType)) continue;
       if (OPTIONAL_CREDENTIALS.has(credentialType)) continue;
       if (alreadyBound.has(credentialType)) continue;
       missingSlots.push({ bubbleKey, bubble, credentialType });
     }
   }
   if (missingSlots.length === 0) {
-    return { bubbleParameters, bound, healed };
+    return { bubbleParameters, bound, healed, unbound: [] };
   }
 
   const missingTypes = [
@@ -318,5 +328,17 @@ export async function autoBindMissingCredentials(
     unionTwinCredentials(bubbleParameters);
   }
 
-  return { bubbleParameters, bound, healed };
+  const boundKeys = new Set(
+    bound.map((slot) => `${slot.bubbleKey}:${slot.credentialType}`)
+  );
+  const unbound = missingSlots
+    .filter(
+      (slot) => !boundKeys.has(`${slot.bubbleKey}:${slot.credentialType}`)
+    )
+    .map((slot) => ({
+      bubbleKey: slot.bubbleKey,
+      credentialType: slot.credentialType,
+    }));
+
+  return { bubbleParameters, bound, healed, unbound };
 }

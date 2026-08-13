@@ -32,6 +32,7 @@ import {
 import type { ScopeCheckRequirement } from '@bubblelab/shared-schemas';
 import { useBubbleFlow } from './useBubbleFlow';
 import { useCredentials } from './useCredentials';
+import { usePlatformCredentialTypes } from './usePlatformCredentialTypes';
 import { getExecutionStore, useExecutionStore } from '../stores/executionStore';
 import {
   computeSuiteBindingProposals,
@@ -86,6 +87,7 @@ export function requirementsForType(
 export function useSuiteBindings(flowId: number | null): void {
   const { data: flow } = useBubbleFlow(flowId);
   const { data: credentials = [] } = useCredentials(API_BASE_URL);
+  const platformCredentialTypes = usePlatformCredentialTypes();
   const pendingCredentials = useExecutionStore(
     flowId,
     (state) => state.pendingCredentials
@@ -105,6 +107,7 @@ export function useSuiteBindings(flowId: number | null): void {
       requiredCredentials: flow.requiredCredentials ?? {},
       pendingCredentials: store.pendingCredentials,
       credentials,
+      platformCredentialTypes,
     });
     if (proposals.length === 0) return;
 
@@ -254,7 +257,14 @@ export function useSuiteBindings(flowId: number | null): void {
           );
         });
     }
-  }, [flowId, flow, credentials, pendingCredentials, recheckNonce]);
+  }, [
+    flowId,
+    flow,
+    credentials,
+    pendingCredentials,
+    recheckNonce,
+    platformCredentialTypes,
+  ]);
 }
 
 /**

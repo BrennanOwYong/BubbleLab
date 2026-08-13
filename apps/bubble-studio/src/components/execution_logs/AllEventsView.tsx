@@ -290,7 +290,8 @@ export default function AllEventsView({
     // replies with the single action the user must take.
     const prompt = composeFixRequestMessage(
       executionState.events || [],
-      issueDetails
+      issueDetails,
+      bubbleParameters
     );
 
     // Trigger the explain/fix turn on the flow's harness session
@@ -754,7 +755,10 @@ export default function AllEventsView({
             // (only bubble_execution_complete success:false + a warn), so the
             // Errors section and the Explain-with-Gluu banner key on this
             // unified list, never on error/fatal events alone.
-            const errorSignals = collectRunErrorSignals(events).sort(
+            const errorSignals = collectRunErrorSignals(
+              events,
+              bubbleParameters
+            ).sort(
               (a, b) =>
                 new Date(a.timestamp).getTime() -
                 new Date(b.timestamp).getTime()
@@ -1367,7 +1371,8 @@ export default function AllEventsView({
 
               // Check if this bubble produced any error signal (error/fatal
               // events, a failed result, or an HTTP >= 400 response)
-              const hasErrorInBubble = collectRunErrorSignals(evs).length > 0;
+              const hasErrorInBubble =
+                collectRunErrorSignals(evs, bubbleParameters).length > 0;
 
               return (
                 <div className="flex flex-col h-full">

@@ -1,7 +1,5 @@
-import {
-  SYSTEM_CREDENTIALS,
-  OPTIONAL_CREDENTIALS,
-} from '@bubblelab/shared-schemas';
+import { OPTIONAL_CREDENTIALS } from '@bubblelab/shared-schemas';
+import { isPlatformProvided } from '../lib/platformCredentials';
 import type { CredentialType } from '@bubblelab/shared-schemas';
 import type { BubbleFlowDetailsResponse } from '@bubblelab/shared-schemas';
 import { getExecutionStore } from '../stores/executionStore';
@@ -101,7 +99,10 @@ export function validateCredentials(
     const credTypes = required[variableIdKey] || [];
 
     for (const credType of credTypes) {
-      if (SYSTEM_CREDENTIALS.has(credType as CredentialType)) continue;
+      // Effective classification (S1): only credentials the platform's env
+      // actually backs skip the run gate; other declared-SYSTEM types block
+      // Execute until a matching account is connected (pre-flight check).
+      if (isPlatformProvided(credType)) continue;
       if (OPTIONAL_CREDENTIALS.has(credType as CredentialType)) continue;
 
       // pendingCredentials is keyed by variableId (as string)

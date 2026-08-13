@@ -67,6 +67,22 @@ export function clearTelemetryBuffer(): void {
   buffer.length = 0;
 }
 
+/**
+ * Server-side ingest (S3, Pillar 2): API routes record their own events into
+ * the same queryable ring buffer the studio's client events land in, so new
+ * server behavior is assertable via GET /telemetry without a browser.
+ */
+export function recordServerTelemetryEvent(
+  event: Record<string, unknown> & { event: string }
+): void {
+  const parsed = clientEventSchema.safeParse({
+    ts: new Date().toISOString(),
+    ...event,
+  });
+  if (!parsed.success) return; // best-effort sink, never throws into a route
+  pushEvent('server', parsed.data);
+}
+
 const app = new Hono();
 
 app.post('/', async (c) => {
