@@ -2,10 +2,15 @@ FROM node:20-slim AS builder
 RUN corepack enable
 WORKDIR /workspace
 
-# Copy workspace files
+# Copy workspace files. pnpm-lock.yaml's importers list is: .,
+# apps/bubble-studio, apps/bubblelab-api, docs, packages/*, tools/* —
+# apps/ and docs/ copied as a precaution even though this image only
+# builds bubble-studio; a direct test showed pnpm tolerates a missing
+# workspace member's directory fine, so this isn't confirmed necessary.
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY packages ./packages/
-COPY apps/bubble-studio ./apps/bubble-studio/
+COPY apps ./apps/
+COPY docs ./docs/
 COPY tools ./tools/
 COPY .npmrc ./.
 # package.json's patchedDependencies needs this file present at install

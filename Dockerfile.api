@@ -10,6 +10,11 @@ COPY .npmrc ./.
 COPY packages ./packages/
 COPY apps ./apps/
 COPY tools ./tools/
+# pnpm-workspace.yaml declares "docs" as a real workspace member (it has
+# its own package.json) — copied as a precaution, though a direct test
+# (frozen-lockfile install with a workspace member's dir absent) showed
+# pnpm tolerates it fine, so this isn't a confirmed requirement.
+COPY docs ./docs/
 # package.json's patchedDependencies points at patches/@sendsafely__...patch
 # — pnpm reads this file during install to apply the patch; without it
 # copied into the build context, install crashes trying to read a file
