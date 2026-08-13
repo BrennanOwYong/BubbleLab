@@ -1,0 +1,122 @@
+# Render Blueprint for the BubbleLab MVP.
+# Docs consulted (2026-08-13): https://render.com/docs/blueprint-spec,
+# https://render.com/docs/private-services, https://render.com/docs/private-network
+#
+# Deploy: Render Dashboard -> New -> Blueprint -> connect this repo. Render
+# reads this file, provisions everything below, and prompts once for every
+# `sync: false` env var (never stored in the repo).
+#
+# Architecture: bubble-studio (static, always-on CDN, no cold start) calls
+# bubblelab-api (public web service) over the internet; bubblelab-api calls
+# builder-agent (private service, not internet-reachable) over Render's
+# private network. Postgres is shared by both.
+
+databases:
+  - name: bubblelab-db
+    plan: free
+    databaseName: bubblelab
+    user: bubblelab
+
+services:
+  # --- Backend API (public) ---------------------------------------------
+  - name: bubblelab-api
+    type: web
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile.api
+    dockerContext: .
+    healthCheckPath: /
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: bubblelab-db
+          property: connectionString
+      - key: BUBBLE_ENV
+        value: production
+      - key: DISABLE_AUTH
+        value: 'true'
+      # Render web services are always served over TLS at a deterministic
+      # https://<name>.onrender.com address (unlike private services, which
+      # get a random-suffixed internal hostname) — safe to hardcode since
+      # "bubblelab-api" is this same file's fixed service name.
+      - key: NODEX_API_URL
+        value: https://bubblelab-api.onrender.com
+      # UNVERIFIED at write time: fromService/property:host is confirmed to
+      # return the private service's bare hostname, but whether a scheme is
+      # included is not confirmed against a live deploy. If bubblelab-api
+      # can't reach builder-agent after first deploy, open builder-agent's
+      # Connect tab in the Render Dashboard, copy its exact internal address
+      # (e.g. http://builder-agent-xxxx:10000), and paste it here as a
+      # literal `value:` instead of fromService.
+      - key: BUILDER_AGENT_URL
+        fromService:
+          name: builder-agent
+          type: pserv
+          property: host
+      - key: CREDENTIAL_ENCRYPTION_KEY
+        generateValue: true
+      # The Telegram bot's GET /wake?secret=... trigger. Auto-generated so
+      # only whoever reads it from the Render Dashboard can call /wake.
+      - key: WAKE_SECRET
+        generateValue: true
+      # The fixed link /wake hands back to the bot for the human to open.
+      # Static sites use the same https://<name>.onrender.com pattern as web
+      # services (custom domain: replace this literal after adding one).
+      - key: STUDIO_URL
+        value: https://bubble-studio.onrender.com
+      # Secrets a human must paste into the Render Dashboard once — never
+      # stored in this repo (Render's `sync: false` prompt, per
+      # https://render.com/docs/blueprint-spec).
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_ID
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: FIRE_CRAWL_API_KEY
+        sync: false
+
+  # --- Builder-agent sidecar (private, no public URL, no cold start seen
+  #     by testers — bubblelab-api wakes it via the private network) ------
+  - name: builder-agent
+    type: pserv
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile.builder-agent
+    dockerContext: .
+    envVars:
+      - key: BUILDER_PORT
+        value: '10000'
+      - key: DATABASE_URL
+        fromDatabase:
+          name: bubblelab-db
+          property: connectionString
+      - key: GLUU_API_URL
+        value: https://bubblelab-api.onrender.com
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: BUILDER_MODEL
+        value: z-ai/glm-5.2
+      - key: BUILDER_SERVE_MODE
+        value: managed
+
+  # --- Studio frontend (static, always-on, no sleep/cold-start) ----------
+  - name: bubble-studio
+    type: web
+    runtime: static
+    rootDir: .
+    buildCommand: >-
+      corepack enable && pnpm install --frozen-lockfile &&
+      cd packages/bubble-shared-schemas && pnpm run build &&
+      cd ../bubble-core && pnpm run build &&
+      cd ../../apps/bubble-studio && pnpm run build
+    staticPublishPath: ./apps/bubble-studio/dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://bubblelab-api.onrender.com
+      - key: VITE_DISABLE_AUTH
+        value: 'true'

@@ -1,0 +1,33 @@
+# Stage 1: build the monorepo packages the sidecar depends on (bubble-core),
+# using Node + pnpm — same pattern as Dockerfile.api.
+FROM node:24-slim AS builder
+
+RUN corepack enable
+WORKDIR /workspace
+
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+COPY .npmrc ./.
+COPY packages ./packages/
+COPY services ./services/
+COPY tools ./tools/
+
+RUN pnpm install --frozen-lockfile
+
+RUN cd packages/bubble-shared-schemas && pnpm run build
+RUN cd packages/bubble-core && pnpm run build
+RUN cd packages/bubble-runtime && pnpm run build
+
+# Stage 2: runtime image. Node >=24 required — the sidecar runs its .ts
+# sources directly via Node's native TypeScript support (no build/dist step,
+# same as local dev via dev-stack.sh: `node src/index.ts`).
+FROM node:24-slim AS runtime
+
+RUN corepack enable
+WORKDIR /app
+
+COPY --from=builder /workspace ./
+
+WORKDIR /app/services/builder-agent
+
+EXPOSE 3010
+CMD ["node", "src/index.ts"]

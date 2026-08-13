@@ -48,7 +48,10 @@ import buildRuntimeRoutes from './routes/build-runtime.js';
 import pageRoutes from './routes/pages.js';
 import telemetryRoutes from './routes/telemetry.js';
 import { getBubbleFactory } from './services/bubble-factory-instance.js';
-import { initBuilderRuntime } from './services/builder-runtime.js';
+import {
+  initBuilderRuntime,
+  getBuilderTarget,
+} from './services/builder-runtime.js';
 
 const app = new OpenAPIHono({
   defaultHook: validationErrorHook,
@@ -97,6 +100,38 @@ app.get('/', (c) => {
     timestamp: new Date().toISOString(),
   };
   return c.json(response);
+});
+
+// Wake endpoint for the Telegram bot's "give me a live MVP link" trigger.
+// This request landing here already wakes bubblelab-api itself (a free-tier
+// Render web service wakes on the first inbound request); this handler also
+// pings builder-agent's own /health over Render's private network to wake
+// that service too, then returns the studio URL the bot sends the user —
+// the same fixed URL every time, since Render's free tier sleeps/wakes a
+// service without changing its address. Shared-secret gated so this isn't a
+// public "keep every service awake forever" lever for anyone who finds it.
+app.get('/wake', async (c) => {
+  const secret = process.env.WAKE_SECRET;
+  if (secret && c.req.query('secret') !== secret) {
+    return c.json({ error: 'unauthorized' }, 401);
+  }
+  const builderTarget = getBuilderTarget();
+  let builderAwake = false;
+  if (builderTarget !== null) {
+    try {
+      const res = await fetch(`${builderTarget}/health`, {
+        signal: AbortSignal.timeout(60_000),
+      });
+      builderAwake = res.ok;
+    } catch {
+      builderAwake = false;
+    }
+  }
+  return c.json({
+    apiAwake: true,
+    builderAwake,
+    studioUrl: process.env.STUDIO_URL ?? null,
+  });
 });
 
 // Mount route modules
