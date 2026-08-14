@@ -35,10 +35,19 @@ ENV HUSKY=0
 ENV CI=true
 RUN pnpm install --frozen-lockfile
 
-# Build bubble-core (but not bubblelab-api yet)
+# Build bubble-core (but not bubblelab-api yet). bubble-appgen was missing
+# here originally — apps/bubblelab-api/src/services/tool-generator.ts
+# imports it directly, and without a build it has no dist/ (confirmed:
+# packages/bubble-appgen/package.json's main/exports both point at
+# ./dist/...), so bubblelab-api crashed at runtime with "Cannot find
+# module '@bubblelab/bubble-appgen'" — a real Render deploy failure this
+# fixes, not a guess. Order matters: bubble-appgen depends on
+# @bubblelab/shared-schemas and @bubblelab/bubble-core (workspace:* in its
+# own package.json), so it must build after both, same as bubble-runtime.
 RUN cd packages/bubble-shared-schemas && pnpm run build
 RUN cd packages/bubble-core && pnpm run build
 RUN cd packages/bubble-runtime && pnpm run build
+RUN cd packages/bubble-appgen && pnpm run build
 
 # Stage 2: Build bubblelab-api with Bun
 FROM oven/bun:1.1.38-debian AS runtime
