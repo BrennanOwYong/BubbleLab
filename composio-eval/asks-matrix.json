@@ -1,0 +1,162 @@
+{
+  "generated": "2026-08-01",
+  "source_doc": "COMPOSIO-VS-BUBBLELAB-ADVISORY.md",
+  "note": "Machine-readable copy of section 2. verdict values: sound | sound-with-correction | reframe.",
+  "legend": {
+    "verdict": {
+      "sound": "Holds up as stated as a developer requirement.",
+      "sound-with-correction": "Holds up, but one premise in the ask is wrong and changes what you get.",
+      "reframe": "The underlying goal is right, the framing leads somewhere unhelpful."
+    },
+    "merge_strength": [
+      "none",
+      "partial",
+      "strong",
+      "strongest",
+      "composio-wins"
+    ]
+  },
+  "asks": [
+    {
+      "id": "A1",
+      "ask": "Weigh the Composio layer against Bubble",
+      "verdict": "reframe",
+      "why": "The comparison assumes overlapping scope. 1,069 toolkits carry zero databases, warehouses or object stores, so the real question is where the seam sits.",
+      "composio": "SaaS breadth and a credential vault. 40 of 53 BubbleLab third-party integrations already exist, with 1x to 26x more operations each.",
+      "bubblelab": "The execution substrate: parser, type system, credential model, canvas, studio. Composio has no equivalent.",
+      "merge": "Composio underneath as credential and transport, BubbleLab on top as the product surface.",
+      "merge_strength": "strong",
+      "section": "1, 3.8"
+    },
+    {
+      "id": "A2",
+      "ask": "Get Bubble's structure with Composio's toolset and managed auth",
+      "verdict": "sound-with-correction",
+      "why": "Managed auth covers 122 of 1,069 toolkits. 915 need the user's own OAuth app or API key. 45 are OAuth-only with no managed app and no key fallback, including twitter, xero, docusign, snowflake.",
+      "composio": "OAuth refresh, token storage, revocation, per-user connection scoping, restrict_to_following_tools for server-enforced tool limits.",
+      "bubblelab": "68 CredentialType members, per-step binding, credential pools, SYSTEM_CREDENTIALS set. All hand-maintained.",
+      "merge": "Replace credential storage and refresh, keep the credential model. Bind a step to a connectedAccountId rather than a secret.",
+      "merge_strength": "strong",
+      "section": "3.1"
+    },
+    {
+      "id": "A3",
+      "ask": "Is what Composio serves identical to the vendor's actual API?",
+      "verdict": "sound",
+      "why": "Decisive question for developer experience. Version management is beside the point: the SDK resolves to the newest surface by default.",
+      "composio": "Surface trails the vendor by a release cycle, and the trailing is mostly benign. Tracked Notion 2025-09-03 data sources and Slack's files.upload retirement (sunset date documented in the schema). Holds a Notion-Version 2025-09-03 pin rather than tracking 2026-03-11 (after -> position, archived -> in_trash). Coverage against Notion's own endpoint index: 25 of 28 (89%). No field reports which vendor changes landed.",
+      "bubblelab": "Every bubble hand-written, so coverage and currency are both your team's cost across 53 integrations (61 service bubbles, 536 operations). Hand-authoring is not faster at tracking a vendor's breaking change.",
+      "merge": "Composio absorbs maintenance for the 40 overlapping integrations, nothing for the 13 it lacks. Gate per toolkit on the vendor's versioning model rather than globally.",
+      "merge_strength": "partial",
+      "section": "3.2, 3.3",
+      "drift_base_rates": {
+        "class_A_version_pinned": {
+          "notion": "No plans to stop supporting older API versions (stated policy). No version retired to date.",
+          "github": "Dated versions; previous version supported at least 24 months after its successor; sunset returns 410. Removals confined to fields deprecated for years (has_downloads 10+ years, authorizations_url since 2020).",
+          "verdict": "Provider drift is close to theoretical. No ongoing vigilance needed."
+        },
+        "class_B_global_retirement": {
+          "slack": "files.upload retired outright (sunset 2025-11-12), legacy custom bots discontinued 2025-03-31, classic apps sunset 2026-11-16. Six breaking changes 2024-2026, mostly actual removals.",
+          "google": "Turns APIs down rather than versioning: Email Settings API off 2017, Apps Script Contacts service off 2025-01-31.",
+          "verdict": "Drift is real and has already materialised once. Watch the vendor changelog and execute one live call per tool before shipping."
+        },
+        "synthesis": "Composio migrates when a vendor removes things and pins when the vendor keeps old versions alive. Both responses are correct, so the trail reflects vendor policy rather than Composio neglect."
+      }
+    },
+    {
+      "id": "A4",
+      "ask": "Re-test the logged complaints and gauge UX and DX damage",
+      "verdict": "sound",
+      "why": "Logged complaints are the cheapest available signal on adoption risk.",
+      "composio": "Two of three confirmed. Callback-URI contradiction: MEDIUM, costs one line of defensive code. Hidden github PAT: LOW, skip it since github has managed OAuth so the frictionless path is already default and users reach for OAuth anyway.",
+      "bubblelab": "Not applicable. The third complaint traced to Gluu's own connect flow.",
+      "merge": "The pattern outranks any single complaint: metadata under-reports what execution accepts, across auth schemes, tool counts, callback URIs and vendor currency. Verify by executing rather than by reading the catalog.",
+      "merge_strength": "none",
+      "section": "4",
+      "severity": {
+        "complaint_1_callback_uri": "medium",
+        "complaint_2_setup_sequencing": "medium, and it is Gluu's to fix",
+        "complaint_3_hidden_pat": "low, deprioritised on the user's call"
+      }
+    },
+    {
+      "id": "A5",
+      "ask": "Surface factors not yet considered",
+      "verdict": "sound",
+      "why": "Twelve listed.",
+      "composio": "Data path (every payload transits Composio, self-host is Enterprise-only), per-call billing, added hop, widened failure surface, thin triggers (351 across 1,069 toolkits), credential lock-in.",
+      "bubblelab": "Hybrid flows keep the AST injector in charge of bubbles, so both failure modes persist until bubbles migrate too.",
+      "merge": "Data path and per-call billing are the two most likely to change the answer.",
+      "merge_strength": "none",
+      "section": "7"
+    },
+    {
+      "id": "A6",
+      "ask": "Wrap Composio tools inside BubbleLab's type enforcement",
+      "verdict": "sound",
+      "why": "Highest-value ask in the brief and the one the evidence supports most cleanly.",
+      "composio": "100% of sampled tools publish full JSON Schema for inputs and outputs using $defs and $ref. The SDK then discards it: ToolExecuteResponse.data is Record<string, unknown>.",
+      "bubblelab": "Zod-validated parameters, compile-time checks, typed errors.",
+      "merge": "Generate Zod plus TypeScript per tool per pinned version, parse at the boundary, reject is_deprecated slugs at generation time.",
+      "merge_strength": "strong",
+      "section": "3.5, 6"
+    },
+    {
+      "id": "A7",
+      "ask": "AST-detect Composio modules to fix the nested-credential bug",
+      "verdict": "reframe",
+      "why": "Under Composio the problem stops existing, because credentials never enter the script. AST detection becomes a display mechanism rather than a correctness mechanism.",
+      "composio": "Dissolves the bug. A call inside a ternary, a .map(), or an agent-chosen tool all behave the same.",
+      "bubblelab": "Bug is structural and live. BubbleParser skips instantiation sites inside ConditionalExpression, ObjectExpression, ArrayExpression, Property and SpreadElement (BubbleParser.ts:1384-1394). Nested tool credentials come from string-parsing the tools parameter with new Function, failing to console.debug plus an empty array.",
+      "merge": "Reading a string literal off a call expression needs no call-site whitelist. Limits: dynamic slugs and provider handoff resolve to unknown, so static analysis is a predicted overlay, never the record of truth.",
+      "merge_strength": "strong",
+      "section": "5.1, 5.2, 5.4"
+    },
+    {
+      "id": "A8",
+      "ask": "Sandbox fills credentials at runtime, clients declared at the top of the script",
+      "verdict": "sound",
+      "why": "Right instinct, and Composio's version is stronger. Your model still puts the credential in the process and still needs routing logic.",
+      "composio": "Removes the credential from the process entirely. Resolution happens server-side from (userId, toolkit).",
+      "bubblelab": "Current AST-rewriting model. Fails silently on unrecognised call sites and on nested tools.",
+      "merge": "Composio wins outright. Keep one requirement either way: a missing credential must throw at client construction, since a missing connected account surfaces only as successful:false at execution.",
+      "merge_strength": "composio-wins",
+      "section": "5.3"
+    },
+    {
+      "id": "A9",
+      "ask": "Join credential records to the tools that use them, and show it to the user",
+      "verdict": "sound",
+      "why": "The ask that most needs runtime truth rather than static analysis.",
+      "composio": "logId on every execute response and connectedAccountId as both input parameter and queryable entity. The join key is handed to you.",
+      "bubblelab": "Per-invocation variableId clones, the right granularity, sourced from static parsing that can miss.",
+      "merge": "Static AST pass populates a predicted checklist at save time, the execution wrapper writes authoritative rows, reconciliation exposes tools the agent chose but the flow never declared.",
+      "merge_strength": "strong",
+      "section": "5.5"
+    },
+    {
+      "id": "A10",
+      "ask": "Keep the experiment read-only with tests in their own folder",
+      "verdict": "sound",
+      "why": "Standard spike hygiene.",
+      "composio": "One external write disclosed: an auth config created and deleted to settle Complaint 3.",
+      "bubblelab": "No BubbleLab or Gluu file modified.",
+      "merge": "Not applicable.",
+      "merge_strength": "none",
+      "section": "header"
+    },
+    {
+      "id": "A11",
+      "ask": "Parseable enough to render visually for non-technical people",
+      "verdict": "sound",
+      "why": "Underrated in the brief. Cleanest complementary split in the comparison, since each platform holds the half the other lacks.",
+      "composio": "Labels. 209/209 tools carry prose names with zero slug-like values, 209/209 carry descriptions, 115/209 carry human_description, 1,069/1,069 toolkits carry a logo plus one of 88 categories. Behavioural tags include destructiveHint, readOnlyHint, idempotentHint, createHint, updateHint and important. No flow structure of any kind.",
+      "bubblelab": "Structure. ParsedBubble carries variableName, className, parameters, hasAwait, dependencies, dependencyGraph, invocationCallSiteKey and line numbers, plus the injected invocation dependency map. Labels exist per integration (53) rather than per operation.",
+      "merge": "BubbleLab's parser supplies the graph, Composio supplies node labels, logos, categories and risk badges. Render from reconciled A9 data rather than static parsing alone, and treat destructiveHint as a first-class UI signal.",
+      "merge_strength": "strongest",
+      "caveat": "scopes is inconsistent and cannot drive a permissions display alone: notion returns human labels (18/56 populated), slack returns scope strings (93/100), googlesheets returns raw Google URLs (53/53). A mapping table is required.",
+      "section": "2 (A11)"
+    }
+  ]
+}
+

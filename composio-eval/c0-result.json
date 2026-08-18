@@ -1,0 +1,84 @@
+{
+  "q1": null,
+  "q2": null,
+  "q3_ms": null,
+  "q4": null,
+  "sideTest": {
+    "legacyV3": {
+      "status": 400,
+      "deprecation": null,
+      "sunset": null,
+      "error": "Creating connections on this endpoint for Composio-managed OAuth auth configs is no longer supported. Use POST /api/v3/connected_accounts/link instead."
+    },
+    "currentV31": {
+      "status": 400,
+      "deprecation": null,
+      "sunset": null,
+      "redirectUrlReturned": false,
+      "error": "Creating connections on this endpoint for Composio-managed OAuth auth configs is no longer supported. Use POST /api/v3/connected_accounts/link instead.",
+      "suggestedFix": "Call POST /api/v3/connected_accounts/link with the same auth_config_id and user_id to get a redirect URL for the end user."
+    },
+    "cleanedUp": [],
+    "gluuInitiateStillWorks": false,
+    "verdict": "SDK initiate() path (v3.1 create) is RETIRED for managed OAuth configs; gluu client.ts:451 connectedAccounts.initiate must migrate to connectedAccounts.link()"
+  },
+  "notes": {
+    "pin": {
+      "toolkitVersionServed": [
+        "20260730_00"
+      ],
+      "countLatest": 56,
+      "countBase": 28,
+      "countCatalogMeta": 53,
+      "dataSourceRefs": 156,
+      "afterParamTools": [
+        "NOTION_ADD_MULTIPLE_PAGE_CONTENT",
+        "NOTION_ADD_PAGE_CONTENT",
+        "NOTION_APPEND_BLOCK_CHILDREN",
+        "NOTION_APPEND_CODE_BLOCKS",
+        "NOTION_APPEND_LAYOUT_BLOCKS",
+        "NOTION_APPEND_MEDIA_BLOCKS",
+        "NOTION_APPEND_TABLE_BLOCKS",
+        "NOTION_APPEND_TASK_BLOCKS",
+        "NOTION_APPEND_TEXT_BLOCKS"
+      ],
+      "positionParamTools": [
+        "NOTION_CREATE_VIEW"
+      ],
+      "inTrashRefs": 52,
+      "archivedRefs": 122,
+      "deprecatedFlagged": [
+        "NOTION_ADD_PAGE_CONTENT",
+        "NOTION_APPEND_BLOCK_CHILDREN",
+        "NOTION_GET_ABOUT_ME"
+      ],
+      "reading": "data_source present + after present + in_trash migration unfinished = pinned to Notion-Version 2025-09-03, not the 2026-03-11 surface (advisory 3.2). Base (no version param) serves the frozen 00000000_00 snapshot."
+    },
+    "notionAccounts": [
+      {
+        "id": "ca_gw0TIEyDU4nz",
+        "status": "INITIALIZING"
+      },
+      {
+        "id": "ca_wI9i3x678JkL",
+        "status": "EXPIRED"
+      }
+    ],
+    "reconnect": {
+      "url": "https://connect.composio.dev/link/lk_fGYjYF5B7MT3",
+      "connectedAccountId": "ca_4MDgxXZ7qRkX",
+      "expiresAt": "2026-08-01T07:52:12.073Z",
+      "warning": "Complete the OAuth before expiresAt. Re-run this probe to mint a fresh link if it lapses (the prior account expired with \"Connection initiation did not complete within 10 minutes\")."
+    },
+    "status": "PENDING-RECONNECT",
+    "thesis": "UNPROVEN on live execution: q1/q2/q3/q4 need an ACTIVE Notion connected account. Complete the OAuth at notes.reconnect.url, then re-run this probe.",
+    "expiredExecuteShape": {
+      "httpStatus": 422,
+      "successful": null,
+      "logId": null,
+      "errorSlug": "TOOL_AUTH_BadConnectedAccountState",
+      "error": "{\"message\":\"Connected account is not in an ACTIVE state. Current status is \\\"INITIALIZING\\\" but ACTIVE status is required for authorization.\",\"code\":1706,\"slug\":\"TOOL_AUTH_BadConnectedAccountState\",\"status\":422,\"request_id\":\"c5d03aeb-8d28-4489-836c-44d5c3ffae25\",\"suggested_fix\":\"Please ensure the co",
+      "reading": "expired account fails LOUD pre-flight (typed slug, no silent credential-less run)"
+    }
+  }
+}

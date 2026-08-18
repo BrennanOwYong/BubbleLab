@@ -31,6 +31,28 @@
 
 ## 📋 Overview
 
+## Maintainer reference: native SDK baseline
+
+The branch [`hedge/native-sdk-baseline`](https://github.com/BrennanOwYong/BubbleLab/tree/hedge/native-sdk-baseline)
+is the native BubbleLab SDK baseline for future integration work. Its parent commit, `b110d4d`,
+is the point immediately after the repository and SDK structure were documented and before the
+later integration refactors. The branch tip records this baseline as commit `263068d`.
+
+Start here before building a documentation-digestion or add-a-tool pipeline:
+
+1. Read [`docs/plan/REPO-MAP.md`](./docs/plan/REPO-MAP.md) for the file-level architecture map.
+2. Read [`docs/reference/BUBBLELAB_SDK_DISTILLED.md`](./docs/reference/BUBBLELAB_SDK_DISTILLED.md)
+   for the contracts that generated flows and bubbles must preserve.
+3. Read [`composio-eval/README.md`](./composio-eval/README.md) for the Composio research index.
+4. Read [`composio-eval/COMPOSIO-VS-BUBBLELAB-ADVISORY.md`](./composio-eval/COMPOSIO-VS-BUBBLELAB-ADVISORY.md)
+   and [`composio-eval/IMPLEMENTATION-GUIDE.md`](./composio-eval/IMPLEMENTATION-GUIDE.md) before
+   designing a Composio-backed integration.
+
+The required alignment points are the `BubbleFactory` registry, named `ServiceBubble` classes,
+Zod parameter and result schemas, credential injection, parser recognition, metadata catalogue,
+and the documented build order. A new integration pipeline must preserve these contracts even
+when it uses the latest vendor documentation or Composio tool metadata as its source.
+
 [**Bubble Lab**](https://www.bubblelab.ai/) is a Slack-native AI operator platform that helps teams automate operational work directly inside Slack using Pearl, its AI assistant.
 
 Instead of switching between tools, teams can ask Pearl to execute workflows, access systems, and perform tasks across their stack.
